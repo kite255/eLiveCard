@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Auth\Login;
 use App\Filament\Pages\Dashboard as EliveDashboard;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -25,7 +26,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(Login::class)
 
             /*
             |--------------------------------------------------------------------------
@@ -33,6 +34,9 @@ class AdminPanelProvider extends PanelProvider
             |--------------------------------------------------------------------------
             */
             ->brandName('eLive Card')
+            ->brandLogo(asset('images/elive-card-logo.png'))
+            ->brandLogoHeight('3rem')
+            ->favicon(asset('favicon.ico'))
             ->colors([
                 'primary' => Color::hex('#213B73'),
                 'warning' => Color::hex('#FD9618'),
@@ -43,10 +47,6 @@ class AdminPanelProvider extends PanelProvider
             |--------------------------------------------------------------------------
             | Resources, Pages, Widgets
             |--------------------------------------------------------------------------
-            |
-            | We are using the custom eLive dashboard page instead of the default
-            | Filament dashboard with AccountWidget and FilamentInfoWidget.
-            |
             */
             ->discoverResources(
                 in: app_path('Filament/Resources'),
@@ -63,10 +63,7 @@ class AdminPanelProvider extends PanelProvider
                 in: app_path('Filament/Widgets'),
                 for: 'App\\Filament\\Widgets'
             )
-            ->widgets([
-                // Keep this empty because the dashboard is custom.
-                // Add custom widgets here later if needed.
-            ])
+            ->widgets([])
 
             /*
             |--------------------------------------------------------------------------
