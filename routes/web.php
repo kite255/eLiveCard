@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\GateVerifyController;
 use App\Http\Controllers\InviteePageController;
+use App\Http\Controllers\PublicCardController;
 use App\Http\Controllers\RsvpController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,7 +18,8 @@ Route::get('/', function () {
 | Local: http://127.0.0.1:8002/i/NPTUIN
 | Live:  https://card.elive.co.tz/i/NPTUIN
 |
-| This is the main invitee page. Later, RSVP can be fully merged here.
+| This is the main invitee page where invitees can view invitation details,
+| RSVP, see their QR code, serial number, guest count, and event information.
 */
 Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
     ->where('shortCode', '[A-Za-z0-9]+')
@@ -28,9 +30,6 @@ Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
 | Invitee RSVP Action From Private Invitee Page
 |--------------------------------------------------------------------------
 | This route receives RSVP button clicks from the private invitee page.
-| Example:
-| - I will attend
-| - I will not attend
 */
 Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
     ->where('shortCode', '[A-Za-z0-9]+')
@@ -57,6 +56,26 @@ Route::post('/rsvp/{token}', [RsvpController::class, 'submit'])
 Route::get('/rsvp/{token}/thank-you', [RsvpController::class, 'thankYou'])
     ->where('token', '[A-Za-z0-9]+')
     ->name('rsvp.thank-you');
+
+/*
+|--------------------------------------------------------------------------
+| Public Generated Invitation Card
+|--------------------------------------------------------------------------
+| This allows invitees to view and download their personalized generated card.
+|
+| Example:
+| View:     https://card.elive.co.tz/card/ELV-2026-ZRKJ7A
+| Download: https://card.elive.co.tz/card/ELV-2026-ZRKJ7A/download
+|
+| This link can be sent by SMS or WhatsApp together with the invitee page link.
+*/
+Route::get('/card/{serialNumber}', [PublicCardController::class, 'show'])
+    ->where('serialNumber', '[A-Za-z0-9\-]+')
+    ->name('public.card.show');
+
+Route::get('/card/{serialNumber}/download', [PublicCardController::class, 'download'])
+    ->where('serialNumber', '[A-Za-z0-9\-]+')
+    ->name('public.card.download');
 
 /*
 |--------------------------------------------------------------------------
