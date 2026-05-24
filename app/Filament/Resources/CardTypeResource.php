@@ -28,35 +28,29 @@ class CardTypeResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->role === 'super_admin'
-            || auth()->user()?->role === 'event_owner'
-            || auth()->user()?->role === 'event_manager';
+        return auth()->user()?->canManageEvents() ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->role === 'super_admin'
-            || auth()->user()?->role === 'event_owner'
-            || auth()->user()?->role === 'event_manager';
+        return auth()->user()?->canManageEvents() ?? false;
     }
 
     public static function canEdit($record): bool
     {
-        return auth()->user()?->role === 'super_admin'
-            || auth()->user()?->role === 'event_owner'
-            || auth()->user()?->role === 'event_manager';
+        return auth()->user()?->canManageEvents() ?? false;
     }
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->role === 'super_admin'
-            || auth()->user()?->role === 'event_owner';
+        return auth()->user()?->isSuperAdmin()
+            || auth()->user()?->isEventOwner();
     }
 
     public static function canDeleteAny(): bool
     {
-        return auth()->user()?->role === 'super_admin'
-            || auth()->user()?->role === 'event_owner';
+        return auth()->user()?->isSuperAdmin()
+            || auth()->user()?->isEventOwner();
     }
 
     public static function form(Form $form): Form
@@ -64,7 +58,7 @@ class CardTypeResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Card Type Details')
-                    ->description('Define invitation categories such as Single, Double, Family, VIP, VVIP, Committee, or Custom.')
+                    ->description('Create invitation card categories such as Single, Double, Family, VIP, VVIP, Committee, or Custom.')
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
@@ -154,22 +148,22 @@ class CardTypeResource extends Resource
             ->filters([
                 Tables\Filters\TernaryFilter::make('is_active')
                     ->label('Active Status')
-                    ->trueLabel('Active card types')
-                    ->falseLabel('Inactive card types')
+                    ->trueLabel('Active')
+                    ->falseLabel('Inactive')
                     ->native(false),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (): bool => auth()->user()?->role === 'super_admin'
-                        || auth()->user()?->role === 'event_owner'),
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin()
+                        || auth()->user()?->isEventOwner()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn (): bool => auth()->user()?->role === 'super_admin'
-                            || auth()->user()?->role === 'event_owner'),
+                        ->visible(fn (): bool => auth()->user()?->isSuperAdmin()
+                            || auth()->user()?->isEventOwner()),
                 ]),
             ])
             ->emptyStateHeading('No card types yet')
