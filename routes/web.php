@@ -4,7 +4,9 @@ use App\Http\Controllers\GateVerifyController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
 use App\Http\Controllers\RsvpController;
+use App\Models\CardTemplate;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/', function () {
     return view('welcome');
@@ -76,6 +78,31 @@ Route::get('/card/{serialNumber}', [PublicCardController::class, 'show'])
 Route::get('/card/{serialNumber}/download', [PublicCardController::class, 'download'])
     ->where('serialNumber', '[A-Za-z0-9\-]+')
     ->name('public.card.download');
+
+/*
+|--------------------------------------------------------------------------
+| Card Template Preview
+|--------------------------------------------------------------------------
+| This route serves uploaded card template images through Laravel.
+| It fixes staging/server cases where direct /storage/card-templates access
+| returns 403 Forbidden even when the file exists.
+|
+| Example:
+| https://staging-digital.elive.co.tz/card-template-preview/1
+*/
+Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $cardTemplate) {
+    abort_if(! $cardTemplate->template_image, 404, 'Template image is missing.');
+
+    abort_if(
+        ! Storage::disk('public')->exists($cardTemplate->template_image),
+        404,
+        'Template image file was not found.'
+    );
+
+    return response()->file(
+        Storage::disk('public')->path($cardTemplate->template_image)
+    );
+})->name('card-template.preview');
 
 /*
 |--------------------------------------------------------------------------
