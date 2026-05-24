@@ -3,12 +3,5 @@ nixPkgs = [
     "php82",
     "php82Packages.composer",
     "nodejs_22",
-    "php82Extensions.imagick",
-    "php82Extensions.gd",
-    "php82Extensions.pdo_pgsql",
-    "php82Extensions.zip",
-    "php82Extensions.intl",
-    "php82Extensions.mbstring",
-    "php82Extensions.exif",
     "imagemagick"
 ]
