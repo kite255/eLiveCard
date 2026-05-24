@@ -2,20 +2,24 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\CheckIn;
 use App\Models\Event;
 use App\Models\Invitee;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Pages\Page;
 use Filament\Notifications\Notification;
+use Filament\Pages\Page;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class GateCheckIn extends Page implements Forms\Contracts\HasForms
 {
     use Forms\Concerns\InteractsWithForms;
 
-    protected static ?string $navigationIcon = 'heroicon-o-magnifying-glass-circle';
+    protected static ?string $navigationIcon = 'heroicon-o-qr-code';
 
     protected static string $view = 'filament.pages.gate-check-in';
 
@@ -23,9 +27,9 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
 
     protected static ?string $title = 'Gate Check-in';
 
-    protected static ?string $navigationGroup = 'Event Management';
+    protected static ?string $navigationGroup = 'Event Day';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 1;
 
     public ?array $data = [];
 
@@ -33,35 +37,69 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
 
     public Collection $results;
 
+    public array $stats = [
+        'total_invitees' => 0,
+        'checked_invitees' => 0,
+        'allowed_guests' => 0,
+        'checked_guests' => 0,
+    ];
+
     public function mount(): void
     {
         $this->results = collect();
 
+        $defaultEventId = Event::query()
+            ->when(
+                Schema::hasColumn('events', 'event_date'),
+                fn (Builder $query) => $query->orderByDesc('event_date'),
+                fn (Builder $query) => $query->latest()
+            )
+            ->value('id');
+
         $this->form->fill([
+            'event_id' => $defaultEventId,
+            'search' => null,
             'guests_to_check_in' => 1,
         ]);
+
+        $this->loadStats();
     }
 
     public function form(Form $form): Form
     {
+        $eventNameColumn = Schema::hasColumn('events', 'title') ? 'title' : 'name';
+
         return $form
             ->schema([
                 Forms\Components\Section::make('Gate Search')
-                    ->description('Select event first, then search invitee by serial number, phone number, or name.')
+                    ->description('Select event, then scan QR code or search by serial number, phone number, or name.')
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->options(Event::query()->orderBy('event_date', 'desc')->pluck('title', 'id'))
+                            ->options(
+                                Event::query()
+                                    ->when(
+                                        Schema::hasColumn('events', 'event_date'),
+                                        fn (Builder $query) => $query->orderByDesc('event_date'),
+                                        fn (Builder $query) => $query->latest()
+                                    )
+                                    ->pluck($eventNameColumn, 'id')
+                            )
                             ->searchable()
                             ->preload()
                             ->required()
                             ->live()
-                            ->helperText('Search results will be limited to this event.'),
+                            ->afterStateUpdated(function () {
+                                $this->resetResultOnly();
+                                $this->loadStats();
+                            })
+                            ->helperText('All gate validation will be limited to the selected event.'),
 
                         Forms\Components\TextInput::make('search')
-                            ->label('Serial Number / Phone / Name')
-                            ->placeholder('Example: ELV-2026-UVS28X, 255768461644, or John')
-                            ->required(),
+                            ->label('QR / Serial / Phone / Name')
+                            ->placeholder('Scan QR, enter ELV-2026-XXXX, phone, or invitee name')
+                            ->required()
+                            ->live(onBlur: true),
 
                         Forms\Components\TextInput::make('guests_to_check_in')
                             ->label('Guests Entering')
@@ -70,7 +108,10 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
                             ->minValue(1)
                             ->default(1),
                     ])
-                    ->columns(3),
+                    ->columns([
+                        'default' => 1,
+                        'md' => 3,
+                    ]),
             ])
             ->statePath('data');
     }
@@ -78,7 +119,7 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
     public function searchInvitee(): void
     {
         $eventId = $this->data['event_id'] ?? null;
-        $search = trim($this->data['search'] ?? '');
+        $search = trim((string) ($this->data['search'] ?? ''));
 
         $this->invitee = null;
         $this->results = collect();
@@ -96,20 +137,38 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
         if ($search === '') {
             Notification::make()
                 ->title('Search field is required')
-                ->body('Enter serial number, phone number, or name.')
+                ->body('Scan QR code or enter serial number, phone number, or name.')
                 ->danger()
                 ->send();
 
             return;
         }
 
+        $searchTerms = $this->extractSearchTerms($search);
+
         $this->results = Invitee::query()
             ->with(['event', 'cardType'])
             ->where('event_id', $eventId)
-            ->where(function ($query) use ($search) {
-                $query->where('serial_number', $search)
-                    ->orWhere('phone', $search)
-                    ->orWhere('name', 'ILIKE', '%' . $search . '%');
+            ->where(function (Builder $query) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    $query->orWhere('serial_number', $term);
+
+                    if (Schema::hasColumn('invitees', 'phone')) {
+                        $query->orWhere('phone', $term);
+                    }
+
+                    if (Schema::hasColumn('invitees', 'name')) {
+                        $query->orWhere('name', 'like', '%' . $term . '%');
+                    }
+
+                    if (Schema::hasColumn('invitees', 'qr_token')) {
+                        $query->orWhere('qr_token', $term);
+                    }
+
+                    if (Schema::hasColumn('invitees', 'qr_token_hash')) {
+                        $query->orWhere('qr_token_hash', hash('sha256', $term));
+                    }
+                }
             })
             ->orderBy('name')
             ->limit(30)
@@ -118,7 +177,7 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
         if ($this->results->isEmpty()) {
             Notification::make()
                 ->title('Invitee not found')
-                ->body('No invitee found in the selected event.')
+                ->body('No invitee was found in the selected event.')
                 ->danger()
                 ->send();
 
@@ -126,11 +185,11 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
         }
 
         if ($this->results->count() === 1) {
-            $this->invitee = $this->results->first();
+            $this->selectInvitee((int) $this->results->first()->id, false);
 
             Notification::make()
                 ->title('Invitee found')
-                ->body($this->invitee->name . ' found successfully.')
+                ->body($this->invitee->name . ' is ready for check-in.')
                 ->success()
                 ->send();
 
@@ -139,17 +198,17 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
 
         Notification::make()
             ->title('Multiple invitees found')
-            ->body($this->results->count() . ' matching invitees found in this event. Select the correct invitee.')
+            ->body($this->results->count() . ' matching invitees found. Select the correct invitee.')
             ->info()
             ->send();
     }
 
-    public function selectInvitee(int $inviteeId): void
+    public function selectInvitee(int $inviteeId, bool $notify = true): void
     {
         $eventId = $this->data['event_id'] ?? null;
 
         $this->invitee = Invitee::query()
-            ->with(['event', 'cardType'])
+            ->with(['event', 'cardType', 'checkIns'])
             ->where('event_id', $eventId)
             ->find($inviteeId);
 
@@ -163,11 +222,15 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
             return;
         }
 
-        Notification::make()
-            ->title('Invitee selected')
-            ->body($this->invitee->name . ' selected.')
-            ->success()
-            ->send();
+        $this->data['guests_to_check_in'] = $this->suggestGuestsToCheckIn();
+
+        if ($notify) {
+            Notification::make()
+                ->title('Invitee selected')
+                ->body($this->invitee->name . ' selected.')
+                ->success()
+                ->send();
+        }
     }
 
     public function checkIn(): void
@@ -182,8 +245,6 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
             return;
         }
 
-        $this->invitee->refresh();
-
         $guestsToCheckIn = (int) ($this->data['guests_to_check_in'] ?? 1);
 
         if ($guestsToCheckIn < 1) {
@@ -196,68 +257,244 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
             return;
         }
 
-        if ($this->invitee->card_status === 'blocked') {
+        DB::transaction(function () use ($guestsToCheckIn) {
+            $invitee = Invitee::query()
+                ->whereKey($this->invitee->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $allowedGuests = (int) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1);
+            $previousCount = (int) ($invitee->checked_in_count ?? 0);
+            $remainingGuests = max($allowedGuests - $previousCount, 0);
+
+            if (($invitee->card_status ?? 'active') === 'blocked') {
+                Notification::make()
+                    ->title('Card blocked')
+                    ->body('This card is blocked and cannot be checked in.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            if (($invitee->card_status ?? 'active') !== 'active') {
+                Notification::make()
+                    ->title('Card not active')
+                    ->body('Only active cards are allowed for check-in.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            if ($remainingGuests <= 0) {
+                Notification::make()
+                    ->title('Guest limit reached')
+                    ->body('No remaining guests are allowed for this card.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            if ($guestsToCheckIn > $remainingGuests) {
+                Notification::make()
+                    ->title('Guest limit exceeded')
+                    ->body('Only ' . $remainingGuests . ' guest(s) remaining.')
+                    ->danger()
+                    ->send();
+
+                return;
+            }
+
+            $newCount = $previousCount + $guestsToCheckIn;
+            $newRemainingGuests = max($allowedGuests - $newCount, 0);
+
+            $invitee->checkIns()->create([
+                'event_id' => $invitee->event_id,
+                'checked_in_by' => Auth::id(),
+                'checkin_method' => $this->detectCheckInMethod(),
+                'guests_checked_in' => $guestsToCheckIn,
+                'previous_checked_in_count' => $previousCount,
+                'remaining_guests' => $newRemainingGuests,
+                'status' => CheckIn::STATUS_SUCCESS,
+                'remarks' => 'Checked in from gate check-in page.',
+                'checked_in_at' => now(),
+            ]);
+
+            $updateData = [
+                'checked_in_count' => $newCount,
+                'checked_in_at' => now(),
+            ];
+
+            if (Schema::hasColumn('invitees', 'check_in_status')) {
+                $updateData['check_in_status'] = $newRemainingGuests <= 0 ? 'checked_in' : 'partial';
+            }
+
+            $invitee->update($updateData);
+
+            $this->invitee = $invitee->fresh(['event', 'cardType', 'checkIns']);
+
+            $this->results = Invitee::query()
+                ->with(['event', 'cardType'])
+                ->whereKey($invitee->id)
+                ->get();
+
+            $this->data['guests_to_check_in'] = $this->suggestGuestsToCheckIn();
+
+            $this->loadStats();
+
             Notification::make()
-                ->title('Card blocked')
-                ->body('This card is blocked and cannot be checked in.')
-                ->danger()
+                ->title('Check-in successful')
+                ->body($guestsToCheckIn . ' guest(s) checked in. Remaining: ' . $newRemainingGuests)
+                ->success()
                 ->send();
+        });
+    }
 
-            return;
-        }
+    public function resetScanner(): void
+    {
+        $eventId = $this->data['event_id'] ?? null;
 
-        if ($this->invitee->remaining_guests <= 0) {
-            Notification::make()
-                ->title('Guest limit reached')
-                ->body('No remaining guests are allowed for this card.')
-                ->danger()
-                ->send();
+        $this->invitee = null;
+        $this->results = collect();
 
-            return;
-        }
-
-        if ($guestsToCheckIn > $this->invitee->remaining_guests) {
-            Notification::make()
-                ->title('Guest limit exceeded')
-                ->body('Only ' . $this->invitee->remaining_guests . ' guest(s) remaining.')
-                ->danger()
-                ->send();
-
-            return;
-        }
-
-        $previousCount = $this->invitee->checked_in_count;
-        $newCount = $previousCount + $guestsToCheckIn;
-        $remainingGuests = max(0, $this->invitee->final_allowed_guests - $newCount);
-
-        $this->invitee->checkIns()->create([
-            'event_id' => $this->invitee->event_id,
-            'checked_in_by' => Auth::id(),
-            'checkin_method' => 'gate_search',
-            'guests_checked_in' => $guestsToCheckIn,
-            'previous_checked_in_count' => $previousCount,
-            'remaining_guests' => $remainingGuests,
-            'status' => 'success',
-            'remarks' => 'Checked in from gate search page.',
-            'checked_in_at' => now(),
+        $this->form->fill([
+            'event_id' => $eventId,
+            'search' => null,
+            'guests_to_check_in' => 1,
         ]);
 
-        $this->invitee->update([
-            'checked_in_count' => $newCount,
-            'checked_in_at' => now(),
-        ]);
+        $this->loadStats();
+    }
 
-        $this->invitee->refresh();
+    protected function resetResultOnly(): void
+    {
+        $this->invitee = null;
+        $this->results = collect();
 
-        $this->results = Invitee::query()
-            ->with(['event', 'cardType'])
-            ->where('id', $this->invitee->id)
+        $this->data['search'] = null;
+        $this->data['guests_to_check_in'] = 1;
+    }
+
+    protected function suggestGuestsToCheckIn(): int
+    {
+        if (! $this->invitee) {
+            return 1;
+        }
+
+        $allowedGuests = (int) ($this->invitee->final_allowed_guests ?? $this->invitee->allowed_guests ?? 1);
+        $checkedInCount = (int) ($this->invitee->checked_in_count ?? 0);
+        $remainingGuests = max($allowedGuests - $checkedInCount, 0);
+
+        return $remainingGuests > 0 ? 1 : 0;
+    }
+
+    protected function extractSearchTerms(string $value): array
+    {
+        $value = trim($value);
+
+        $terms = [$value];
+
+        if (filter_var($value, FILTER_VALIDATE_URL)) {
+            $parts = parse_url($value);
+
+            if (! empty($parts['path'])) {
+                $segments = array_values(array_filter(explode('/', $parts['path'])));
+                $lastSegment = end($segments);
+
+                if ($lastSegment) {
+                    $terms[] = $lastSegment;
+                }
+            }
+
+            if (! empty($parts['query'])) {
+                parse_str($parts['query'], $query);
+
+                foreach (['token', 'qr', 'code', 'serial', 'serial_number'] as $key) {
+                    if (! empty($query[$key])) {
+                        $terms[] = (string) $query[$key];
+                    }
+                }
+            }
+        }
+
+        return collect($terms)
+            ->map(fn ($term) => trim((string) $term))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function detectCheckInMethod(): string
+    {
+        $search = trim((string) ($this->data['search'] ?? ''));
+
+        if ($search === '') {
+            return CheckIn::METHOD_GATE_SCANNER;
+        }
+
+        if (filter_var($search, FILTER_VALIDATE_URL)) {
+            return CheckIn::METHOD_QR;
+        }
+
+        if ($this->invitee && $search === (string) $this->invitee->serial_number) {
+            return CheckIn::METHOD_SERIAL;
+        }
+
+        if ($this->invitee && $search === (string) $this->invitee->phone) {
+            return CheckIn::METHOD_PHONE;
+        }
+
+        if ($this->invitee && str_contains(strtolower((string) $this->invitee->name), strtolower($search))) {
+            return CheckIn::METHOD_NAME;
+        }
+
+        return CheckIn::METHOD_GATE_SCANNER;
+    }
+
+    public function loadStats(): void
+    {
+        $eventId = $this->data['event_id'] ?? null;
+
+        if (! $eventId) {
+            $this->stats = [
+                'total_invitees' => 0,
+                'checked_invitees' => 0,
+                'allowed_guests' => 0,
+                'checked_guests' => 0,
+            ];
+
+            return;
+        }
+
+        $invitees = Invitee::query()
+            ->where('event_id', $eventId);
+
+        $this->stats = [
+            'total_invitees' => (clone $invitees)->count(),
+            'checked_invitees' => (clone $invitees)
+                ->where('checked_in_count', '>', 0)
+                ->count(),
+            'allowed_guests' => (clone $invitees)->sum('allowed_guests'),
+            'checked_guests' => (clone $invitees)->sum('checked_in_count'),
+        ];
+    }
+
+    public function getRecentCheckInsProperty()
+    {
+        $eventId = $this->data['event_id'] ?? null;
+
+        if (! $eventId) {
+            return collect();
+        }
+
+        return CheckIn::query()
+            ->with(['invitee', 'checkedInBy'])
+            ->where('event_id', $eventId)
+            ->latest('checked_in_at')
+            ->limit(8)
             ->get();
-
-        Notification::make()
-            ->title('Check-in successful')
-            ->body($guestsToCheckIn . ' guest(s) checked in. Remaining: ' . $remainingGuests)
-            ->success()
-            ->send();
     }
 }

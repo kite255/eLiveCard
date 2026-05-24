@@ -2,15 +2,14 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\Dashboard as EliveDashboard;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -27,19 +26,53 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+
+            /*
+            |--------------------------------------------------------------------------
+            | eLive Card Branding
+            |--------------------------------------------------------------------------
+            */
+            ->brandName('eLive Card')
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::hex('#213B73'),
+                'warning' => Color::hex('#FD9618'),
+                'gray' => Color::Slate,
             ])
-            ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
-            ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
+
+            /*
+            |--------------------------------------------------------------------------
+            | Resources, Pages, Widgets
+            |--------------------------------------------------------------------------
+            |
+            | We are using the custom eLive dashboard page instead of the default
+            | Filament dashboard with AccountWidget and FilamentInfoWidget.
+            |
+            */
+            ->discoverResources(
+                in: app_path('Filament/Resources'),
+                for: 'App\\Filament\\Resources'
+            )
+            ->discoverPages(
+                in: app_path('Filament/Pages'),
+                for: 'App\\Filament\\Pages'
+            )
             ->pages([
-                Pages\Dashboard::class,
+                EliveDashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
+            ->discoverWidgets(
+                in: app_path('Filament/Widgets'),
+                for: 'App\\Filament\\Widgets'
+            )
             ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                // Keep this empty because the dashboard is custom.
+                // Add custom widgets here later if needed.
             ])
+
+            /*
+            |--------------------------------------------------------------------------
+            | Middleware
+            |--------------------------------------------------------------------------
+            */
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

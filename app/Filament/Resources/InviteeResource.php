@@ -2,15 +2,21 @@
 
 namespace App\Filament\Resources;
 
+use App\Exports\InviteesExport;
+use App\Exports\AttendanceExport;
 use App\Filament\Resources\InviteeResource\Pages;
 use App\Models\Invitee;
+use App\Services\ReminderSmsService;
+use App\Services\SmsService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Maatwebsite\Excel\Facades\Excel;
 
 class InviteeResource extends Resource
 {
@@ -96,11 +102,113 @@ class InviteeResource extends Resource
                     ])
                     ->columns(2),
 
+                Forms\Components\Section::make('RSVP Information')
+                    ->description('RSVP confirmation status from the invitee.')
+                    ->schema([
+                        Forms\Components\TextInput::make('rsvp_status')
+                            ->label('RSVP Status')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('confirmed_guests')
+                            ->label('Confirmed Guests')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('rsvp_confirmed_at')
+                            ->label('RSVP Confirmed At')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('rsvp_url')
+                            ->label('RSVP Confirmation Link')
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
+                    ->collapsed()
+                    ->visibleOn('edit'),
+
+                Forms\Components\Section::make('SMS Tracking')
+                    ->description('Latest SMS and reminder tracking information.')
+                    ->schema([
+                        Forms\Components\TextInput::make('sms_status')
+                            ->label('Latest SMS Status')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('sms_sent_at')
+                            ->label('Latest SMS Sent At')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('sms_message_id')
+                            ->label('Latest SMS Message ID')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('invitation_sms_status')
+                            ->label('Invitation SMS Status')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('invitation_sms_sent_at')
+                            ->label('Invitation SMS Sent At')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('reminder_sms_status')
+                            ->label('Reminder SMS Status')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('reminder_sms_sent_at')
+                            ->label('Reminder SMS Sent At')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('final_sms_status')
+                            ->label('Final SMS Status')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('final_sms_sent_at')
+                            ->label('Final SMS Sent At')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\Textarea::make('sms_error')
+                            ->label('SMS Error')
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->columnSpanFull(),
+
+                        Forms\Components\Textarea::make('last_sms_error')
+                            ->label('Last Reminder SMS Error')
+                            ->disabled()
+                            ->dehydrated(false)
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
+                    ->collapsed()
+                    ->visibleOn('edit'),
+
                 Forms\Components\Section::make('System Information')
                     ->description('These values are generated automatically by the system.')
                     ->schema([
                         Forms\Components\TextInput::make('serial_number')
                             ->label('Serial Number')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('short_code')
+                            ->label('Short Code')
+                            ->disabled()
+                            ->dehydrated(false),
+
+                        Forms\Components\TextInput::make('private_invitation_url')
+                            ->label('Private Invitation Link')
                             ->disabled()
                             ->dehydrated(false),
 
@@ -111,11 +219,6 @@ class InviteeResource extends Resource
 
                         Forms\Components\TextInput::make('card_status')
                             ->label('Card Status')
-                            ->disabled()
-                            ->dehydrated(false),
-
-                        Forms\Components\TextInput::make('rsvp_status')
-                            ->label('RSVP Status')
                             ->disabled()
                             ->dehydrated(false),
 
@@ -154,6 +257,12 @@ class InviteeResource extends Resource
                     ->searchable()
                     ->copyable(),
 
+                Tables\Columns\TextColumn::make('event.title')
+                    ->label('Event')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('cardType.name')
                     ->label('Card Type')
                     ->searchable()
@@ -175,6 +284,18 @@ class InviteeResource extends Resource
                     ->copyable()
                     ->copyMessage('Serial number copied'),
 
+                Tables\Columns\TextColumn::make('private_invitation_url')
+                    ->label('Invitation Link')
+                    ->copyable()
+                    ->copyMessage('Private invitation link copied')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('rsvp_url')
+                    ->label('RSVP Link')
+                    ->copyable()
+                    ->copyMessage('RSVP link copied')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('qr_code_path')
                     ->label('QR Path')
                     ->searchable()
@@ -184,22 +305,116 @@ class InviteeResource extends Resource
                 Tables\Columns\TextColumn::make('rsvp_status')
                     ->label('RSVP')
                     ->badge()
+                    ->formatStateUsing(fn (?string $state): string => Invitee::rsvpStatuses()[$state] ?? 'Pending')
                     ->colors([
-                        'gray' => 'pending',
-                        'success' => 'attending',
-                        'danger' => 'not_attending',
-                        'warning' => 'maybe',
+                        'gray' => Invitee::RSVP_PENDING,
+                        'success' => Invitee::RSVP_ATTENDING,
+                        'danger' => Invitee::RSVP_NOT_ATTENDING,
+                        'warning' => Invitee::RSVP_MAYBE,
                     ])
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('confirmed_guests')
+                    ->label('Confirmed')
+                    ->placeholder('-')
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('rsvp_confirmed_at')
+                    ->label('RSVP Date')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('sms_status')
+                    ->label('SMS')
+                    ->badge()
+                    ->colors([
+                        'gray' => Invitee::SMS_STATUS_NOT_SENT,
+                        'warning' => Invitee::SMS_STATUS_PENDING,
+                        'success' => Invitee::SMS_STATUS_SENT,
+                        'danger' => Invitee::SMS_STATUS_FAILED,
+                        'info' => Invitee::SMS_STATUS_DELIVERED,
+                    ])
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('invitation_sms_status')
+                    ->label('Invitation SMS')
+                    ->badge()
+                    ->colors([
+                        'gray' => Invitee::SMS_STATUS_PENDING,
+                        'success' => Invitee::SMS_STATUS_SENT,
+                        'danger' => Invitee::SMS_STATUS_FAILED,
+                        'info' => Invitee::SMS_STATUS_DELIVERED,
+                    ])
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('invitation_sms_sent_at')
+                    ->label('Invitation Sent')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('reminder_sms_status')
+                    ->label('Reminder SMS')
+                    ->badge()
+                    ->colors([
+                        'gray' => Invitee::SMS_STATUS_PENDING,
+                        'success' => Invitee::SMS_STATUS_SENT,
+                        'danger' => Invitee::SMS_STATUS_FAILED,
+                        'info' => Invitee::SMS_STATUS_DELIVERED,
+                    ])
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('final_sms_status')
+                    ->label('Final SMS')
+                    ->badge()
+                    ->colors([
+                        'gray' => Invitee::SMS_STATUS_PENDING,
+                        'success' => Invitee::SMS_STATUS_SENT,
+                        'danger' => Invitee::SMS_STATUS_FAILED,
+                        'info' => Invitee::SMS_STATUS_DELIVERED,
+                    ])
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('sms_sent_at')
+                    ->label('SMS Sent')
+                    ->dateTime('d M Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('reminder_sms_sent_at')
+                    ->label('Reminder Sent')
+                    ->dateTime('d M Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('sms_message_id')
+                    ->label('SMS ID')
+                    ->copyable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('last_sms_error')
+                    ->label('Reminder Error')
+                    ->limit(40)
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('sms_error')
+                    ->label('SMS Error')
+                    ->limit(40)
+                    ->tooltip(fn (?string $state): ?string => $state)
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('card_status')
                     ->label('Card')
                     ->badge()
                     ->colors([
-                        'gray' => 'pending',
-                        'success' => 'generated',
-                        'info' => 'sent',
-                        'danger' => 'blocked',
+                        'gray' => Invitee::CARD_STATUS_PENDING,
+                        'success' => Invitee::CARD_STATUS_ACTIVE,
+                        'warning' => Invitee::CARD_STATUS_USED,
+                        'danger' => Invitee::CARD_STATUS_BLOCKED,
                     ])
                     ->sortable(),
             ])
@@ -218,23 +433,213 @@ class InviteeResource extends Resource
 
                 Tables\Filters\SelectFilter::make('rsvp_status')
                     ->label('RSVP Status')
+                    ->options(Invitee::rsvpStatuses()),
+
+                Tables\Filters\SelectFilter::make('sms_status')
+                    ->label('SMS Status')
                     ->options([
-                        'pending' => 'Pending',
-                        'attending' => 'Attending',
-                        'not_attending' => 'Not Attending',
-                        'maybe' => 'Maybe',
+                        Invitee::SMS_STATUS_NOT_SENT => 'Not Sent',
+                        Invitee::SMS_STATUS_PENDING => 'Pending',
+                        Invitee::SMS_STATUS_SENT => 'Sent',
+                        Invitee::SMS_STATUS_FAILED => 'Failed',
+                        Invitee::SMS_STATUS_DELIVERED => 'Delivered',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('invitation_sms_status')
+                    ->label('Invitation SMS Status')
+                    ->options([
+                        Invitee::SMS_STATUS_PENDING => 'Pending',
+                        Invitee::SMS_STATUS_SENT => 'Sent',
+                        Invitee::SMS_STATUS_FAILED => 'Failed',
+                        Invitee::SMS_STATUS_DELIVERED => 'Delivered',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('reminder_sms_status')
+                    ->label('Reminder SMS Status')
+                    ->options([
+                        Invitee::SMS_STATUS_PENDING => 'Pending',
+                        Invitee::SMS_STATUS_SENT => 'Sent',
+                        Invitee::SMS_STATUS_FAILED => 'Failed',
+                        Invitee::SMS_STATUS_DELIVERED => 'Delivered',
+                    ]),
+
+                Tables\Filters\SelectFilter::make('final_sms_status')
+                    ->label('Final SMS Status')
+                    ->options([
+                        Invitee::SMS_STATUS_PENDING => 'Pending',
+                        Invitee::SMS_STATUS_SENT => 'Sent',
+                        Invitee::SMS_STATUS_FAILED => 'Failed',
+                        Invitee::SMS_STATUS_DELIVERED => 'Delivered',
                     ]),
 
                 Tables\Filters\SelectFilter::make('card_status')
                     ->label('Card Status')
                     ->options([
-                        'pending' => 'Pending',
-                        'generated' => 'Generated',
-                        'sent' => 'Sent',
-                        'blocked' => 'Blocked',
+                        Invitee::CARD_STATUS_PENDING => 'Pending',
+                        Invitee::CARD_STATUS_ACTIVE => 'Active',
+                        Invitee::CARD_STATUS_USED => 'Used',
+                        Invitee::CARD_STATUS_BLOCKED => 'Blocked',
+                        Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
                     ]),
             ])
+            ->headerActions([
+                Tables\Actions\Action::make('export_all_invitees')
+                    ->label('Export Invitees Excel')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->form([
+                        Forms\Components\Select::make('event_id')
+                            ->label('Event')
+                            ->relationship('event', 'title')
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Select an event to export invitees from one event only. Leave empty to export all invitees.'),
+                    ])
+                    ->action(function (array $data) {
+                        $eventId = $data['event_id'] ?? null;
+
+                        $fileName = $eventId
+                            ? 'event-' . $eventId . '-invitees-' . now()->format('Y-m-d-His') . '.xlsx'
+                            : 'all-invitees-' . now()->format('Y-m-d-His') . '.xlsx';
+
+                        return Excel::download(
+                            new InviteesExport($eventId),
+                            $fileName
+                        );
+                    }),
+
+                Tables\Actions\Action::make('export_attendance_report')
+                    ->label('Export Attendance Excel')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('info')
+                    ->form([
+                        Forms\Components\Select::make('event_id')
+                            ->label('Event')
+                            ->relationship('event', 'title')
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Select an event to export attendance from one event only. Leave empty to export all attendance.'),
+                    ])
+                    ->action(function (array $data) {
+                        $eventId = $data['event_id'] ?? null;
+
+                        $fileName = $eventId
+                            ? 'event-' . $eventId . '-attendance-' . now()->format('Y-m-d-His') . '.xlsx'
+                            : 'all-attendance-' . now()->format('Y-m-d-His') . '.xlsx';
+
+                        return Excel::download(
+                            new AttendanceExport($eventId),
+                            $fileName
+                        );
+                    }),
+            ])
             ->actions([
+                Tables\Actions\Action::make('open_invitation_page')
+                    ->label('Invitation')
+                    ->icon('heroicon-o-eye')
+                    ->color('gray')
+                    ->url(fn (Invitee $record): string => $record->private_invitation_url, shouldOpenInNewTab: true),
+
+                Tables\Actions\Action::make('open_rsvp_link')
+                    ->label('RSVP')
+                    ->icon('heroicon-o-link')
+                    ->color('gray')
+                    ->url(fn (Invitee $record): string => $record->rsvpUrl(), shouldOpenInNewTab: true),
+
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('send_invitation_sms')
+                        ->label('Send Invitation SMS')
+                        ->icon('heroicon-o-paper-airplane')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send Invitation SMS')
+                        ->modalDescription(fn (Invitee $record): string => 'Send invitation SMS with RSVP link to ' . $record->name . '?')
+                        ->modalSubmitActionLabel('Send SMS')
+                        ->action(function (Invitee $record): void {
+                            try {
+                                app(SmsService::class)->sendInvitation($record);
+
+                                Notification::make()
+                                    ->title('Invitation SMS sent')
+                                    ->body('Invitation SMS with RSVP link was sent to ' . $record->name . '.')
+                                    ->success()
+                                    ->send();
+                            } catch (\Throwable $e) {
+                                Notification::make()
+                                    ->title('SMS sending failed')
+                                    ->body($e->getMessage())
+                                    ->danger()
+                                    ->send();
+                            }
+                        }),
+
+                    Tables\Actions\Action::make('send_rsvp_reminder_sms')
+                        ->label('Send RSVP Reminder')
+                        ->icon('heroicon-o-bell-alert')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send RSVP Reminder SMS')
+                        ->modalDescription(fn (Invitee $record): string => 'Send RSVP pending reminder SMS to ' . $record->name . '?')
+                        ->modalSubmitActionLabel('Send Reminder')
+                        ->visible(fn (Invitee $record): bool => $record->rsvp_status === Invitee::RSVP_PENDING)
+                        ->action(function (Invitee $record): void {
+                            $sent = app(ReminderSmsService::class)->sendRsvpPendingReminder($record);
+
+                            Notification::make()
+                                ->title($sent ? 'RSVP reminder sent' : 'RSVP reminder failed')
+                                ->body($sent
+                                    ? 'RSVP reminder SMS was sent to ' . $record->name . '.'
+                                    : 'Could not send RSVP reminder. Check SMS Logs for details.')
+                                ->color($sent ? 'success' : 'danger')
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('send_attending_reminder_sms')
+                        ->label('Send Attending Reminder')
+                        ->icon('heroicon-o-user-group')
+                        ->color('info')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send Attending Reminder SMS')
+                        ->modalDescription(fn (Invitee $record): string => 'Send attending reminder SMS to ' . $record->name . '?')
+                        ->modalSubmitActionLabel('Send Reminder')
+                        ->visible(fn (Invitee $record): bool => $record->rsvp_status === Invitee::RSVP_ATTENDING)
+                        ->action(function (Invitee $record): void {
+                            $sent = app(ReminderSmsService::class)->sendAttendingReminder($record);
+
+                            Notification::make()
+                                ->title($sent ? 'Attending reminder sent' : 'Attending reminder failed')
+                                ->body($sent
+                                    ? 'Attending reminder SMS was sent to ' . $record->name . '.'
+                                    : 'Could not send attending reminder. Check SMS Logs for details.')
+                                ->color($sent ? 'success' : 'danger')
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('send_event_day_sms')
+                        ->label('Send Event Day SMS')
+                        ->icon('heroicon-o-calendar-days')
+                        ->color('primary')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send Event Day SMS')
+                        ->modalDescription(fn (Invitee $record): string => 'Send final event-day SMS to ' . $record->name . '?')
+                        ->modalSubmitActionLabel('Send Final SMS')
+                        ->action(function (Invitee $record): void {
+                            $sent = app(ReminderSmsService::class)->sendEventDayReminder($record);
+
+                            Notification::make()
+                                ->title($sent ? 'Event day SMS sent' : 'Event day SMS failed')
+                                ->body($sent
+                                    ? 'Event day reminder sent to ' . $record->name . '.'
+                                    : 'Could not send event day reminder. Check SMS Logs for details.')
+                                ->color($sent ? 'success' : 'danger')
+                                ->send();
+                        }),
+                ])
+                    ->label('SMS')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->color('success')
+                    ->button(),
+
                 Tables\Actions\Action::make('check_in')
                     ->label('Check In')
                     ->icon('heroicon-o-qr-code')
@@ -268,10 +673,20 @@ class InviteeResource extends Resource
                             return;
                         }
 
-                        if ($record->card_status === 'blocked') {
+                        if ($record->card_status === Invitee::CARD_STATUS_BLOCKED) {
                             Notification::make()
                                 ->title('Card blocked')
                                 ->body('This invitation card is blocked and cannot be checked in.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        if ($record->rsvp_status === Invitee::RSVP_NOT_ATTENDING) {
+                            Notification::make()
+                                ->title('Invitee marked Not Attending')
+                                ->body('This invitee selected Not Attending in RSVP. Check-in has been stopped.')
                                 ->danger()
                                 ->send();
 
@@ -319,6 +734,11 @@ class InviteeResource extends Resource
                             'checked_in_at' => now(),
                         ]);
 
+                        if (method_exists($record, 'markAsUsedIfFullyCheckedIn')) {
+                            $record->refresh();
+                            $record->markAsUsedIfFullyCheckedIn();
+                        }
+
                         Notification::make()
                             ->title('Check-in successful')
                             ->body($guestsToCheckIn . ' guest(s) checked in for ' . $record->name . '. Remaining: ' . $remainingGuests)
@@ -350,6 +770,113 @@ class InviteeResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('export_selected_invitees')
+                        ->label('Export Selected Invitees')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('success')
+                        ->action(function (Collection $records) {
+                            return Excel::download(
+                                new InviteesExport(inviteeIds: $records->pluck('id')->toArray()),
+                                'selected-invitees-' . now()->format('Y-m-d-His') . '.xlsx'
+                            );
+                        }),
+
+                    Tables\Actions\BulkAction::make('export_selected_attendance')
+                        ->label('Export Selected Attendance')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('info')
+                        ->action(function (Collection $records) {
+                            return Excel::download(
+                                new AttendanceExport(inviteeIds: $records->pluck('id')->toArray()),
+                                'selected-attendance-' . now()->format('Y-m-d-His') . '.xlsx'
+                            );
+                        }),
+
+                    Tables\Actions\BulkAction::make('send_sms_bulk')
+                        ->label('Send SMS Invitations')
+                        ->icon('heroicon-o-chat-bubble-left-right')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send SMS Invitations')
+                        ->modalDescription('Send SMS invitations with RSVP links to all selected invitees?')
+                        ->modalSubmitActionLabel('Send SMS')
+                        ->action(function (Collection $records): void {
+                            $sent = 0;
+                            $failed = 0;
+
+                            foreach ($records as $record) {
+                                try {
+                                    app(SmsService::class)->sendInvitation($record);
+                                    $sent++;
+                                } catch (\Throwable) {
+                                    $failed++;
+                                }
+                            }
+
+                            Notification::make()
+                                ->title($failed === 0 ? 'SMS invitations sent' : 'SMS sending completed with errors')
+                                ->body($sent . ' sent, ' . $failed . ' failed. Check SMS Logs or SMS Error column for details.')
+                                ->color($failed === 0 ? 'success' : 'warning')
+                                ->send();
+                        }),
+
+                    Tables\Actions\BulkAction::make('send_rsvp_reminder_sms_bulk')
+                        ->label('Send RSVP Reminder SMS')
+                        ->icon('heroicon-o-bell-alert')
+                        ->color('info')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send RSVP Reminder SMS')
+                        ->modalDescription('Send RSVP reminder SMS only to selected invitees with RSVP pending?')
+                        ->modalSubmitActionLabel('Send Reminders')
+                        ->action(function (Collection $records): void {
+                            $result = app(ReminderSmsService::class)
+                                ->sendBulkRsvpPendingReminders($records);
+
+                            Notification::make()
+                                ->title('RSVP reminder SMS completed')
+                                ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
+                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->send();
+                        }),
+
+                    Tables\Actions\BulkAction::make('send_attending_reminder_sms_bulk')
+                        ->label('Send One Day Reminder SMS')
+                        ->icon('heroicon-o-calendar-days')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send One Day Reminder SMS')
+                        ->modalDescription('Send one-day-before reminder SMS only to selected invitees marked as attending?')
+                        ->modalSubmitActionLabel('Send Reminders')
+                        ->action(function (Collection $records): void {
+                            $result = app(ReminderSmsService::class)
+                                ->sendBulkAttendingReminders($records);
+
+                            Notification::make()
+                                ->title('One day reminder SMS completed')
+                                ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
+                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->send();
+                        }),
+
+                    Tables\Actions\BulkAction::make('send_event_day_sms_bulk')
+                        ->label('Send Event Day SMS')
+                        ->icon('heroicon-o-paper-airplane')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Send Event Day SMS')
+                        ->modalDescription('Send final event day SMS to all selected invitees?')
+                        ->modalSubmitActionLabel('Send Final SMS')
+                        ->action(function (Collection $records): void {
+                            $result = app(ReminderSmsService::class)
+                                ->sendBulkEventDayReminders($records);
+
+                            Notification::make()
+                                ->title('Event day SMS completed')
+                                ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
+                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->send();
+                        }),
+
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])

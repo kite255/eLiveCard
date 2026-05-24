@@ -30,9 +30,22 @@ class InviteesImport implements ToCollection, WithHeadingRow
         foreach ($rows as $index => $row) {
             $rowNumber = $index + 2; // Row 1 is heading row.
 
+            /*
+             * Required fields:
+             * name, phone, card_type
+             */
             $name = trim((string) ($row['name'] ?? ''));
             $phone = trim((string) ($row['phone'] ?? ''));
             $cardTypeName = trim((string) ($row['card_type'] ?? ''));
+
+            /*
+             * Optional fields:
+             * email, category, table_number, allowed_guests
+             */
+            $email = trim((string) ($row['email'] ?? ''));
+            $category = trim((string) ($row['category'] ?? ''));
+            $tableNumber = trim((string) ($row['table_number'] ?? ''));
+            $allowedGuestsFromExcel = trim((string) ($row['allowed_guests'] ?? ''));
 
             if ($name === '') {
                 $this->errors[] = "Row {$rowNumber}: Name is required.";
@@ -49,15 +62,8 @@ class InviteesImport implements ToCollection, WithHeadingRow
                 continue;
             }
 
-            /*
-             * Normalize name for duplicate checking.
-             * This makes "Vee", "vee", and " Vee " treated as the same name.
-             */
             $normalizedName = Str::lower($name);
 
-            /*
-             * Rule 1: Name must not repeat inside the uploaded Excel file.
-             */
             if (in_array($normalizedName, $this->namesInFile, true)) {
                 $this->errors[] = "Row {$rowNumber}: Invitee name '{$name}' is duplicated in this Excel file.";
                 continue;
@@ -65,9 +71,6 @@ class InviteesImport implements ToCollection, WithHeadingRow
 
             $this->namesInFile[] = $normalizedName;
 
-            /*
-             * Rule 2: Name must not already exist in the selected event.
-             */
             $nameExists = Invitee::query()
                 ->where('event_id', $this->eventId)
                 ->whereRaw('LOWER(name) = ?', [$normalizedName])
@@ -79,7 +82,8 @@ class InviteesImport implements ToCollection, WithHeadingRow
             }
 
             /*
-             * Rule 3: Card type must exist in the selected event.
+             * Card type lookup is case-insensitive.
+             * Example: Single, SINGLE, single all match.
              */
             $cardType = CardType::query()
                 ->where('event_id', $this->eventId)
@@ -92,15 +96,24 @@ class InviteesImport implements ToCollection, WithHeadingRow
             }
 
             /*
-             * Create invitee.
-             * Phone number can repeat.
-             * Serial number, QR token, QR hash, and QR code are generated automatically by Invitee model.
+             * allowed_guests is optional.
+             * If not provided in Excel, use the card type allowed_people.
              */
+            $allowedGuests = is_numeric($allowedGuestsFromExcel)
+                ? (int) $allowedGuestsFromExcel
+                : (int) $cardType->allowed_people;
+
             Invitee::create([
                 'event_id' => $this->eventId,
                 'card_type_id' => $cardType->id,
                 'name' => $name,
                 'phone' => $phone,
+                'email' => $email ?: null,
+                'category' => $category ?: null,
+                'table_number' => $tableNumber ?: null,
+                'allowed_guests' => max(1, $allowedGuests),
+                'card_status' => Invitee::CARD_STATUS_ACTIVE,
+                'rsvp_status' => Invitee::RSVP_STATUS_PENDING,
             ]);
 
             $this->importedCount++;

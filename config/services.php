@@ -35,4 +35,22 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | SMS Gateway
+    |--------------------------------------------------------------------------
+    |
+    | For now use SMS_DRIVER=log so you can test safely without sending real SMS.
+    | Later change SMS_DRIVER=http and add your provider URL/API key.
+    |
+    */
+
+'sms' => [
+    'driver' => env('SMS_DRIVER', 'log'),
+    'api_url' => env('SMS_API_URL'),
+    'api_key' => env('SMS_API_KEY'),
+    'api_secret' => env('SMS_API_SECRET'),
+    'sender_id' => env('SMS_SENDER_ID', 'eLiveCard'),
+    'timeout' => env('SMS_TIMEOUT', 30),
+],
 ];
