@@ -3,42 +3,107 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\CardTypeResource\Pages;
-use App\Filament\Resources\CardTypeResource\RelationManagers;
 use App\Models\CardType;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class CardTypeResource extends Resource
 {
     protected static ?string $model = CardType::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-identification';
+
+    protected static ?string $navigationGroup = 'Event Setup';
+
+    protected static ?string $navigationLabel = 'Card Types';
+
+    protected static ?string $modelLabel = 'Card Type';
+
+    protected static ?string $pluralModelLabel = 'Card Types';
+
+    protected static ?int $navigationSort = 2;
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->role === 'super_admin'
+            || auth()->user()?->role === 'event_owner'
+            || auth()->user()?->role === 'event_manager';
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->role === 'super_admin'
+            || auth()->user()?->role === 'event_owner'
+            || auth()->user()?->role === 'event_manager';
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->role === 'super_admin'
+            || auth()->user()?->role === 'event_owner'
+            || auth()->user()?->role === 'event_manager';
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->role === 'super_admin'
+            || auth()->user()?->role === 'event_owner';
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->role === 'super_admin'
+            || auth()->user()?->role === 'event_owner';
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('event_id')
-                    ->relationship('event', 'title')
-                    ->required(),
-                Forms\Components\TextInput::make('name')
-                    ->required()
-                    ->maxLength(255),
-                Forms\Components\TextInput::make('allowed_people')
-                    ->required()
-                    ->numeric()
-                    ->default(1),
-                Forms\Components\Textarea::make('description')
-                    ->columnSpanFull(),
-                Forms\Components\TextInput::make('color')
-                    ->maxLength(255),
-                Forms\Components\Toggle::make('is_active')
-                    ->required(),
+                Forms\Components\Section::make('Card Type Details')
+                    ->description('Define invitation categories such as Single, Double, Family, VIP, VVIP, Committee, or Custom.')
+                    ->schema([
+                        Forms\Components\Select::make('event_id')
+                            ->label('Event')
+                            ->relationship('event', 'title')
+                            ->searchable()
+                            ->preload()
+                            ->required(),
+
+                        Forms\Components\TextInput::make('name')
+                            ->label('Card Type Name')
+                            ->placeholder('Example: Single, Double, Family, VIP')
+                            ->required()
+                            ->maxLength(255),
+
+                        Forms\Components\TextInput::make('allowed_people')
+                            ->label('Allowed Guests')
+                            ->helperText('Total number of people allowed with this card type.')
+                            ->required()
+                            ->numeric()
+                            ->minValue(1)
+                            ->default(1),
+
+                        Forms\Components\ColorPicker::make('color')
+                            ->label('Display Color')
+                            ->default('#213B73'),
+
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Active')
+                            ->helperText('Only active card types should be used when adding invitees.')
+                            ->default(true)
+                            ->required(),
+
+                        Forms\Components\Textarea::make('description')
+                            ->label('Description')
+                            ->placeholder('Optional notes about this card type.')
+                            ->rows(3)
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2),
             ]);
     }
 
@@ -47,44 +112,69 @@ class CardTypeResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('event.title')
-                    ->numeric()
+                    ->label('Event')
+                    ->searchable()
                     ->sortable(),
+
                 Tables\Columns\TextColumn::make('name')
-                    ->searchable(),
+                    ->label('Card Type')
+                    ->searchable()
+                    ->sortable()
+                    ->weight('bold'),
+
                 Tables\Columns\TextColumn::make('allowed_people')
-                    ->numeric()
+                    ->label('Allowed Guests')
+                    ->alignCenter()
+                    ->badge()
+                    ->color('primary')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('color')
-                    ->searchable(),
+
+                Tables\Columns\ColorColumn::make('color')
+                    ->label('Color'),
+
                 Tables\Columns\IconColumn::make('is_active')
-                    ->boolean(),
+                    ->label('Active')
+                    ->boolean()
+                    ->trueColor('success')
+                    ->falseColor('danger'),
+
                 Tables\Columns\TextColumn::make('created_at')
-                    ->dateTime()
+                    ->label('Created')
+                    ->dateTime('d M Y, H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('updated_at')
-                    ->dateTime()
+                    ->label('Updated')
+                    ->dateTime('d M Y, H:i')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->defaultSort('created_at', 'desc')
             ->filters([
-                //
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Active Status')
+                    ->trueLabel('Active card types')
+                    ->falseLabel('Inactive card types')
+                    ->native(false),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
+
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => auth()->user()?->role === 'super_admin'
+                        || auth()->user()?->role === 'event_owner'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => auth()->user()?->role === 'super_admin'
+                            || auth()->user()?->role === 'event_owner'),
                 ]),
-            ]);
-    }
-
-    public static function getRelations(): array
-    {
-        return [
-            //
-        ];
+            ])
+            ->emptyStateHeading('No card types yet')
+            ->emptyStateDescription('Create card types like Single, Double, Family, VIP, VVIP, Committee, or Custom.')
+            ->emptyStateIcon('heroicon-o-identification');
     }
 
     public static function getPages(): array
