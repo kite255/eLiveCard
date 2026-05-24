@@ -1,7 +1,7 @@
 [phases.setup]
 nixPkgs = [
     "php82",
-    "composer",
+    "php82Packages.composer",
     "nodejs_22",
     "php82Extensions.imagick",
     "php82Extensions.gd",
