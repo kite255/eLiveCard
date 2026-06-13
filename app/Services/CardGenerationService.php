@@ -15,8 +15,44 @@ use Intervention\Image\ImageManager;
 
 class CardGenerationService
 {
+    /**
+     * Maximum working width/height for generated cards.
+     * This prevents GD memory errors when the uploaded template is very large.
+     */
+    protected int $maxWorkingDimension = 2400;
+
+    /**
+     * JPEG quality for final generated cards.
+     * 88 is good quality for WhatsApp/SMS sharing and keeps file size reasonable.
+     */
+    protected int $jpegQuality = 88;
+
+    public function generateForInvitee(Invitee $invitee): GeneratedCard
+    {
+        $invitee->loadMissing(['event', 'event.cardTemplates', 'cardType']);
+
+        $template = $invitee->event?->cardTemplates()
+            ->latest()
+            ->first();
+
+        if (! $template) {
+            throw new \Exception('No card template found for this invitee event.');
+        }
+
+        return $this->generate($template, $invitee);
+    }
+
     public function generate(CardTemplate $template, Invitee $invitee): GeneratedCard
     {
+        ini_set('memory_limit', '512M');
+        set_time_limit(120);
+
+        $template->loadMissing(['event', 'placeholders']);
+        $invitee->loadMissing(['cardType', 'event']);
+
+        $this->ensureInviteeIdentity($invitee);
+        $this->ensureInviteeHasQrCode($invitee);
+
         $templatePath = Storage::disk('public')->path($template->template_image);
 
         if (! file_exists($templatePath)) {
@@ -26,13 +62,10 @@ class CardGenerationService
         $manager = new ImageManager(new Driver());
         $image = $manager->read($templatePath);
 
+        $this->resizeTemplateIfTooLarge($image);
+
         $imageWidth = $image->width();
         $imageHeight = $image->height();
-
-        $template->loadMissing(['event', 'placeholders']);
-        $invitee->loadMissing(['cardType', 'event']);
-
-        $this->ensureInviteeHasQrCode($invitee);
 
         $placeholders = $template->placeholders()
             ->where('is_visible', true)
@@ -69,15 +102,9 @@ class CardGenerationService
 
         $path = $this->buildGeneratedCardPath($template, $invitee);
 
-        Storage::disk('public')->put($path, (string) $image->toPng());
+        Storage::disk('public')->put($path, (string) $image->toJpeg($this->jpegQuality));
 
-        if (Schema::hasColumn('invitees', 'generated_card_path')) {
-            $invitee->forceFill([
-                'generated_card_path' => $path,
-            ])->saveQuietly();
-        }
-
-        return GeneratedCard::updateOrCreate(
+        $generatedCard = GeneratedCard::updateOrCreate(
             [
                 'invitee_id' => $invitee->id,
                 'card_template_id' => $template->id,
@@ -89,6 +116,94 @@ class CardGenerationService
                 'generated_at' => now(),
             ]
         );
+
+        $this->syncInviteeGeneratedCardPath($invitee, $path);
+
+        return $generatedCard;
+    }
+
+    protected function resizeTemplateIfTooLarge($image): void
+    {
+        $width = $image->width();
+        $height = $image->height();
+
+        $largestSide = max($width, $height);
+
+        if ($largestSide <= $this->maxWorkingDimension) {
+            return;
+        }
+
+        $ratio = $this->maxWorkingDimension / $largestSide;
+
+        $newWidth = max(1, (int) round($width * $ratio));
+        $newHeight = max(1, (int) round($height * $ratio));
+
+        $image->resize($newWidth, $newHeight);
+    }
+
+    protected function ensureInviteeIdentity(Invitee $invitee): void
+    {
+        $needsSave = false;
+
+        if (blank($invitee->serial_number)) {
+            $invitee->serial_number = 'ELV-' . now()->format('Y') . '-' . strtoupper(Str::random(6));
+            $needsSave = true;
+        }
+
+        if (Schema::hasColumn('invitees', 'short_code') && blank($invitee->short_code)) {
+            do {
+                $shortCode = strtoupper(Str::random(6));
+            } while (Invitee::where('short_code', $shortCode)->whereKeyNot($invitee->id)->exists());
+
+            $invitee->short_code = $shortCode;
+            $needsSave = true;
+        }
+
+        if (Schema::hasColumn('invitees', 'qr_token') && blank($invitee->qr_token)) {
+            $invitee->qr_token = Str::random(64);
+            $needsSave = true;
+        }
+
+        if (
+            Schema::hasColumn('invitees', 'qr_token_hash')
+            && blank($invitee->qr_token_hash)
+            && filled($invitee->qr_token)
+        ) {
+            $invitee->qr_token_hash = hash('sha256', $invitee->qr_token);
+            $needsSave = true;
+        }
+
+        if (Schema::hasColumn('invitees', 'rsvp_token') && blank($invitee->rsvp_token)) {
+            $invitee->rsvp_token = Str::random(48);
+            $needsSave = true;
+        }
+
+        if ($needsSave) {
+            $invitee->saveQuietly();
+            $invitee->refresh();
+        }
+    }
+
+    protected function ensureInviteeHasQrCode(Invitee $invitee): void
+    {
+        $path = $invitee->qr_code_path ?? $invitee->qr_code ?? null;
+
+        if (filled($path) && Storage::disk('public')->exists($path)) {
+            return;
+        }
+
+        if (method_exists($invitee, 'generateQrCode')) {
+            $invitee->generateQrCode();
+            $invitee->refresh();
+
+            $path = $invitee->qr_code_path ?? $invitee->qr_code ?? null;
+
+            if (filled($path) && Storage::disk('public')->exists($path)) {
+                return;
+            }
+        }
+
+        throw new \Exception('QR code image not found for invitee: ' . $invitee->name);
     }
 
     protected function getPlaceholderValue(
@@ -239,20 +354,6 @@ class CardGenerationService
         $image->place($qrImage, 'top-left', $placeX, $placeY);
     }
 
-    protected function ensureInviteeHasQrCode(Invitee $invitee): void
-    {
-        $path = $invitee->qr_code_path ?? $invitee->qr_code ?? null;
-
-        if (filled($path) && Storage::disk('public')->exists($path)) {
-            return;
-        }
-
-        if (method_exists($invitee, 'generateQrCode')) {
-            $invitee->generateQrCode();
-            $invitee->refresh();
-        }
-    }
-
     protected function getInviteeQrFullPath(Invitee $invitee): ?string
     {
         $path = $invitee->qr_code_path ?? $invitee->qr_code ?? null;
@@ -273,9 +374,21 @@ class CardGenerationService
         $serialNumber = $invitee->serial_number
             ?: 'ELC-' . str_pad((string) $invitee->id, 6, '0', STR_PAD_LEFT);
 
+        $safeName = Str::slug($invitee->name ?: 'invitee');
         $safeSerialNumber = preg_replace('/[^A-Za-z0-9\-_]/', '-', $serialNumber);
 
-        return 'events/' . $template->event_id . '/generated-cards/' . $safeSerialNumber . '-' . Str::random(6) . '.png';
+        return 'events/' . $template->event_id . '/generated-cards/' . $safeName . '-' . $safeSerialNumber . '.jpg';
+    }
+
+    protected function syncInviteeGeneratedCardPath(Invitee $invitee, string $path): void
+    {
+        if (! Schema::hasColumn('invitees', 'generated_card_path')) {
+            return;
+        }
+
+        $invitee->forceFill([
+            'generated_card_path' => $path,
+        ])->saveQuietly();
     }
 
     protected function wrapTextToBox(string $text, int $boxWidth, int $fontSize): array

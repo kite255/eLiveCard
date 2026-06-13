@@ -13,7 +13,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class GateCheckIn extends Page implements Forms\Contracts\HasForms
 {
@@ -257,8 +259,11 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
             return;
         }
 
-        DB::transaction(function () use ($guestsToCheckIn) {
+        $successfulInviteeId = null;
+
+        DB::transaction(function () use ($guestsToCheckIn, &$successfulInviteeId) {
             $invitee = Invitee::query()
+                ->with('event')
                 ->whereKey($this->invitee->id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -309,6 +314,7 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
 
             $newCount = $previousCount + $guestsToCheckIn;
             $newRemainingGuests = max($allowedGuests - $newCount, 0);
+            $checkedInAt = now();
 
             $invitee->checkIns()->create([
                 'event_id' => $invitee->event_id,
@@ -319,29 +325,30 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
                 'remaining_guests' => $newRemainingGuests,
                 'status' => CheckIn::STATUS_SUCCESS,
                 'remarks' => 'Checked in from gate check-in page.',
-                'checked_in_at' => now(),
+                'checked_in_at' => $checkedInAt,
             ]);
 
             $updateData = [
                 'checked_in_count' => $newCount,
-                'checked_in_at' => now(),
+                'checked_in_at' => $checkedInAt,
             ];
 
             if (Schema::hasColumn('invitees', 'check_in_status')) {
-                $updateData['check_in_status'] = $newRemainingGuests <= 0 ? 'checked_in' : 'partial';
+                $updateData['check_in_status'] = $newRemainingGuests <= 0
+                    ? 'checked_in'
+                    : 'partial';
             }
 
             $invitee->update($updateData);
+            $successfulInviteeId = (int) $invitee->id;
 
             $this->invitee = $invitee->fresh(['event', 'cardType', 'checkIns']);
-
             $this->results = Invitee::query()
                 ->with(['event', 'cardType'])
                 ->whereKey($invitee->id)
                 ->get();
 
             $this->data['guests_to_check_in'] = $this->suggestGuestsToCheckIn();
-
             $this->loadStats();
 
             Notification::make()
@@ -350,6 +357,50 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
                 ->success()
                 ->send();
         });
+
+        if ($successfulInviteeId !== null) {
+            $this->dispatchWelcomeSms($successfulInviteeId);
+        }
+    }
+
+    protected function dispatchWelcomeSms(int $inviteeId): void
+    {
+        try {
+            $invitee = Invitee::query()->with('event')->find($inviteeId);
+
+            if (! $invitee || ! $invitee->event) {
+                return;
+            }
+
+            if (! $invitee->event->hasWelcomeSmsEnabled()) {
+                return;
+            }
+
+            if (blank($invitee->phone)) {
+                Log::warning('Welcome SMS skipped because invitee has no phone number.', [
+                    'event_id' => $invitee->event_id,
+                    'invitee_id' => $invitee->id,
+                ]);
+
+                return;
+            }
+
+            if (! class_exists(\App\Jobs\SendWelcomeSmsJob::class)) {
+                Log::warning('SendWelcomeSmsJob does not exist yet.', [
+                    'event_id' => $invitee->event_id,
+                    'invitee_id' => $invitee->id,
+                ]);
+
+                return;
+            }
+
+            \App\Jobs\SendWelcomeSmsJob::dispatch($invitee->id);
+        } catch (Throwable $exception) {
+            Log::error('Welcome SMS dispatch failed after successful check-in.', [
+                'invitee_id' => $inviteeId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     public function resetScanner(): void

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -13,6 +14,12 @@ use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class Invitee extends Model
 {
+    /*
+    |--------------------------------------------------------------------------
+    | Card Status Constants
+    |--------------------------------------------------------------------------
+    */
+
     public const CARD_STATUS_PENDING = 'pending';
     public const CARD_STATUS_ACTIVE = 'active';
     public const CARD_STATUS_CANCELLED = 'cancelled';
@@ -21,10 +28,10 @@ class Invitee extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | RSVP Statuses
+    | RSVP Status Constants
     |--------------------------------------------------------------------------
-    | Keep both naming styles to avoid breaking old code and new RSVP controller.
     */
+
     public const RSVP_PENDING = 'pending';
     public const RSVP_ATTENDING = 'attending';
     public const RSVP_NOT_ATTENDING = 'not_attending';
@@ -35,11 +42,23 @@ class Invitee extends Model
     public const RSVP_STATUS_NOT_ATTENDING = self::RSVP_NOT_ATTENDING;
     public const RSVP_STATUS_MAYBE = self::RSVP_MAYBE;
 
+    /*
+    |--------------------------------------------------------------------------
+    | SMS Status Constants
+    |--------------------------------------------------------------------------
+    */
+
     public const SMS_STATUS_NOT_SENT = 'not_sent';
     public const SMS_STATUS_PENDING = 'pending';
     public const SMS_STATUS_SENT = 'sent';
     public const SMS_STATUS_DELIVERED = 'delivered';
     public const SMS_STATUS_FAILED = 'failed';
+
+    /*
+    |--------------------------------------------------------------------------
+    | QR Settings
+    |--------------------------------------------------------------------------
+    */
 
     public const QR_SIZE = 600;
     public const QR_MARGIN = 2;
@@ -50,37 +69,38 @@ class Invitee extends Model
     protected $fillable = [
         'event_id',
         'card_type_id',
+
         'name',
         'phone',
         'email',
         'category',
         'table_number',
+
         'allowed_guests',
+        'confirmed_guests',
+
         'serial_number',
         'short_code',
         'qr_token',
         'qr_token_hash',
         'qr_code',
         'qr_code_path',
-        'card_status',
 
-        // RSVP fields
+        'card_status',
+        'generated_card_path',
+
         'rsvp_status',
-        'confirmed_guests',
         'rsvp_confirmed_at',
         'rsvp_token',
 
-        // Check-in fields
         'checked_in_count',
         'checked_in_at',
 
-        // Original SMS sending fields
         'sms_status',
         'sms_sent_at',
         'sms_message_id',
         'sms_error',
 
-        // Reminder SMS tracking fields
         'invitation_sms_status',
         'invitation_sms_sent_at',
         'reminder_sms_status',
@@ -93,11 +113,10 @@ class Invitee extends Model
     protected $casts = [
         'allowed_guests' => 'integer',
         'confirmed_guests' => 'integer',
-        'rsvp_confirmed_at' => 'datetime',
-
-        'checked_in_at' => 'datetime',
         'checked_in_count' => 'integer',
 
+        'rsvp_confirmed_at' => 'datetime',
+        'checked_in_at' => 'datetime',
         'sms_sent_at' => 'datetime',
         'invitation_sms_sent_at' => 'datetime',
         'reminder_sms_sent_at' => 'datetime',
@@ -108,8 +127,10 @@ class Invitee extends Model
         'final_allowed_guests',
         'remaining_guests',
         'qr_code_url',
+        'generated_card_url',
         'private_invitation_url',
         'rsvp_url',
+        'is_checked_in',
     ];
 
     protected static function booted(): void
@@ -159,6 +180,14 @@ class Invitee extends Model
                 $invitee->final_sms_status = self::SMS_STATUS_PENDING;
             }
 
+            if ($invitee->allowed_guests === null) {
+                $invitee->allowed_guests = 1;
+            }
+
+            if ($invitee->confirmed_guests === null) {
+                $invitee->confirmed_guests = 0;
+            }
+
             if ($invitee->checked_in_count === null) {
                 $invitee->checked_in_count = 0;
             }
@@ -168,6 +197,91 @@ class Invitee extends Model
             $invitee->generateQrCode();
         });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
+
+    public function event(): BelongsTo
+    {
+        return $this->belongsTo(Event::class);
+    }
+
+    public function cardType(): BelongsTo
+    {
+        return $this->belongsTo(CardType::class);
+    }
+
+    public function generatedCards(): HasMany
+    {
+        return $this->hasMany(GeneratedCard::class);
+    }
+
+    public function latestGeneratedCard(): HasOne
+    {
+        return $this->hasOne(GeneratedCard::class)->latestOfMany('generated_at');
+    }
+
+    public function checkIns(): HasMany
+    {
+        return $this->hasMany(CheckIn::class);
+    }
+
+    public function smsLogs(): HasMany
+    {
+        return $this->hasMany(SmsLog::class);
+    }
+
+    public function messageLogs(): HasMany
+    {
+        return $this->hasMany(MessageLog::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Options
+    |--------------------------------------------------------------------------
+    */
+
+    public static function rsvpStatuses(): array
+    {
+        return [
+            self::RSVP_PENDING => 'Pending',
+            self::RSVP_ATTENDING => 'Attending',
+            self::RSVP_NOT_ATTENDING => 'Not Attending',
+            self::RSVP_MAYBE => 'Maybe',
+        ];
+    }
+
+    public static function cardStatuses(): array
+    {
+        return [
+            self::CARD_STATUS_PENDING => 'Pending',
+            self::CARD_STATUS_ACTIVE => 'Active',
+            self::CARD_STATUS_CANCELLED => 'Cancelled',
+            self::CARD_STATUS_BLOCKED => 'Blocked',
+            self::CARD_STATUS_USED => 'Used',
+        ];
+    }
+
+    public static function smsStatuses(): array
+    {
+        return [
+            self::SMS_STATUS_NOT_SENT => 'Not Sent',
+            self::SMS_STATUS_PENDING => 'Pending',
+            self::SMS_STATUS_SENT => 'Sent',
+            self::SMS_STATUS_DELIVERED => 'Delivered',
+            self::SMS_STATUS_FAILED => 'Failed',
+        ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Generators
+    |--------------------------------------------------------------------------
+    */
 
     public static function generateUniqueSerialNumber(): string
     {
@@ -205,15 +319,11 @@ class Invitee extends Model
         return $token;
     }
 
-    public static function rsvpStatuses(): array
-    {
-        return [
-            self::RSVP_PENDING => 'Pending',
-            self::RSVP_ATTENDING => 'Attending',
-            self::RSVP_NOT_ATTENDING => 'Not Attending',
-            self::RSVP_MAYBE => 'Maybe',
-        ];
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | RSVP Helpers
+    |--------------------------------------------------------------------------
+    */
 
     public function rsvpUrl(): string
     {
@@ -271,6 +381,12 @@ class Invitee extends Model
             'rsvp_confirmed_at' => now(),
         ])->saveQuietly();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | QR Helpers
+    |--------------------------------------------------------------------------
+    */
 
     public function generateQrCode(): void
     {
@@ -399,6 +515,31 @@ class Invitee extends Model
         return Storage::disk('public')->url($path);
     }
 
+    public function getGeneratedCardPathAttribute($value): ?string
+    {
+        if (filled($value)) {
+            return $value;
+        }
+
+        return $this->latestGeneratedCard?->file_path;
+    }
+
+    public function getGeneratedCardUrlAttribute(): ?string
+    {
+        $path = $this->generated_card_path;
+
+        if (blank($path)) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($path);
+    }
+
+    public function hasGeneratedCard(): bool
+    {
+        return filled($this->generated_card_path);
+    }
+
     protected function hexToRgb(?string $hex): array
     {
         $hex = $hex ?: '#000000';
@@ -421,6 +562,12 @@ class Invitee extends Model
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | SMS Helpers
+    |--------------------------------------------------------------------------
+    */
+
     public function markSmsAsSent(?string $messageId = null): void
     {
         $this->forceFill([
@@ -439,140 +586,144 @@ class Invitee extends Model
         ])->saveQuietly();
     }
 
-    public function markInvitationSmsAsSent(?string $messageId = null): void
-    {
-        $this->forceFill([
-            'sms_status' => self::SMS_STATUS_SENT,
-            'sms_sent_at' => now(),
-            'sms_message_id' => $messageId,
-            'sms_error' => null,
-
-            'invitation_sms_status' => self::SMS_STATUS_SENT,
-            'invitation_sms_sent_at' => now(),
-            'last_sms_error' => null,
-        ])->saveQuietly();
-    }
-
-    public function markInvitationSmsAsFailed(string $error): void
-    {
-        $this->forceFill([
-            'sms_status' => self::SMS_STATUS_FAILED,
-            'sms_error' => $error,
-
-            'invitation_sms_status' => self::SMS_STATUS_FAILED,
-            'last_sms_error' => $error,
-        ])->saveQuietly();
-    }
-
-    public function markReminderSmsAsSent(?string $messageId = null): void
-    {
-        $this->forceFill([
-            'sms_status' => self::SMS_STATUS_SENT,
-            'sms_sent_at' => now(),
-            'sms_message_id' => $messageId,
-            'sms_error' => null,
-
-            'reminder_sms_status' => self::SMS_STATUS_SENT,
-            'reminder_sms_sent_at' => now(),
-            'last_sms_error' => null,
-        ])->saveQuietly();
-    }
-
-    public function markReminderSmsAsFailed(string $error): void
-    {
-        $this->forceFill([
-            'sms_status' => self::SMS_STATUS_FAILED,
-            'sms_error' => $error,
-
-            'reminder_sms_status' => self::SMS_STATUS_FAILED,
-            'last_sms_error' => $error,
-        ])->saveQuietly();
-    }
-
-    public function markFinalSmsAsSent(?string $messageId = null): void
-    {
-        $this->forceFill([
-            'sms_status' => self::SMS_STATUS_SENT,
-            'sms_sent_at' => now(),
-            'sms_message_id' => $messageId,
-            'sms_error' => null,
-
-            'final_sms_status' => self::SMS_STATUS_SENT,
-            'final_sms_sent_at' => now(),
-            'last_sms_error' => null,
-        ])->saveQuietly();
-    }
-
-    public function markFinalSmsAsFailed(string $error): void
-    {
-        $this->forceFill([
-            'sms_status' => self::SMS_STATUS_FAILED,
-            'sms_error' => $error,
-
-            'final_sms_status' => self::SMS_STATUS_FAILED,
-            'last_sms_error' => $error,
-        ])->saveQuietly();
-    }
-
     public function updateSmsStatusByType(
         string $smsType,
         string $status,
         ?string $messageId = null,
         ?string $error = null
     ): void {
-        match ($smsType) {
-            SmsLog::TYPE_INVITATION => $status === self::SMS_STATUS_SENT
-                ? $this->markInvitationSmsAsSent($messageId)
-                : $this->markInvitationSmsAsFailed($error ?? 'SMS failed'),
+        $data = [
+            'sms_status' => $status,
+            'sms_message_id' => $messageId,
+            'sms_error' => $error,
+        ];
 
-            SmsLog::TYPE_RSVP_PENDING_REMINDER,
-            SmsLog::TYPE_ATTENDING_REMINDER => $status === self::SMS_STATUS_SENT
-                ? $this->markReminderSmsAsSent($messageId)
-                : $this->markReminderSmsAsFailed($error ?? 'SMS failed'),
+        if (in_array($status, [self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true)) {
+            $data['sms_sent_at'] = now();
+        }
 
-            SmsLog::TYPE_EVENT_DAY_REMINDER => $status === self::SMS_STATUS_SENT
-                ? $this->markFinalSmsAsSent($messageId)
-                : $this->markFinalSmsAsFailed($error ?? 'SMS failed'),
+        if ($smsType === SmsLog::TYPE_INVITATION) {
+            $data['invitation_sms_status'] = $status;
 
-            default => $status === self::SMS_STATUS_SENT
-                ? $this->markSmsAsSent($messageId)
-                : $this->markSmsAsFailed($error ?? 'SMS failed'),
-        };
+            if (in_array($status, [self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true)) {
+                $data['invitation_sms_sent_at'] = now();
+            }
+        }
+
+        if (in_array($smsType, [SmsLog::TYPE_RSVP_PENDING_REMINDER, SmsLog::TYPE_ATTENDING_REMINDER], true)) {
+            $data['reminder_sms_status'] = $status;
+
+            if (in_array($status, [self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true)) {
+                $data['reminder_sms_sent_at'] = now();
+            }
+        }
+
+        if ($smsType === SmsLog::TYPE_EVENT_DAY_REMINDER) {
+            $data['final_sms_status'] = $status;
+
+            if (in_array($status, [self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true)) {
+                $data['final_sms_sent_at'] = now();
+            }
+        }
+
+        if ($status === self::SMS_STATUS_FAILED) {
+            $data['last_sms_error'] = $error;
+        } else {
+            $data['last_sms_error'] = null;
+        }
+
+        $this->forceFill($data)->saveQuietly();
     }
 
-    public function event(): BelongsTo
+    /*
+    |--------------------------------------------------------------------------
+    | Check-in Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function canCheckIn(int $guests = 1): bool
     {
-        return $this->belongsTo(Event::class);
+        if ($this->card_status !== self::CARD_STATUS_ACTIVE) {
+            return false;
+        }
+
+        return $this->remaining_guests >= $guests;
     }
 
-    public function cardType(): BelongsTo
+    public function markCheckedIn(int $guests = 1): void
     {
-        return $this->belongsTo(CardType::class);
+        $guests = max(1, $guests);
+
+        $this->forceFill([
+            'checked_in_count' => (int) ($this->checked_in_count ?? 0) + $guests,
+            'checked_in_at' => now(),
+        ])->saveQuietly();
+
+        $this->markAsUsedIfFullyCheckedIn();
     }
 
-    public function checkIns(): HasMany
+    public function markAsUsedIfFullyCheckedIn(): void
     {
-        return $this->hasMany(CheckIn::class);
+        if ($this->remaining_guests <= 0 && $this->card_status === self::CARD_STATUS_ACTIVE) {
+            $this->forceFill([
+                'card_status' => self::CARD_STATUS_USED,
+            ])->saveQuietly();
+        }
     }
 
-    public function smsLogs(): HasMany
-    {
-        return $this->hasMany(SmsLog::class);
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors
+    |--------------------------------------------------------------------------
+    */
 
     public function getFinalAllowedGuestsAttribute(): int
     {
-        return $this->allowed_guests
+        return (int) (
+            $this->allowed_guests
             ?? $this->cardType?->allowed_people
             ?? $this->cardType?->allowed_guests
             ?? $this->cardType?->guest_count
-            ?? 1;
+            ?? 1
+        );
     }
 
     public function getRemainingGuestsAttribute(): int
     {
-        return max(0, $this->final_allowed_guests - $this->checked_in_count);
+        $allowed = (int) ($this->final_allowed_guests ?? 0);
+        $checkedIn = (int) ($this->checked_in_count ?? 0);
+
+        return max($allowed - $checkedIn, 0);
     }
+
+    public function getIsCheckedInAttribute(): bool
+    {
+        return (int) ($this->checked_in_count ?? 0) > 0;
+    }
+
+    public function getRsvpStatusLabelAttribute(): string
+    {
+        return self::rsvpStatuses()[$this->rsvp_status]
+            ?? ucfirst(str_replace('_', ' ', (string) $this->rsvp_status));
+    }
+
+    public function getCardStatusLabelAttribute(): string
+    {
+        return self::cardStatuses()[$this->card_status]
+            ?? ucfirst(str_replace('_', ' ', (string) $this->card_status));
+    }
+
+    public function getSmsStatusLabelAttribute(): string
+    {
+        return self::smsStatuses()[$this->sms_status]
+            ?? ucfirst(str_replace('_', ' ', (string) $this->sms_status));
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Status Helpers
+    |--------------------------------------------------------------------------
+    */
 
     public function isActive(): bool
     {
@@ -597,21 +748,5 @@ class Invitee extends Model
     public function isUsed(): bool
     {
         return $this->card_status === self::CARD_STATUS_USED;
-    }
-
-    public function canCheckIn(): bool
-    {
-        return $this->isActive()
-            && ! $this->isNotAttending()
-            && $this->remaining_guests > 0;
-    }
-
-    public function markAsUsedIfFullyCheckedIn(): void
-    {
-        if ($this->remaining_guests <= 0 && $this->card_status === self::CARD_STATUS_ACTIVE) {
-            $this->forceFill([
-                'card_status' => self::CARD_STATUS_USED,
-            ])->saveQuietly();
-        }
     }
 }

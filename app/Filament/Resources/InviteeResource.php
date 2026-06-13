@@ -4,8 +4,10 @@ namespace App\Filament\Resources;
 
 use App\Exports\InviteesExport;
 use App\Exports\AttendanceExport;
+use App\Jobs\GenerateInviteeCardJob;
 use App\Filament\Resources\InviteeResource\Pages;
 use App\Models\Invitee;
+use App\Models\GeneratedCard;
 use App\Services\ReminderSmsService;
 use App\Services\SmsService;
 use Filament\Forms;
@@ -14,6 +16,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Maatwebsite\Excel\Facades\Excel;
@@ -33,6 +36,16 @@ class InviteeResource extends Resource
     protected static ?string $navigationGroup = 'Event Management';
 
     protected static ?int $navigationSort = 3;
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                'event',
+                'cardType',
+                'latestGeneratedCard',
+            ]);
+    }
 
     public static function form(Form $form): Form
     {
@@ -410,13 +423,83 @@ class InviteeResource extends Resource
                 Tables\Columns\TextColumn::make('card_status')
                     ->label('Card')
                     ->badge()
-                    ->colors([
-                        'gray' => Invitee::CARD_STATUS_PENDING,
-                        'success' => Invitee::CARD_STATUS_ACTIVE,
-                        'warning' => Invitee::CARD_STATUS_USED,
-                        'danger' => Invitee::CARD_STATUS_BLOCKED,
-                    ])
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        Invitee::CARD_STATUS_PENDING => 'Pending',
+                        Invitee::CARD_STATUS_ACTIVE => 'Active',
+                        Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
+                        Invitee::CARD_STATUS_BLOCKED => 'Blocked',
+                        Invitee::CARD_STATUS_USED => 'Used',
+                        default => ucfirst((string) $state),
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        Invitee::CARD_STATUS_ACTIVE => 'success',
+                        Invitee::CARD_STATUS_PENDING => 'warning',
+                        Invitee::CARD_STATUS_CANCELLED => 'danger',
+                        Invitee::CARD_STATUS_BLOCKED => 'danger',
+                        Invitee::CARD_STATUS_USED => 'info',
+                        default => 'gray',
+                    })
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('latestGeneratedCard.status')
+                    ->label('Card Gen')
+                    ->badge()
+                    ->default('not_generated')
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        GeneratedCard::STATUS_PENDING => 'Pending',
+                        GeneratedCard::STATUS_GENERATING => 'Generating',
+                        GeneratedCard::STATUS_GENERATED => 'Generated',
+                        GeneratedCard::STATUS_SENT => 'Sent',
+                        GeneratedCard::STATUS_FAILED => 'Failed',
+                        default => 'Not Generated',
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        GeneratedCard::STATUS_PENDING => 'gray',
+                        GeneratedCard::STATUS_GENERATING => 'warning',
+                        GeneratedCard::STATUS_GENERATED => 'success',
+                        GeneratedCard::STATUS_SENT => 'info',
+                        GeneratedCard::STATUS_FAILED => 'danger',
+                        default => 'gray',
+                    })
+                    ->sortable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('latestGeneratedCard.generated_at')
+                    ->label('Card Generated')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('latestGeneratedCard.status')
+                    ->label('Card Gen')
+                    ->badge()
+                    ->default('not_generated')
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        GeneratedCard::STATUS_PENDING => 'Pending',
+                        GeneratedCard::STATUS_GENERATING => 'Generating',
+                        GeneratedCard::STATUS_GENERATED => 'Generated',
+                        GeneratedCard::STATUS_SENT => 'Sent',
+                        GeneratedCard::STATUS_FAILED => 'Failed',
+                        default => 'Not Generated',
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        GeneratedCard::STATUS_PENDING => 'gray',
+                        GeneratedCard::STATUS_GENERATING => 'warning',
+                        GeneratedCard::STATUS_GENERATED => 'success',
+                        GeneratedCard::STATUS_SENT => 'info',
+                        GeneratedCard::STATUS_FAILED => 'danger',
+                        default => 'gray',
+                    })
+                    ->sortable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('latestGeneratedCard.generated_at')
+                    ->label('Card Generated')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
@@ -481,8 +564,63 @@ class InviteeResource extends Resource
                         Invitee::CARD_STATUS_BLOCKED => 'Blocked',
                         Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
                     ]),
+
+                Tables\Filters\SelectFilter::make('generated_card_status')
+                    ->label('Generated Card Status')
+                    ->options([
+                        'not_generated' => 'Not Generated',
+                        GeneratedCard::STATUS_PENDING => 'Pending',
+                        GeneratedCard::STATUS_GENERATING => 'Generating',
+                        GeneratedCard::STATUS_GENERATED => 'Generated',
+                        GeneratedCard::STATUS_SENT => 'Sent',
+                        GeneratedCard::STATUS_FAILED => 'Failed',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+
+                        if (blank($value)) {
+                            return $query;
+                        }
+
+                        if ($value === 'not_generated') {
+                            return $query->whereDoesntHave('latestGeneratedCard');
+                        }
+
+                        return $query->whereHas('latestGeneratedCard', fn (Builder $query): Builder => $query->where('status', $value));
+                    }),
+
+                Tables\Filters\SelectFilter::make('card_generation_status')
+                    ->label('Card Generation')
+                    ->options([
+                        'not_generated' => 'Not Generated',
+                        GeneratedCard::STATUS_PENDING => 'Pending',
+                        GeneratedCard::STATUS_GENERATING => 'Generating',
+                        GeneratedCard::STATUS_GENERATED => 'Generated',
+                        GeneratedCard::STATUS_SENT => 'Sent',
+                        GeneratedCard::STATUS_FAILED => 'Failed',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $status = $data['value'] ?? null;
+
+                        if (blank($status)) {
+                            return $query;
+                        }
+
+                        if ($status === 'not_generated') {
+                            return $query->doesntHave('latestGeneratedCard');
+                        }
+
+                        return $query->whereHas('latestGeneratedCard', fn (Builder $cardQuery): Builder => $cardQuery->where('status', $status));
+                    }),
+
             ])
             ->headerActions([
+                Tables\Actions\Action::make('refresh_status')
+                    ->label('Refresh Status')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('gray')
+                    ->action(fn (): null => null),
+
                 Tables\Actions\Action::make('export_all_invitees')
                     ->label('Export Invitees Excel')
                     ->icon('heroicon-o-arrow-down-tray')
@@ -545,6 +683,62 @@ class InviteeResource extends Resource
                     ->icon('heroicon-o-link')
                     ->color('gray')
                     ->url(fn (Invitee $record): string => $record->rsvpUrl(), shouldOpenInNewTab: true),
+
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('generate_card')
+                        ->label(fn (Invitee $record): string => $record->latestGeneratedCard ? 'Regenerate Card' : 'Generate Card')
+                        ->icon('heroicon-o-photo')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading(fn (Invitee $record): string => $record->latestGeneratedCard ? 'Regenerate invitation card' : 'Generate invitation card')
+                        ->modalDescription('This will generate the personalized card in the background. Keep the queue worker running.')
+                        ->modalSubmitActionLabel('Start Generation')
+                        ->action(function (Invitee $record): void {
+                            $record->loadMissing('latestGeneratedCard');
+
+                            $record->latestGeneratedCard?->markAsGenerating();
+
+                            GenerateInviteeCardJob::dispatch($record->id);
+
+                            Notification::make()
+                                ->title('Card generation started')
+                                ->body('The card will be generated in the background.')
+                                ->success()
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('view_card')
+                        ->label('View Card')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->url(fn (Invitee $record): ?string => $record->generated_card_url)
+                        ->openUrlInNewTab()
+                        ->visible(fn (Invitee $record): bool => filled($record->generated_card_url)),
+
+                    Tables\Actions\Action::make('retry_card')
+                        ->label('Retry Failed Card')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->visible(fn (Invitee $record): bool => $record->latestGeneratedCard?->status === GeneratedCard::STATUS_FAILED)
+                        ->action(function (Invitee $record): void {
+                            $record->loadMissing('latestGeneratedCard');
+
+                            $record->latestGeneratedCard?->markAsGenerating();
+
+                            GenerateInviteeCardJob::dispatch($record->id);
+
+                            Notification::make()
+                                ->title('Card generation restarted')
+                                ->body('The failed card has been queued again.')
+                                ->success()
+                                ->send();
+                        }),
+                ])
+                    ->label('Card')
+                    ->icon('heroicon-o-photo')
+                    ->color('info')
+                    ->button(),
 
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('send_invitation_sms')
@@ -770,6 +964,41 @@ class InviteeResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('generate_cards')
+                        ->label('Generate Cards')
+                        ->icon('heroicon-o-photo')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Generate selected invitation cards')
+                        ->modalDescription('This will queue card generation jobs for all selected invitees. Existing generated cards will be regenerated.')
+                        ->modalSubmitActionLabel('Start Generation')
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (Collection $records): void {
+                            $queued = 0;
+                            $skipped = 0;
+
+                            foreach ($records as $record) {
+                                $record->loadMissing('latestGeneratedCard');
+
+                                if ($record->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING) {
+                                    $skipped++;
+                                    continue;
+                                }
+
+                                $record->latestGeneratedCard?->markAsGenerating();
+
+                                GenerateInviteeCardJob::dispatch($record->id);
+
+                                $queued++;
+                            }
+
+                            Notification::make()
+                                ->title('Card generation jobs started')
+                                ->body($queued . ' card(s) queued. ' . $skipped . ' skipped because they are already generating.')
+                                ->success()
+                                ->send();
+                        }),
+
                     Tables\Actions\BulkAction::make('export_selected_invitees')
                         ->label('Export Selected Invitees')
                         ->icon('heroicon-o-arrow-down-tray')
@@ -881,6 +1110,42 @@ class InviteeResource extends Resource
                 ]),
             ])
             ->defaultSort('created_at', 'desc');
+    }
+
+    private static function queueInviteeCardGeneration(Invitee $invitee, bool $force = false): string
+    {
+        $invitee->loadMissing([
+            'event.cardTemplates',
+            'latestGeneratedCard',
+        ]);
+
+        $generatedCard = $invitee->latestGeneratedCard;
+
+        if ($generatedCard?->status === GeneratedCard::STATUS_GENERATING && ! $force) {
+            return 'skipped';
+        }
+
+        if ($generatedCard) {
+            $generatedCard->markAsGenerating();
+        } else {
+            $template = $invitee->event?->cardTemplates()
+                ->latest()
+                ->first();
+
+            GeneratedCard::create([
+                'event_id' => $invitee->event_id,
+                'invitee_id' => $invitee->id,
+                'card_template_id' => $template?->id,
+                'file_path' => null,
+                'status' => GeneratedCard::STATUS_GENERATING,
+                'generated_at' => null,
+                'sent_at' => null,
+            ]);
+        }
+
+        GenerateInviteeCardJob::dispatch($invitee->id);
+
+        return 'queued';
     }
 
     public static function getRelations(): array

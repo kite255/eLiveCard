@@ -16,7 +16,8 @@
         |
         | It uses a real invitee QR code from the same event.
         */
-        $actualQrUrl = $sampleQrCodeUrl ?? null;
+        $defaultSampleQrUrl = 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0nVVRGLTgnPz4KPHN2ZyB3aWR0aD0iMzdtbSIgaGVpZ2h0PSIzN21tIiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCAzNyAzNyIgY2xhc3M9ImVsaXZlLXNhbXBsZS1xciIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMCwwSDFWMUgwek0xLDBIMlYxSDF6TTIsMEgzVjFIMnpNMywwSDRWMUgzek00LDBINVYxSDR6TTUsMEg2VjFINXpNNiwwSDdWMUg2ek05LDBIMTBWMUg5ek0xMCwwSDExVjFIMTB6TTExLDBIMTJWMUgxMXpNMTIsMEgxM1YxSDEyek0xNSwwSDE2VjFIMTV6TTE3LDBIMThWMUgxN3pNMTgsMEgxOVYxSDE4ek0yMSwwSDIyVjFIMjF6TTIyLDBIMjNWMUgyMnpNMjUsMEgyNlYxSDI1ek0yNiwwSDI3VjFIMjZ6TTI3LDBIMjhWMUgyN3pNMjgsMEgyOVYxSDI4ek0zMCwwSDMxVjFIMzB6TTMxLDBIMzJWMUgzMXpNMzIsMEgzM1YxSDMyek0zMywwSDM0VjFIMzN6TTM0LDBIMzVWMUgzNHpNMzUsMEgzNlYxSDM1ek0zNiwwSDM3VjFIMzZ6TTAsMUgxVjJIMHpNNiwxSDdWMkg2ek0xMCwxSDExVjJIMTB6TTExLDFIMTJWMkgxMXpNMTQsMUgxNVYySDE0ek0xNSwxSDE2VjJIMTV6TTE2LDFIMTdWMkgxNnpNMTcsMUgxOFYySDE3ek0xOCwxSDE5VjJIMTh6TTE5LDFIMjBWMkgxOXpNMjMsMUgyNFYySDIzek0yOCwxSDI5VjJIMjh6TTMwLDFIMzFWMkgzMHpNMzYsMUgzN1YySDM2ek0wLDJIMVYzSDB6TTIsMkgzVjNIMnpNMywySDRWM0gzek00LDJINVYzSDR6TTYsMkg3VjNINnpNMTAsMkgxMVYzSDEwek0xNCwySDE1VjNIMTR6TTE5LDJIMjBWM0gxOXpNMjAsMkgyMVYzSDIwek0yMywySDI0VjNIMjN6TTI0LDJIMjVWM0gyNHpNMjYsMkgyN1YzSDI2ek0yOCwySDI5VjNIMjh6TTMwLDJIMzFWM0gzMHpNMzIsMkgzM1YzSDMyek0zMywySDM0VjNIMzN6TTM0LDJIMzVWM0gzNHpNMzYsMkgzN1YzSDM2ek0wLDNIMVY0SDB6TTIsM0gzVjRIMnpNMywzSDRWNEgzek00LDNINVY0SDR6TTYsM0g3VjRINnpNMTEsM0gxMlY0SDExek0xMiwzSDEzVjRIMTJ6TTE0LDNIMTVWNEgxNHpNMTcsM0gxOFY0SDE3ek0yMCwzSDIxVjRIMjB6TTIyLDNIMjNWNEgyMnpNMjMsM0gyNFY0SDIzek0yNiwzSDI3VjRIMjZ6TTMwLDNIMzFWNEgzMHpNMzIsM0gzM1Y0SDMyek0zMywzSDM0VjRIMzN6TTM0LDNIMzVWNEgzNHpNMzYsM0gzN1Y0SDM2ek0wLDRIMVY1SDB6TTIsNEgzVjVIMnpNMyw0SDRWNUgzek00LDRINVY1SDR6TTYsNEg3VjVINnpNOSw0SDEwVjVIOXpNMTEsNEgxMlY1SDExek0xMiw0SDEzVjVIMTJ6TTEzLDRIMTRWNUgxM3pNMTQsNEgxNVY1SDE0ek0xNSw0SDE2VjVIMTV6TTE4LDRIMTlWNUgxOHpNMTksNEgyMFY1SDE5ek0yMCw0SDIxVjVIMjB6TTIzLDRIMjRWNUgyM3pNMjQsNEgyNVY1SDI0ek0yNSw0SDI2VjVIMjV6TTI3LDRIMjhWNUgyN3pNMjgsNEgyOVY1SDI4ek0zMCw0SDMxVjVIMzB6TTMyLDRIMzNWNUgzMnpNMzMsNEgzNFY1SDMzek0zNCw0SDM1VjVIMzR6TTM2LDRIMzdWNUgzNnpNMCw1SDFWNkgwek02LDVIN1Y2SDZ6TTgsNUg5VjZIOHpNOSw1SDEwVjZIOXpNMTAsNUgxMVY2SDEwek0xMyw1SDE0VjZIMTN6TTIwLDVIMjFWNkgyMHpNMjEsNUgyMlY2SDIxek0yNiw1SDI3VjZIMjZ6TTI3LDVIMjhWNkgyN3pNMzAsNUgzMVY2SDMwek0zNiw1SDM3VjZIMzZ6TTAsNkgxVjdIMHpNMSw2SDJWN0gxek0yLDZIM1Y3SDJ6TTMsNkg0VjdIM3pNNCw2SDVWN0g0ek01LDZINlY3SDV6TTYsNkg3VjdINnpNOCw2SDlWN0g4ek0xMCw2SDExVjdIMTB6TTEyLDZIMTNWN0gxMnpNMTQsNkgxNVY3SDE0ek0xNiw2SDE3VjdIMTZ6TTE4LDZIMTlWN0gxOHpNMjAsNkgyMVY3SDIwek0yMiw2SDIzVjdIMjJ6TTI0LDZIMjVWN0gyNHpNMjYsNkgyN1Y3SDI2ek0yOCw2SDI5VjdIMjh6TTMwLDZIMzFWN0gzMHpNMzEsNkgzMlY3SDMxek0zMiw2SDMzVjdIMzJ6TTMzLDZIMzRWN0gzM3pNMzQsNkgzNVY3SDM0ek0zNSw2SDM2VjdIMzV6TTM2LDZIMzdWN0gzNnpNMTQsN0gxNVY4SDE0ek0xNiw3SDE3VjhIMTZ6TTE3LDdIMThWOEgxN3pNMTgsN0gxOVY4SDE4ek0yMSw3SDIyVjhIMjF6TTIyLDdIMjNWOEgyMnpNMjYsN0gyN1Y4SDI2ek0yNyw3SDI4VjhIMjd6TTAsOEgxVjlIMHpNMyw4SDRWOUgzek01LDhINlY5SDV6TTYsOEg3VjlINnpNOCw4SDlWOUg4ek0xMCw4SDExVjlIMTB6TTExLDhIMTJWOUgxMXpNMTIsOEgxM1Y5SDEyek0xNiw4SDE3VjlIMTZ6TTE3LDhIMThWOUgxN3pNMTgsOEgxOVY5SDE4ek0xOSw4SDIwVjlIMTl6TTIwLDhIMjFWOUgyMHpNMjUsOEgyNlY5SDI1ek0yNiw4SDI3VjlIMjZ6TTI3LDhIMjhWOUgyN3pNMjksOEgzMFY5SDI5ek0zMSw4SDMyVjlIMzF6TTEsOUgyVjEwSDF6TTIsOUgzVjEwSDJ6TTMsOUg0VjEwSDN6TTQsOUg1VjEwSDR6TTUsOUg2VjEwSDV6TTcsOUg4VjEwSDd6TTExLDlIMTJWMTBIMTF6TTEyLDlIMTNWMTBIMTJ6TTE1LDlIMTZWMTBIMTV6TTE2LDlIMTdWMTBIMTZ6TTE4LDlIMTlWMTBIMTh6TTE5LDlIMjBWMTBIMTl6TTIzLDlIMjRWMTBIMjN6TTI1LDlIMjZWMTBIMjV6TTI2LDlIMjdWMTBIMjZ6TTI3LDlIMjhWMTBIMjd6TTMxLDlIMzJWMTBIMzF6TTMyLDlIMzNWMTBIMzJ6TTMzLDlIMzRWMTBIMzN6TTM0LDlIMzVWMTBIMzR6TTM2LDlIMzdWMTBIMzZ6TTMsMTBINFYxMUgzek01LDEwSDZWMTFINXpNNiwxMEg3VjExSDZ6TTgsMTBIOVYxMUg4ek0xMCwxMEgxMVYxMUgxMHpNMTIsMTBIMTNWMTFIMTJ6TTE0LDEwSDE1VjExSDE0ek0xNSwxMEgxNlYxMUgxNXpNMTgsMTBIMTlWMTFIMTh6TTE5LDEwSDIwVjExSDE5ek0yNywxMEgyOFYxMUgyN3pNMzAsMTBIMzFWMTFIMzB6TTMxLDEwSDMyVjExSDMxek0zNSwxMEgzNlYxMUgzNXpNMzYsMTBIMzdWMTFIMzZ6TTIsMTFIM1YxMkgyek00LDExSDVWMTJINHpNNSwxMUg2VjEySDV6TTksMTFIMTBWMTJIOXpNMTYsMTFIMTdWMTJIMTZ6TTE3LDExSDE4VjEySDE3ek0xOSwxMUgyMFYxMkgxOXpNMjAsMTFIMjFWMTJIMjB6TTIxLDExSDIyVjEySDIxek0yMiwxMUgyM1YxMkgyMnpNMjUsMTFIMjZWMTJIMjV6TTI2LDExSDI3VjEySDI2ek0yNywxMUgyOFYxMkgyN3pNMjksMTFIMzBWMTJIMjl6TTMwLDExSDMxVjEySDMwek0yLDEySDNWMTNIMnpNMywxMkg0VjEzSDN6TTQsMTJINVYxM0g0ek01LDEySDZWMTNINXpNNiwxMkg3VjEzSDZ6TTcsMTJIOFYxM0g3ek04LDEySDlWMTNIOHpNMTUsMTJIMTZWMTNIMTV6TTE2LDEySDE3VjEzSDE2ek0xNywxMkgxOFYxM0gxN3pNMjAsMTJIMjFWMTNIMjB6TTIxLDEySDIyVjEzSDIxek0yMiwxMkgyM1YxM0gyMnpNMjUsMTJIMjZWMTNIMjV6TTI3LDEySDI4VjEzSDI3ek0yOCwxMkgyOVYxM0gyOHpNMjksMTJIMzBWMTNIMjl6TTMwLDEySDMxVjEzSDMwek0zMywxMkgzNFYxM0gzM3pNMzQsMTJIMzVWMTNIMzR6TTM1LDEySDM2VjEzSDM1ek0zNiwxMkgzN1YxM0gzNnpNMCwxM0gxVjE0SDB6TTksMTNIMTBWMTRIOXpNMTAsMTNIMTFWMTRIMTB6TTEzLDEzSDE0VjE0SDEzek0xNCwxM0gxNVYxNEgxNHpNMTUsMTNIMTZWMTRIMTV6TTE4LDEzSDE5VjE0SDE4ek0xOSwxM0gyMFYxNEgxOXpNMjEsMTNIMjJWMTRIMjF6TTIyLDEzSDIzVjE0SDIyek0yNCwxM0gyNVYxNEgyNHpNMjUsMTNIMjZWMTRIMjV6TTI5LDEzSDMwVjE0SDI5ek0zMCwxM0gzMVYxNEgzMHpNMzEsMTNIMzJWMTRIMzF6TTM0LDEzSDM1VjE0SDM0ek0wLDE0SDFWMTVIMHpNMiwxNEgzVjE1SDJ6TTQsMTRINVYxNUg0ek02LDE0SDdWMTVINnpNNywxNEg4VjE1SDd6TTksMTRIMTBWMTVIOXpNMTAsMTRIMTFWMTVIMTB6TTExLDE0SDEyVjE1SDExek0xMywxNEgxNFYxNUgxM3pNMTYsMTRIMTdWMTVIMTZ6TTE5LDE0SDIwVjE1SDE5ek0yMCwxNEgyMVYxNUgyMHpNMjIsMTRIMjNWMTVIMjJ6TTIzLDE0SDI0VjE1SDIzek0yNCwxNEgyNVYxNUgyNHpNMjksMTRIMzBWMTVIMjl6TTMxLDE0SDMyVjE1SDMxek0zMiwxNEgzM1YxNUgzMnpNMzQsMTRIMzVWMTVIMzR6TTAsMTVIMVYxNkgwek0yLDE1SDNWMTZIMnpNMywxNUg0VjE2SDN6TTUsMTVINlYxNkg1ek05LDE1SDEwVjE2SDl6TTEwLDE1SDExVjE2SDEwek0xMywxNUgxNFYxNkgxM3pNMTQsMTVIMTVWMTZIMTR6TTE1LDE1SDE2VjE2SDE1ek0yMCwxNUgyMVYxNkgyMHpNMjEsMTVIMjJWMTZIMjF6TTIzLDE1SDI0VjE2SDIzek0yNCwxNUgyNVYxNkgyNHpNMjYsMTVIMjdWMTZIMjZ6TTI3LDE1SDI4VjE2SDI3ek0yOCwxNUgyOVYxNkgyOHpNMzIsMTVIMzNWMTZIMzJ6TTM1LDE1SDM2VjE2SDM1ek0wLDE2SDFWMTdIMHpNMSwxNkgyVjE3SDF6TTIsMTZIM1YxN0gyek0zLDE2SDRWMTdIM3pNNCwxNkg1VjE3SDR6TTYsMTZIN1YxN0g2ek03LDE2SDhWMTdIN3pNOSwxNkgxMFYxN0g5ek0xMywxNkgxNFYxN0gxM3pNMTQsMTZIMTVWMTdIMTR6TTE2LDE2SDE3VjE3SDE2ek0xOSwxNkgyMFYxN0gxOXpNMjAsMTZIMjFWMTdIMjB6TTI0LDE2SDI1VjE3SDI0ek0zMSwxNkgzMlYxN0gzMXpNMzIsMTZIMzNWMTdIMzJ6TTMzLDE2SDM0VjE3SDMzek0zNCwxNkgzNVYxN0gzNHpNMzYsMTZIMzdWMTdIMzZ6TTAsMTdIMVYxOEgwek0zLDE3SDRWMThIM3pNOCwxN0g5VjE4SDh6TTksMTdIMTBWMThIOXpNMTEsMTdIMTJWMThIMTF6TTEzLDE3SDE0VjE4SDEzek0xNSwxN0gxNlYxOEgxNXpNMTksMTdIMjBWMThIMTl6TTIxLDE3SDIyVjE4SDIxek0yNCwxN0gyNVYxOEgyNHpNMjUsMTdIMjZWMThIMjV6TTI5LDE3SDMwVjE4SDI5ek0zMCwxN0gzMVYxOEgzMHpNMzIsMTdIMzNWMThIMzJ6TTMzLDE3SDM0VjE4SDMzek0zNCwxN0gzNVYxOEgzNHpNMzUsMTdIMzZWMThIMzV6TTM2LDE3SDM3VjE4SDM2ek0wLDE4SDFWMTlIMHpNMywxOEg0VjE5SDN6TTQsMThINVYxOUg0ek02LDE4SDdWMTlINnpNOCwxOEg5VjE5SDh6TTEwLDE4SDExVjE5SDEwek0xMiwxOEgxM1YxOUgxMnpNMTMsMThIMTRWMTlIMTN6TTE0LDE4SDE1VjE5SDE0ek0xOSwxOEgyMFYxOUgxOXpNMjAsMThIMjFWMTlIMjB6TTIyLDE4SDIzVjE5SDIyek0yMywxOEgyNFYxOUgyM3pNMjQsMThIMjVWMTlIMjR6TTMwLDE4SDMxVjE5SDMwek0zMSwxOEgzMlYxOUgzMXpNMzUsMThIMzZWMTlIMzV6TTM2LDE4SDM3VjE5SDM2ek0wLDE5SDFWMjBIMHpNMSwxOUgyVjIwSDF6TTMsMTlINFYyMEgzek00LDE5SDVWMjBINHpNNywxOUg4VjIwSDd6TTEwLDE5SDExVjIwSDEwek0xMywxOUgxNFYyMEgxM3pNMTUsMTlIMTZWMjBIMTV6TTE2LDE5SDE3VjIwSDE2ek0xOSwxOUgyMFYyMEgxOXpNMjAsMTlIMjFWMjBIMjB6TTIzLDE5SDI0VjIwSDIzek0yNiwxOUgyN1YyMEgyNnpNMjcsMTlIMjhWMjBIMjd6TTMxLDE5SDMyVjIwSDMxek0zMiwxOUgzM1YyMEgzMnpNMzQsMTlIMzVWMjBIMzR6TTM1LDE5SDM2VjIwSDM1ek0wLDIwSDFWMjFIMHpNMSwyMEgyVjIxSDF6TTQsMjBINVYyMUg0ek01LDIwSDZWMjFINXpNNiwyMEg3VjIxSDZ6TTcsMjBIOFYyMUg3ek04LDIwSDlWMjFIOHpNOSwyMEgxMFYyMUg5ek0xMCwyMEgxMVYyMUgxMHpNMTMsMjBIMTRWMjFIMTN6TTE2LDIwSDE3VjIxSDE2ek0xOCwyMEgxOVYyMUgxOHpNMTksMjBIMjBWMjFIMTl6TTIzLDIwSDI0VjIxSDIzek0yNSwyMEgyNlYyMUgyNXpNMjgsMjBIMjlWMjFIMjh6TTMwLDIwSDMxVjIxSDMwek0zMiwyMEgzM1YyMUgzMnpNMzQsMjBIMzVWMjFIMzR6TTM1LDIwSDM2VjIxSDM1ek0xLDIxSDJWMjJIMXpNMywyMUg0VjIySDN6TTQsMjFINVYyMkg0ek04LDIxSDlWMjJIOHpNMTAsMjFIMTFWMjJIMTB6TTE1LDIxSDE2VjIySDE1ek0xNywyMUgxOFYyMkgxN3pNMTksMjFIMjBWMjJIMTl6TTIyLDIxSDIzVjIySDIyek0yNCwyMUgyNVYyMkgyNHpNMjgsMjFIMjlWMjJIMjh6TTMwLDIxSDMxVjIySDMwek0zMSwyMUgzMlYyMkgzMXpNMzMsMjFIMzRWMjJIMzN6TTM1LDIxSDM2VjIySDM1ek0zNiwyMUgzN1YyMkgzNnpNMSwyMkgyVjIzSDF6TTIsMjJIM1YyM0gyek02LDIySDdWMjNINnpNNywyMkg4VjIzSDd6TTgsMjJIOVYyM0g4ek05LDIySDEwVjIzSDl6TTExLDIySDEyVjIzSDExek0xMiwyMkgxM1YyM0gxMnpNMTMsMjJIMTRWMjNIMTN6TTE2LDIySDE3VjIzSDE2ek0xOCwyMkgxOVYyM0gxOHpNMTksMjJIMjBWMjNIMTl6TTIwLDIySDIxVjIzSDIwek0yMSwyMkgyMlYyM0gyMXpNMjIsMjJIMjNWMjNIMjJ6TTI0LDIySDI1VjIzSDI0ek0yNSwyMkgyNlYyM0gyNXpNMjYsMjJIMjdWMjNIMjZ6TTI5LDIySDMwVjIzSDI5ek0zMCwyMkgzMVYyM0gzMHpNMCwyM0gxVjI0SDB6TTIsMjNIM1YyNEgyek00LDIzSDVWMjRINHpNNywyM0g4VjI0SDd6TTEwLDIzSDExVjI0SDEwek0xMSwyM0gxMlYyNEgxMXpNMTYsMjNIMTdWMjRIMTZ6TTE4LDIzSDE5VjI0SDE4ek0yMywyM0gyNFYyNEgyM3pNMjQsMjNIMjVWMjRIMjR6TTI1LDIzSDI2VjI0SDI1ek0yOCwyM0gyOVYyNEgyOHpNMzAsMjNIMzFWMjRIMzB6TTM1LDIzSDM2VjI0SDM1ek0wLDI0SDFWMjVIMHpNMSwyNEgyVjI1SDF6TTIsMjRIM1YyNUgyek0zLDI0SDRWMjVIM3pNNSwyNEg2VjI1SDV6TTYsMjRIN1YyNUg2ek0xMCwyNEgxMVYyNUgxMHpNMTEsMjRIMTJWMjVIMTF6TTEzLDI0SDE0VjI1SDEzek0xNCwyNEgxNVYyNUgxNHpNMTYsMjRIMTdWMjVIMTZ6TTE4LDI0SDE5VjI1SDE4ek0yMywyNEgyNFYyNUgyM3pNMjQsMjRIMjVWMjVIMjR6TTI3LDI0SDI4VjI1SDI3ek0zMCwyNEgzMVYyNUgzMHpNMzEsMjRIMzJWMjVIMzF6TTMzLDI0SDM0VjI1SDMzek0zNSwyNEgzNlYyNUgzNXpNMSwyNUgyVjI2SDF6TTUsMjVINlYyNkg1ek03LDI1SDhWMjZIN3pNOSwyNUgxMFYyNkg5ek0xMCwyNUgxMVYyNkgxMHpNMTEsMjVIMTJWMjZIMTF6TTEzLDI1SDE0VjI2SDEzek0xNSwyNUgxNlYyNkgxNXpNMTcsMjVIMThWMjZIMTd6TTE4LDI1SDE5VjI2SDE4ek0yMiwyNUgyM1YyNkgyMnpNMjMsMjVIMjRWMjZIMjN6TTI0LDI1SDI1VjI2SDI0ek0yNSwyNUgyNlYyNkgyNXpNMzEsMjVIMzJWMjZIMzF6TTM0LDI1SDM1VjI2SDM0ek0zNSwyNUgzNlYyNkgzNXpNMzYsMjVIMzdWMjZIMzZ6TTAsMjZIMVYyN0gwek02LDI2SDdWMjdINnpNNywyNkg4VjI3SDd6TTgsMjZIOVYyN0g4ek0xMCwyNkgxMVYyN0gxMHpNMTQsMjZIMTVWMjdIMTR6TTE1LDI2SDE2VjI3SDE1ek0xNiwyNkgxN1YyN0gxNnpNMjAsMjZIMjFWMjdIMjB6TTIxLDI2SDIyVjI3SDIxek0yNSwyNkgyNlYyN0gyNXpNMjYsMjZIMjdWMjdIMjZ6TTI5LDI2SDMwVjI3SDI5ek0zMCwyNkgzMVYyN0gzMHpNMzIsMjZIMzNWMjdIMzJ6TTMzLDI2SDM0VjI3SDMzek0zNiwyNkgzN1YyN0gzNnpNMSwyN0gyVjI4SDF6TTIsMjdIM1YyOEgyek0zLDI3SDRWMjhIM3pNOCwyN0g5VjI4SDh6TTksMjdIMTBWMjhIOXpNMTAsMjdIMTFWMjhIMTB6TTEyLDI3SDEzVjI4SDEyek0xMywyN0gxNFYyOEgxM3pNMTQsMjdIMTVWMjhIMTR6TTE2LDI3SDE3VjI4SDE2ek0xOCwyN0gxOVYyOEgxOHpNMTksMjdIMjBWMjhIMTl6TTIyLDI3SDIzVjI4SDIyek0yMywyN0gyNFYyOEgyM3pNMjUsMjdIMjZWMjhIMjV6TTI5LDI3SDMwVjI4SDI5ek0zMCwyN0gzMVYyOEgzMHpNMzEsMjdIMzJWMjhIMzF6TTM1LDI3SDM2VjI4SDM1ek0zNiwyN0gzN1YyOEgzNnpNMCwyOEgxVjI5SDB6TTEsMjhIMlYyOUgxek0zLDI4SDRWMjlIM3pNNiwyOEg3VjI5SDZ6TTcsMjhIOFYyOUg3ek05LDI4SDEwVjI5SDl6TTE0LDI4SDE1VjI5SDE0ek0xNSwyOEgxNlYyOUgxNXpNMTYsMjhIMTdWMjlIMTZ6TTE3LDI4SDE4VjI5SDE3ek0xOSwyOEgyMFYyOUgxOXpNMjQsMjhIMjVWMjlIMjR6TTI3LDI4SDI4VjI5SDI3ek0yOCwyOEgyOVYyOUgyOHpNMjksMjhIMzBWMjlIMjl6TTMwLDI4SDMxVjI5SDMwek0zMSwyOEgzMlYyOUgzMXpNMzIsMjhIMzNWMjlIMzJ6TTgsMjlIOVYzMEg4ek05LDI5SDEwVjMwSDl6TTExLDI5SDEyVjMwSDExek0xNCwyOUgxNVYzMEgxNHpNMTcsMjlIMThWMzBIMTd6TTIxLDI5SDIyVjMwSDIxek0yMiwyOUgyM1YzMEgyMnpNMjMsMjlIMjRWMzBIMjN6TTI2LDI5SDI3VjMwSDI2ek0yNywyOUgyOFYzMEgyN3pNMjgsMjlIMjlWMzBIMjh6TTMyLDI5SDMzVjMwSDMyek0zMywyOUgzNFYzMEgzM3pNMzUsMjlIMzZWMzBIMzV6TTAsMzBIMVYzMUgwek0xLDMwSDJWMzFIMXpNMiwzMEgzVjMxSDJ6TTMsMzBINFYzMUgzek00LDMwSDVWMzFINHpNNSwzMEg2VjMxSDV6TTYsMzBIN1YzMUg2ek05LDMwSDEwVjMxSDl6TTE3LDMwSDE4VjMxSDE3ek0yMCwzMEgyMVYzMUgyMHpNMjIsMzBIMjNWMzFIMjJ6TTI1LDMwSDI2VjMxSDI1ek0yNiwzMEgyN1YzMUgyNnpNMjcsMzBIMjhWMzFIMjd6TTI4LDMwSDI5VjMxSDI4ek0zMCwzMEgzMVYzMUgzMHpNMzIsMzBIMzNWMzFIMzJ6TTMzLDMwSDM0VjMxSDMzek0zNSwzMEgzNlYzMUgzNXpNMCwzMUgxVjMySDB6TTYsMzFIN1YzMkg2ek04LDMxSDlWMzJIOHpNOSwzMUgxMFYzMkg5ek0xMCwzMUgxMVYzMkgxMHpNMTIsMzFIMTNWMzJIMTJ6TTIxLDMxSDIyVjMySDIxek0yNCwzMUgyNVYzMkgyNHpNMjcsMzFIMjhWMzJIMjd6TTI4LDMxSDI5VjMySDI4ek0zMiwzMUgzM1YzMkgzMnpNMzMsMzFIMzRWMzJIMzN6TTM0LDMxSDM1VjMySDM0ek0zNSwzMUgzNlYzMkgzNXpNMCwzMkgxVjMzSDB6TTIsMzJIM1YzM0gyek0zLDMySDRWMzNIM3pNNCwzMkg1VjMzSDR6TTYsMzJIN1YzM0g2ek0xMCwzMkgxMVYzM0gxMHpNMTMsMzJIMTRWMzNIMTN6TTE0LDMySDE1VjMzSDE0ek0xNSwzMkgxNlYzM0gxNXpNMTcsMzJIMThWMzNIMTd6TTE5LDMySDIwVjMzSDE5ek0yMiwzMkgyM1YzM0gyMnpNMjQsMzJIMjVWMzNIMjR6TTI1LDMySDI2VjMzSDI1ek0yOCwzMkgyOVYzM0gyOHpNMjksMzJIMzBWMzNIMjl6TTMwLDMySDMxVjMzSDMwek0zMSwzMkgzMlYzM0gzMXpNMzIsMzJIMzNWMzNIMzJ6TTMzLDMySDM0VjMzSDMzek0zNiwzMkgzN1YzM0gzNnpNMCwzM0gxVjM0SDB6TTIsMzNIM1YzNEgyek0zLDMzSDRWMzRIM3pNNCwzM0g1VjM0SDR6TTYsMzNIN1YzNEg2ek04LDMzSDlWMzRIOHpNOSwzM0gxMFYzNEg5ek0xMCwzM0gxMVYzNEgxMHpNMTIsMzNIMTNWMzRIMTJ6TTEzLDMzSDE0VjM0SDEzek0xNSwzM0gxNlYzNEgxNXpNMTcsMzNIMThWMzRIMTd6TTE5LDMzSDIwVjM0SDE5ek0yMCwzM0gyMVYzNEgyMHpNMjIsMzNIMjNWMzRIMjJ6TTI1LDMzSDI2VjM0SDI1ek0yNiwzM0gyN1YzNEgyNnpNMjcsMzNIMjhWMzRIMjd6TTMxLDMzSDMyVjM0SDMxek0zMiwzM0gzM1YzNEgzMnpNMzMsMzNIMzRWMzRIMzN6TTM0LDMzSDM1VjM0SDM0ek0wLDM0SDFWMzVIMHpNMiwzNEgzVjM1SDJ6TTMsMzRINFYzNUgzek00LDM0SDVWMzVINHpNNiwzNEg3VjM1SDZ6TTksMzRIMTBWMzVIOXpNMTIsMzRIMTNWMzVIMTJ6TTEzLDM0SDE0VjM1SDEzek0xNiwzNEgxN1YzNUgxNnpNMjAsMzRIMjFWMzVIMjB6TTIyLDM0SDIzVjM1SDIyek0yNiwzNEgyN1YzNUgyNnpNMjcsMzRIMjhWMzVIMjd6TTMxLDM0SDMyVjM1SDMxek0zMiwzNEgzM1YzNUgzMnpNMzQsMzRIMzVWMzVIMzR6TTM2LDM0SDM3VjM1SDM2ek0wLDM1SDFWMzZIMHpNNiwzNUg3VjM2SDZ6TTEwLDM1SDExVjM2SDEwek0xMiwzNUgxM1YzNkgxMnpNMTMsMzVIMTRWMzZIMTN6TTE1LDM1SDE2VjM2SDE1ek0xOCwzNUgxOVYzNkgxOHpNMjEsMzVIMjJWMzZIMjF6TTIyLDM1SDIzVjM2SDIyek0yNCwzNUgyNVYzNkgyNHpNMjUsMzVIMjZWMzZIMjV6TTI3LDM1SDI4VjM2SDI3ek0yOSwzNUgzMFYzNkgyOXpNMzEsMzVIMzJWMzZIMzF6TTM0LDM1SDM1VjM2SDM0ek0wLDM2SDFWMzdIMHpNMSwzNkgyVjM3SDF6TTIsMzZIM1YzN0gyek0zLDM2SDRWMzdIM3pNNCwzNkg1VjM3SDR6TTUsMzZINlYzN0g1ek02LDM2SDdWMzdINnpNOCwzNkg5VjM3SDh6TTksMzZIMTBWMzdIOXpNMTMsMzZIMTRWMzdIMTN6TTE0LDM2SDE1VjM3SDE0ek0xNiwzNkgxN1YzN0gxNnpNMTcsMzZIMThWMzdIMTd6TTE5LDM2SDIwVjM3SDE5ek0yMSwzNkgyMlYzN0gyMXpNMjQsMzZIMjVWMzdIMjR6TTI1LDM2SDI2VjM3SDI1ek0yNywzNkgyOFYzN0gyN3pNMjgsMzZIMjlWMzdIMjh6TTI5LDM2SDMwVjM3SDI5ek0zMCwzNkgzMVYzN0gzMHpNMzUsMzZIMzZWMzdIMzV6TTM2LDM2SDM3VjM3SDM2eiIgaWQ9InFyLXBhdGgiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iMSIgZmlsbC1ydWxlPSJub256ZXJvIiBzdHJva2U9Im5vbmUiLz48L3N2Zz4=';
+        $actualQrUrl = $sampleQrCodeUrl ?: $defaultSampleQrUrl;
     @endphp
 
     <div
@@ -28,6 +29,7 @@
             templateWidth: {{ (int) $templateWidth }},
             templateHeight: {{ (int) $templateHeight }},
             sampleQrCodeUrl: @js($actualQrUrl),
+            defaultSampleQrCodeUrl: @js($defaultSampleQrUrl),
         })"
         x-init="init()"
         class="elive-designer"
@@ -139,13 +141,13 @@
                                     class="placeholder-box"
                                     :class="{
                                         selected: selectedKey === key,
-                                        qr: placeholder.type === 'qr_code',
+                                        qr: isQr(placeholder),
                                     }"
                                     :style="placeholderStyle(placeholder)"
                                     @mousedown.stop="startDrag($event, key)"
                                     @click.stop="selectPlaceholder(key)"
                                 >
-                                    <template x-if="placeholder.type === 'qr_code'">
+                                    <template x-if="isQr(placeholder)">
                                         <div
                                             class="qr-preview actual-qr"
                                             :style="{
@@ -157,15 +159,12 @@
                                             </template>
 
                                             <template x-if="!sampleQrCodeUrl">
-                                                <div class="qr-fallback">
-                                                    <strong>QR</strong>
-                                                    <small>No QR yet</small>
-                                                </div>
+                                                <img :src="defaultSampleQrCodeUrl" alt="Sample QR Code Preview">
                                             </template>
                                         </div>
                                     </template>
 
-                                    <template x-if="placeholder.type !== 'qr_code'">
+                                    <template x-if="! isQr(placeholder)">
                                         <span x-text="previewValue(placeholder)"></span>
                                     </template>
 
@@ -247,7 +246,7 @@
                             <input type="number" min="1" max="100" step="0.1" x-model.number="current.height_percent">
                         </label>
 
-                        <template x-if="current?.type !== 'qr_code'">
+                        <template x-if="! isQr(current)">
                             <label>
                                 Font Family
                                 <select x-model="current.font_family">
@@ -259,21 +258,21 @@
                             </label>
                         </template>
 
-                        <template x-if="current?.type !== 'qr_code'">
+                        <template x-if="! isQr(current)">
                             <label>
                                 Font Size
                                 <input type="number" min="8" max="120" x-model.number="current.font_size">
                             </label>
                         </template>
 
-                        <template x-if="current?.type !== 'qr_code'">
+                        <template x-if="! isQr(current)">
                             <label>
                                 Font Color
                                 <input type="color" x-model="current.font_color">
                             </label>
                         </template>
 
-                        <template x-if="current?.type !== 'qr_code'">
+                        <template x-if="! isQr(current)">
                             <label>
                                 Font Weight
                                 <select x-model="current.font_weight">
@@ -283,7 +282,7 @@
                             </label>
                         </template>
 
-                        <template x-if="current?.type !== 'qr_code'">
+                        <template x-if="! isQr(current)">
                             <label>
                                 Text Align
                                 <select x-model="current.text_align">
@@ -294,25 +293,31 @@
                             </label>
                         </template>
 
-                        <template x-if="current?.type === 'qr_code'">
+                        <template x-if="isQr(current)">
                             <label>
-                                QR Size
-                                <input type="number" min="40" max="600" x-model.number="current.qr_size">
+                                QR Output Size
+                                <input type="number" min="40" max="1000" x-model.number="current.qr_size">
                             </label>
                         </template>
 
-                        <template x-if="current?.type === 'qr_code'">
+                        <template x-if="isQr(current)">
                             <label>
                                 QR Color
                                 <input type="color" x-model="current.qr_color">
                             </label>
                         </template>
 
-                        <template x-if="current?.type === 'qr_code'">
+                        <template x-if="isQr(current)">
                             <label>
                                 QR Background
                                 <input type="color" x-model="current.qr_background_color">
                             </label>
+                        </template>
+
+                        <template x-if="isQr(current)">
+                            <div class="qr-helper-note">
+                                QR uses the same drag, resize, arrows, visibility, and save controls as the other placeholders.
+                            </div>
                         </template>
                     </div>
 
@@ -381,10 +386,10 @@
                             <div
                                 x-show="placeholder.is_visible"
                                 class="placeholder-box preview-mode"
-                                :class="{ qr: placeholder.type === 'qr_code' }"
+                                :class="{ qr: isQr(placeholder) }"
                                 :style="placeholderStyle(placeholder)"
                             >
-                                <template x-if="placeholder.type === 'qr_code'">
+                                <template x-if="isQr(placeholder)">
                                     <div
                                         class="qr-preview actual-qr"
                                         :style="{
@@ -396,15 +401,12 @@
                                         </template>
 
                                         <template x-if="!sampleQrCodeUrl">
-                                            <div class="qr-fallback">
-                                                <strong>QR</strong>
-                                                <small>No QR yet</small>
-                                            </div>
+                                            <img :src="defaultSampleQrCodeUrl" alt="Sample QR Code Preview">
                                         </template>
                                     </div>
                                 </template>
 
-                                <template x-if="placeholder.type !== 'qr_code'">
+                                <template x-if="! isQr(placeholder)">
                                     <span x-text="previewValue(placeholder)"></span>
                                 </template>
                             </div>
@@ -775,12 +777,18 @@
             overflow: hidden;
         }
 
-        .qr-preview.actual-qr img {
+        .qr-preview.actual-qr img,
+        .qr-preview img {
             width: 100%;
             height: 100%;
             object-fit: contain;
             display: block;
             background: #ffffff;
+            padding: 3%;
+            box-sizing: border-box;
+            image-rendering: auto;
+            pointer-events: none;
+            user-select: none;
         }
 
         .qr-fallback {
@@ -1131,6 +1139,7 @@
                 templateWidth: config.templateWidth,
                 templateHeight: config.templateHeight,
                 sampleQrCodeUrl: config.sampleQrCodeUrl,
+                defaultSampleQrCodeUrl: config.defaultSampleQrCodeUrl,
 
                 dragging: null,
                 resizing: null,
@@ -1147,6 +1156,28 @@
                     }
 
                     return this.placeholders[this.selectedKey] || null;
+                },
+
+                placeholderKey(placeholder) {
+                    return String(
+                        placeholder?.type
+                        || placeholder?.key
+                        || placeholder?.placeholder_key
+                        || ''
+                    ).toLowerCase();
+                },
+
+                isQr(placeholder) {
+                    const key = this.placeholderKey(placeholder);
+
+                    return [
+                        'qr_code',
+                        'qrcode',
+                        'qr',
+                        'qr-code',
+                        'guest_qr_code',
+                        'invitee_qr_code'
+                    ].includes(key);
                 },
 
                 selectPlaceholder(key) {
@@ -1340,17 +1371,33 @@
                     const deltaWidthPercent = (deltaX / designer.templateWidth) * 100;
                     const deltaHeightPercent = (deltaY / designer.templateHeight) * 100;
 
-                    item.width_percent = clamp(
+                    const nextWidth = clamp(
                         designer.resizing.originalWidth + deltaWidthPercent,
                         1,
                         100 - Number(item.x_percent || 0)
                     );
 
-                    item.height_percent = clamp(
+                    const nextHeight = clamp(
                         designer.resizing.originalHeight + deltaHeightPercent,
                         1,
                         100 - Number(item.y_percent || 0)
                     );
+
+                    if (designer.isQr(item)) {
+                        const maxSquareSize = Math.min(
+                            100 - Number(item.x_percent || 0),
+                            100 - Number(item.y_percent || 0)
+                        );
+
+                        const squareSize = clamp(Math.max(nextWidth, nextHeight), 1, maxSquareSize);
+
+                        item.width_percent = squareSize;
+                        item.height_percent = squareSize;
+                        item.qr_size = Math.round(squareSize * 10);
+                    } else {
+                        item.width_percent = nextWidth;
+                        item.height_percent = nextHeight;
+                    }
                 };
 
                 designer.stopInteraction = function () {

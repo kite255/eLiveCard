@@ -12,7 +12,15 @@ Artisan::command('inspire', function () {
 |--------------------------------------------------------------------------
 | eLive Card Automatic Reminder SMS Schedule
 |--------------------------------------------------------------------------
-| These commands run automatically when Laravel scheduler is active.
+| The scheduler runs every minute.
+|
+| Each reminder command checks:
+| - whether automatic reminders are enabled for the event;
+| - whether that reminder type is enabled;
+| - whether the event date is eligible;
+| - whether the event's configured reminder time matches the current time;
+| - whether the invitee is eligible;
+| - whether the reminder has already been sent.
 |
 | Local development:
 | php artisan schedule:work
@@ -22,13 +30,16 @@ Artisan::command('inspire', function () {
 */
 
 Schedule::command('sms:send-rsvp-pending-reminders')
-    ->dailyAt('09:00')
-    ->withoutOverlapping();
+    ->everyMinute()
+    ->withoutOverlapping(10)
+    ->onOneServer();
 
 Schedule::command('sms:send-one-day-before-reminders')
-    ->dailyAt('10:00')
-    ->withoutOverlapping();
+    ->everyMinute()
+    ->withoutOverlapping(10)
+    ->onOneServer();
 
 Schedule::command('sms:send-event-day-reminders')
-    ->dailyAt('06:00')
-    ->withoutOverlapping();
+    ->everyMinute()
+    ->withoutOverlapping(10)
+    ->onOneServer();

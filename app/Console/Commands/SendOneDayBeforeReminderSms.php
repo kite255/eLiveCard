@@ -9,13 +9,16 @@ use Illuminate\Console\Command;
 
 class SendOneDayBeforeReminderSms extends Command
 {
-    protected $signature = 'sms:send-one-day-before-reminders';
+    protected $signature = 'sms:send-one-day-before-reminders
+                            {--force : Ignore the configured reminder time and run immediately for testing}';
 
-    protected $description = 'Send one-day-before reminder SMS to attending invitees for events with automatic reminders enabled.';
+    protected $description = 'Send one-day-before reminder SMS at each event configured reminder time.';
 
     public function handle(ReminderSmsService $reminderSmsService): int
     {
         $targetDate = now()->addDay()->toDateString();
+        $currentTime = now()->format('H:i');
+        $force = (bool) $this->option('force');
 
         $events = Event::query()
             ->whereIn('status', [
@@ -27,37 +30,66 @@ class SendOneDayBeforeReminderSms extends Command
             ->whereDate('event_date', $targetDate)
             ->get();
 
+        $totalEvents = 0;
         $totalSent = 0;
         $totalFailed = 0;
         $totalSkipped = 0;
 
         foreach ($events as $event) {
+            if (! $force && ! $event->isOneDayReminderDue($currentTime)) {
+                continue;
+            }
+
+            $totalEvents++;
+
             $invitees = Invitee::query()
                 ->where('event_id', $event->id)
                 ->where('rsvp_status', Invitee::RSVP_STATUS_ATTENDING)
+                ->whereNotNull('phone')
+                ->where('phone', '!=', '')
                 ->where(function ($query) {
                     $query
                         ->whereNull('reminder_sms_status')
                         ->orWhere('reminder_sms_status', '!=', Invitee::SMS_STATUS_SENT);
                 })
-                ->whereNotNull('phone')
                 ->get();
 
             if ($invitees->isEmpty()) {
-                $this->line("Event {$event->title}: no attending invitees found for one-day-before reminder.");
+                $this->line(
+                    "Event {$event->title}: no eligible attending invitees found."
+                );
+
                 continue;
             }
 
             $result = $reminderSmsService->sendBulkAttendingReminders($invitees);
 
-            $totalSent += $result['sent'];
-            $totalFailed += $result['failed'];
-            $totalSkipped += $result['skipped'];
+            $sent = (int) ($result['sent'] ?? 0);
+            $failed = (int) ($result['failed'] ?? 0);
+            $skipped = (int) ($result['skipped'] ?? 0);
 
-            $this->line("Event {$event->title}: Sent {$result['sent']}, Failed {$result['failed']}, Skipped {$result['skipped']}.");
+            $totalSent += $sent;
+            $totalFailed += $failed;
+            $totalSkipped += $skipped;
+
+            $this->line(
+                "Event {$event->title}: Sent {$sent}, Failed {$failed}, Skipped {$skipped}."
+            );
         }
 
-        $this->info("One-day-before reminders completed. Sent: {$totalSent}, Failed: {$totalFailed}, Skipped: {$totalSkipped}");
+        if ($totalEvents === 0) {
+            $this->info(
+                $force
+                    ? 'No one-day-before events are eligible for tomorrow.'
+                    : "No one-day-before reminders are due at {$currentTime}."
+            );
+
+            return self::SUCCESS;
+        }
+
+        $this->info(
+            "One-day-before reminders completed. Events: {$totalEvents}, Sent: {$totalSent}, Failed: {$totalFailed}, Skipped: {$totalSkipped}."
+        );
 
         return self::SUCCESS;
     }

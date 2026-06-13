@@ -57,6 +57,72 @@ class CardTemplatePlaceholder extends Model
         'sort_order' => 'integer',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (CardTemplatePlaceholder $placeholder): void {
+            if (blank($placeholder->label) && filled($placeholder->placeholder_key)) {
+                $placeholder->label = self::availablePlaceholders()[$placeholder->placeholder_key]
+                    ?? ucfirst(str_replace('_', ' ', $placeholder->placeholder_key));
+            }
+
+            if (blank($placeholder->font_size)) {
+                $placeholder->font_size = 32;
+            }
+
+            if (blank($placeholder->font_color)) {
+                $placeholder->font_color = '#111827';
+            }
+
+            if (blank($placeholder->font_weight)) {
+                $placeholder->font_weight = 'normal';
+            }
+
+            if (blank($placeholder->font_family)) {
+                $placeholder->font_family = self::defaultFontFamily();
+            }
+
+            if (blank($placeholder->text_align)) {
+                $placeholder->text_align = 'center';
+            }
+
+            if (blank($placeholder->qr_size)) {
+                $placeholder->qr_size = 160;
+            }
+
+            if (blank($placeholder->qr_color)) {
+                $placeholder->qr_color = '#111827';
+            }
+
+            if (blank($placeholder->qr_background_color)) {
+                $placeholder->qr_background_color = '#FFFFFF';
+            }
+
+            if (is_null($placeholder->is_visible)) {
+                $placeholder->is_visible = true;
+            }
+
+            if (blank($placeholder->sort_order)) {
+                $placeholder->sort_order = 1;
+            }
+
+            if (blank($placeholder->x_percent)) {
+                $placeholder->x_percent = 50;
+            }
+
+            if (blank($placeholder->y_percent)) {
+                $placeholder->y_percent = 50;
+            }
+
+            if (blank($placeholder->width_percent)) {
+                $placeholder->width_percent = $placeholder->isQrCode() ? 18 : 60;
+            }
+
+            if (blank($placeholder->height_percent)) {
+                $placeholder->height_percent = $placeholder->isQrCode() ? 18 : 8;
+            }
+        });
+    }
+
     public static function availablePlaceholders(): array
     {
         return [
@@ -154,19 +220,52 @@ class CardTemplatePlaceholder extends Model
     public function getPreviewValueAttribute(): string
     {
         return match ($this->placeholder_key) {
-            self::PLACEHOLDER_NAME => 'John Doe',
-            self::PLACEHOLDER_CARD_TYPE => 'VIP',
-            self::PLACEHOLDER_SERIAL_NUMBER => 'ELC-0001',
-            self::PLACEHOLDER_GUEST_COUNT => '2 Guests',
-            self::PLACEHOLDER_ALLOWED_GUESTS => '2',
-            self::PLACEHOLDER_TABLE_NUMBER => 'Table 5',
+            self::PLACEHOLDER_NAME => 'Guest 1',
+            self::PLACEHOLDER_CARD_TYPE => 'Single',
+            self::PLACEHOLDER_SERIAL_NUMBER => 'ELV-2026-ABC123',
+            self::PLACEHOLDER_GUEST_COUNT => '1 Guest',
+            self::PLACEHOLDER_ALLOWED_GUESTS => '1',
+            self::PLACEHOLDER_TABLE_NUMBER => 'A1',
             self::PLACEHOLDER_CATEGORY => 'Family',
-            self::PLACEHOLDER_EVENT_NAME => 'Wedding Ceremony',
-            self::PLACEHOLDER_EVENT_DATE => '25 Dec 2026',
-            self::PLACEHOLDER_EVENT_TIME => '04:00 PM',
-            self::PLACEHOLDER_EVENT_VENUE => 'Royal Hall',
+            self::PLACEHOLDER_EVENT_NAME => 'Sample Send-off Event',
+            self::PLACEHOLDER_EVENT_DATE => '24 Jun 2026',
+            self::PLACEHOLDER_EVENT_TIME => '06:00 PM',
+            self::PLACEHOLDER_EVENT_VENUE => 'Sample Hall, Dodoma',
             self::PLACEHOLDER_QR_CODE => 'QR Code',
             default => $this->display_label,
         };
+    }
+
+    public function getFontFilePathAttribute(): ?string
+    {
+        $fontFamily = $this->font_family ?: self::defaultFontFamily();
+        $fontWeight = $this->font_weight === 'bold' ? 'bold' : 'regular';
+
+        return self::fontFiles()[$fontFamily][$fontWeight] ?? null;
+    }
+
+    public function getCssStyleAttribute(): string
+    {
+        return collect([
+            "left: {$this->x_percent}%",
+            "top: {$this->y_percent}%",
+            "width: {$this->width_percent}%",
+            "height: {$this->height_percent}%",
+            "font-size: {$this->font_size}px",
+            "color: {$this->font_color}",
+            "font-weight: {$this->font_weight}",
+            "font-family: {$this->font_family}",
+            "text-align: {$this->text_align}",
+        ])->implode('; ');
+    }
+
+    public function getQrCssStyleAttribute(): string
+    {
+        return collect([
+            "left: {$this->x_percent}%",
+            "top: {$this->y_percent}%",
+            "width: {$this->width_percent}%",
+            "height: {$this->height_percent}%",
+        ])->implode('; ');
     }
 }

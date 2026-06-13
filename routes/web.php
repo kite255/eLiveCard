@@ -1,5 +1,7 @@
 <?php
 
+use App\Exports\InviteeSampleExport;
+use App\Http\Controllers\CardTemplateDesignerController;
 use App\Http\Controllers\GateVerifyController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
@@ -7,6 +9,7 @@ use App\Http\Controllers\RsvpController;
 use App\Models\CardTemplate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
 
 Route::get('/', function () {
     return view('welcome');
@@ -16,12 +19,11 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 | Public Invitee Page
 |--------------------------------------------------------------------------
-| Short QR / private invitation link:
+| Main private invitation page.
+|
+| Example:
 | Local: http://127.0.0.1:8002/i/NPTUIN
 | Live:  https://card.elive.co.tz/i/NPTUIN
-|
-| This is the main invitee page where invitees can view invitation details,
-| RSVP, see their QR code, serial number, guest count, and event information.
 */
 Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
     ->where('shortCode', '[A-Za-z0-9]+')
@@ -29,9 +31,8 @@ Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
 
 /*
 |--------------------------------------------------------------------------
-| Invitee RSVP Action From Private Invitee Page
+| Invitee RSVP From Private Page
 |--------------------------------------------------------------------------
-| This route receives RSVP button clicks from the private invitee page.
 */
 Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
     ->where('shortCode', '[A-Za-z0-9]+')
@@ -41,11 +42,11 @@ Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
 |--------------------------------------------------------------------------
 | Standalone RSVP Confirmation Page
 |--------------------------------------------------------------------------
-| Private RSVP link:
+| Useful for SMS and WhatsApp reminder links.
+|
+| Example:
 | Local: http://127.0.0.1:8002/rsvp/{token}
 | Live:  https://card.elive.co.tz/rsvp/{token}
-|
-| This is useful for SMS reminders and direct RSVP confirmation.
 */
 Route::get('/rsvp/{token}', [RsvpController::class, 'show'])
     ->where('token', '[A-Za-z0-9]+')
@@ -63,13 +64,11 @@ Route::get('/rsvp/{token}/thank-you', [RsvpController::class, 'thankYou'])
 |--------------------------------------------------------------------------
 | Public Generated Invitation Card
 |--------------------------------------------------------------------------
-| This allows invitees to view and download their personalized generated card.
+| Invitees can view and download their personalized card.
 |
 | Example:
 | View:     https://card.elive.co.tz/card/ELV-2026-ZRKJ7A
 | Download: https://card.elive.co.tz/card/ELV-2026-ZRKJ7A/download
-|
-| This link can be sent by SMS or WhatsApp together with the invitee page link.
 */
 Route::get('/card/{serialNumber}', [PublicCardController::class, 'show'])
     ->where('serialNumber', '[A-Za-z0-9\-]+')
@@ -78,6 +77,62 @@ Route::get('/card/{serialNumber}', [PublicCardController::class, 'show'])
 Route::get('/card/{serialNumber}/download', [PublicCardController::class, 'download'])
     ->where('serialNumber', '[A-Za-z0-9\-]+')
     ->name('public.card.download');
+
+/*
+|--------------------------------------------------------------------------
+| Authenticated Admin/User Routes
+|--------------------------------------------------------------------------
+| These routes require login.
+*/
+Route::middleware(['auth'])->group(function () {
+    /*
+    |--------------------------------------------------------------------------
+    | Invitee Sample Excel Download
+    |--------------------------------------------------------------------------
+    | Excel columns:
+    | name, phone, card_type, allowed_guests, category, table_number
+    |
+    | Required:
+    | name, phone, card_type
+    |
+    | Optional:
+    | allowed_guests, category, table_number
+    */
+    Route::get('/invitees/sample-excel', function () {
+        return Excel::download(
+            new InviteeSampleExport(),
+            'elive-card-invitees-sample.xlsx'
+        );
+    })->name('invitees.sample-excel');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Drag-and-Drop Card Template Designer
+    |--------------------------------------------------------------------------
+    | This is used by the admin/card designer to visually place placeholders
+    | such as name, QR code, serial number, guest count, and table number.
+    */
+    Route::get('/admin/card-templates/{cardTemplate}/designer', [CardTemplateDesignerController::class, 'show'])
+        ->name('card-templates.designer');
+
+    Route::post('/admin/card-templates/{cardTemplate}/designer/save', [CardTemplateDesignerController::class, 'save'])
+        ->name('card-templates.designer.save');
+
+    Route::post('/admin/card-templates/{cardTemplate}/designer/placeholders', [CardTemplateDesignerController::class, 'createPlaceholder'])
+        ->name('card-templates.designer.placeholders.create');
+
+    Route::delete('/admin/card-templates/{cardTemplate}/designer/placeholders/{placeholder}', [CardTemplateDesignerController::class, 'deletePlaceholder'])
+        ->name('card-templates.designer.placeholders.delete');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Gate Check-in Submit
+    |--------------------------------------------------------------------------
+    | Only logged-in gate users/admin users should check in invitees.
+    */
+    Route::post('/gate/verify/{token}/check-in', [GateVerifyController::class, 'checkIn'])
+        ->name('gate.verify.check-in');
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -106,13 +161,10 @@ Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $card
 
 /*
 |--------------------------------------------------------------------------
-| Gate Verification
+| Gate Verification Page
 |--------------------------------------------------------------------------
-| This route is for gate users to verify scanned QR/token and check in guests.
+| This route displays the scanned invitee verification page.
+| The actual check-in action is protected by auth above.
 */
 Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
     ->name('gate.verify.show');
-
-Route::post('/gate/verify/{token}/check-in', [GateVerifyController::class, 'checkIn'])
-    ->middleware('auth')
-    ->name('gate.verify.check-in');

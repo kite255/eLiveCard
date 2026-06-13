@@ -1,51 +1,35 @@
 <?php
 
-namespace App\Filament\Resources;
+namespace App\Filament\Resources\EventResource\RelationManagers;
 
-use App\Filament\Resources\GeneratedCardResource\Pages;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Models\GeneratedCard;
 use Filament\Notifications\Notification;
-use Filament\Resources\Resource;
+use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Storage;
 
-class GeneratedCardResource extends Resource
+class GeneratedCardsRelationManager extends RelationManager
 {
-    protected static ?string $model = GeneratedCard::class;
+    protected static string $relationship = 'generatedCards';
 
-    protected static ?string $navigationIcon = 'heroicon-o-identification';
+    protected static ?string $title = 'Generated Cards';
 
-    protected static ?string $navigationGroup = 'Card Management';
-
-    protected static ?string $navigationLabel = 'Generated Cards';
-
-    protected static ?string $modelLabel = 'Generated Card';
-
-    protected static ?string $pluralModelLabel = 'Generated Cards';
-
-    protected static ?int $navigationSort = 2;
-
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()
-            ->with([
-                'event',
-                'invitee',
-                'cardTemplate',
-            ])
-            ->latest();
-    }
-
-    public static function table(Table $table): Table
+    public function table(Table $table): Table
     {
         return $table
             ->heading('Generated Cards')
-            ->description('View, download, regenerate, and manage personalized cards generated for invitees.')
+            ->description('View, download, regenerate, and manage personalized cards for this event.')
+            ->modifyQueryUsing(fn ($query) => $query
+                ->with([
+                    'invitee',
+                    'cardTemplate',
+                ])
+                ->latest()
+            )
             ->paginated([10, 25, 50, 100])
             ->defaultPaginationPageOption(10)
             ->columns([
@@ -62,17 +46,10 @@ class GeneratedCardResource extends Resource
                     ->copyable()
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('event.title')
-                    ->label('Event')
-                    ->searchable()
-                    ->sortable()
-                    ->limit(30)
-                    ->toggleable(),
-
                 Tables\Columns\TextColumn::make('cardTemplate.name')
                     ->label('Template')
                     ->limit(30)
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -123,12 +100,6 @@ class GeneratedCardResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                Tables\Filters\SelectFilter::make('event_id')
-                    ->label('Event')
-                    ->relationship('event', 'title')
-                    ->searchable()
-                    ->preload(),
-
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options(GeneratedCard::statuses()),
@@ -261,17 +232,5 @@ class GeneratedCardResource extends Resource
             ->emptyStateIcon('heroicon-o-identification')
             ->emptyStateHeading('No generated cards yet')
             ->emptyStateDescription('Generate cards from the Invitees tab or from an active card template first.');
-    }
-
-    public static function getRelations(): array
-    {
-        return [];
-    }
-
-    public static function getPages(): array
-    {
-        return [
-            'index' => Pages\ListGeneratedCards::route('/'),
-        ];
     }
 }

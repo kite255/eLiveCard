@@ -18,8 +18,15 @@ class CardType extends Model
     ];
 
     protected $casts = [
+        'allowed_people' => 'integer',
         'is_active' => 'boolean',
     ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
 
     public function event(): BelongsTo
     {
@@ -29,5 +36,38 @@ class CardType extends Model
     public function invitees(): HasMany
     {
         return $this->hasMany(Invitee::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Attribute Helpers
+    |--------------------------------------------------------------------------
+    | Your database uses allowed_people and is_active.
+    | These helpers allow the system to also read guests and status safely.
+    */
+
+    public function getGuestsAttribute(): int
+    {
+        return (int) ($this->allowed_people ?? 1);
+    }
+
+    public function setGuestsAttribute($value): void
+    {
+        $this->attributes['allowed_people'] = (int) $value;
+    }
+
+    public function getStatusAttribute(): string
+    {
+        return $this->is_active ? 'active' : 'inactive';
+    }
+
+    public function setStatusAttribute($value): void
+    {
+        $this->attributes['is_active'] = $value === true || $value === 'active' || $value === '1' || $value === 1;
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('is_active', true);
     }
 }

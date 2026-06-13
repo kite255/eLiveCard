@@ -58,7 +58,7 @@ class CardTypeResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Card Type Details')
-                    ->description('Create invitation card categories such as Single, Double, Family, VIP, VVIP, Committee, or Custom.')
+                    ->description('Create only the card types you want to use for this specific event.')
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
@@ -69,12 +69,12 @@ class CardTypeResource extends Resource
 
                         Forms\Components\TextInput::make('name')
                             ->label('Card Type Name')
-                            ->placeholder('Example: Single, Double, Family, VIP')
+                            ->placeholder('Example: Single, Double, Family, Special Guest')
                             ->required()
                             ->maxLength(255),
 
                         Forms\Components\TextInput::make('allowed_people')
-                            ->label('Allowed Guests')
+                            ->label('Guests')
                             ->helperText('Total number of people allowed with this card type.')
                             ->required()
                             ->numeric()
@@ -87,7 +87,7 @@ class CardTypeResource extends Resource
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Active')
-                            ->helperText('Only active card types should be used when adding invitees.')
+                            ->helperText('Only active card types can be used when adding or importing invitees.')
                             ->default(true)
                             ->required(),
 
@@ -117,7 +117,7 @@ class CardTypeResource extends Resource
                     ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('allowed_people')
-                    ->label('Allowed Guests')
+                    ->label('Guests')
                     ->alignCenter()
                     ->badge()
                     ->color('primary')
@@ -127,8 +127,10 @@ class CardTypeResource extends Resource
                     ->label('Color'),
 
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label('Active')
+                    ->label('Status')
                     ->boolean()
+                    ->trueIcon('heroicon-o-check-circle')
+                    ->falseIcon('heroicon-o-x-circle')
                     ->trueColor('success')
                     ->falseColor('danger'),
 
@@ -146,10 +148,17 @@ class CardTypeResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->filters([
+                Tables\Filters\SelectFilter::make('event_id')
+                    ->label('Event')
+                    ->relationship('event', 'title')
+                    ->searchable()
+                    ->preload(),
+
                 Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Active Status')
+                    ->label('Status')
                     ->trueLabel('Active')
                     ->falseLabel('Inactive')
+                    ->placeholder('All')
                     ->native(false),
             ])
             ->actions([
@@ -167,7 +176,7 @@ class CardTypeResource extends Resource
                 ]),
             ])
             ->emptyStateHeading('No card types yet')
-            ->emptyStateDescription('Create card types like Single, Double, Family, VIP, VVIP, Committee, or Custom.')
+            ->emptyStateDescription('Create the card types you need for your event.')
             ->emptyStateIcon('heroicon-o-identification');
     }
 
