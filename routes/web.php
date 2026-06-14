@@ -6,7 +6,9 @@ use App\Http\Controllers\GateVerifyController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
 use App\Http\Controllers\RsvpController;
+use App\Http\Controllers\WhatsAppWebhookController;
 use App\Models\CardTemplate;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
@@ -17,13 +19,43 @@ Route::get('/', function () {
 
 /*
 |--------------------------------------------------------------------------
+| WhatsApp Cloud API Webhook
+|--------------------------------------------------------------------------
+|
+| GET:
+| Used by Meta to verify the webhook callback URL.
+|
+| POST:
+| Receives incoming WhatsApp messages and delivery status updates such as
+| sent, delivered, read, and failed.
+|
+| Staging callback:
+| https://staging-digital.elive.co.tz/api/whatsapp/webhook
+|
+| These routes must remain public. Do not place them inside auth middleware.
+|
+*/
+Route::get(
+    '/api/whatsapp/webhook',
+    [WhatsAppWebhookController::class, 'verify']
+)->name('whatsapp.webhook.verify');
+
+Route::post(
+    '/api/whatsapp/webhook',
+    [WhatsAppWebhookController::class, 'handle']
+)
+    ->withoutMiddleware([VerifyCsrfToken::class])
+    ->name('whatsapp.webhook.handle');
+
+/*
+|--------------------------------------------------------------------------
 | Public Invitee Page
 |--------------------------------------------------------------------------
 | Main private invitation page.
 |
 | Example:
 | Local: http://127.0.0.1:8002/i/NPTUIN
-| Live:  https://card.elive.co.tz/i/NPTUIN
+| Live:  https://digital.elive.co.tz/i/NPTUIN
 */
 Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
     ->where('shortCode', '[A-Za-z0-9]+')
@@ -46,7 +78,7 @@ Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
 |
 | Example:
 | Local: http://127.0.0.1:8002/rsvp/{token}
-| Live:  https://card.elive.co.tz/rsvp/{token}
+| Live:  https://digital.elive.co.tz/rsvp/{token}
 */
 Route::get('/rsvp/{token}', [RsvpController::class, 'show'])
     ->where('token', '[A-Za-z0-9]+')
@@ -67,8 +99,8 @@ Route::get('/rsvp/{token}/thank-you', [RsvpController::class, 'thankYou'])
 | Invitees can view and download their personalized card.
 |
 | Example:
-| View:     https://card.elive.co.tz/card/ELV-2026-ZRKJ7A
-| Download: https://card.elive.co.tz/card/ELV-2026-ZRKJ7A/download
+| View:     https://digital.elive.co.tz/card/ELV-2026-ZRKJ7A
+| Download: https://digital.elive.co.tz/card/ELV-2026-ZRKJ7A/download
 */
 Route::get('/card/{serialNumber}', [PublicCardController::class, 'show'])
     ->where('serialNumber', '[A-Za-z0-9\-]+')
@@ -112,17 +144,25 @@ Route::middleware(['auth'])->group(function () {
     | This is used by the admin/card designer to visually place placeholders
     | such as name, QR code, serial number, guest count, and table number.
     */
-    Route::get('/admin/card-templates/{cardTemplate}/designer', [CardTemplateDesignerController::class, 'show'])
-        ->name('card-templates.designer');
+    Route::get(
+        '/admin/card-templates/{cardTemplate}/designer',
+        [CardTemplateDesignerController::class, 'show']
+    )->name('card-templates.designer');
 
-    Route::post('/admin/card-templates/{cardTemplate}/designer/save', [CardTemplateDesignerController::class, 'save'])
-        ->name('card-templates.designer.save');
+    Route::post(
+        '/admin/card-templates/{cardTemplate}/designer/save',
+        [CardTemplateDesignerController::class, 'save']
+    )->name('card-templates.designer.save');
 
-    Route::post('/admin/card-templates/{cardTemplate}/designer/placeholders', [CardTemplateDesignerController::class, 'createPlaceholder'])
-        ->name('card-templates.designer.placeholders.create');
+    Route::post(
+        '/admin/card-templates/{cardTemplate}/designer/placeholders',
+        [CardTemplateDesignerController::class, 'createPlaceholder']
+    )->name('card-templates.designer.placeholders.create');
 
-    Route::delete('/admin/card-templates/{cardTemplate}/designer/placeholders/{placeholder}', [CardTemplateDesignerController::class, 'deletePlaceholder'])
-        ->name('card-templates.designer.placeholders.delete');
+    Route::delete(
+        '/admin/card-templates/{cardTemplate}/designer/placeholders/{placeholder}',
+        [CardTemplateDesignerController::class, 'deletePlaceholder']
+    )->name('card-templates.designer.placeholders.delete');
 
     /*
     |--------------------------------------------------------------------------
@@ -130,8 +170,10 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     | Only logged-in gate users/admin users should check in invitees.
     */
-    Route::post('/gate/verify/{token}/check-in', [GateVerifyController::class, 'checkIn'])
-        ->name('gate.verify.check-in');
+    Route::post(
+        '/gate/verify/{token}/check-in',
+        [GateVerifyController::class, 'checkIn']
+    )->name('gate.verify.check-in');
 });
 
 /*
@@ -145,8 +187,14 @@ Route::middleware(['auth'])->group(function () {
 | Example:
 | https://staging-digital.elive.co.tz/card-template-preview/1
 */
-Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $cardTemplate) {
-    abort_if(! $cardTemplate->template_image, 404, 'Template image is missing.');
+Route::get('/card-template-preview/{cardTemplate}', function (
+    CardTemplate $cardTemplate
+) {
+    abort_if(
+        ! $cardTemplate->template_image,
+        404,
+        'Template image is missing.'
+    );
 
     abort_if(
         ! Storage::disk('public')->exists($cardTemplate->template_image),
@@ -155,7 +203,9 @@ Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $card
     );
 
     return response()->file(
-        Storage::disk('public')->path($cardTemplate->template_image)
+        Storage::disk('public')->path(
+            $cardTemplate->template_image
+        )
     );
 })->name('card-template.preview');
 
