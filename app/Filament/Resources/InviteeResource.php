@@ -25,6 +25,8 @@ class InviteeResource extends Resource
 {
     protected static ?string $model = Invitee::class;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
     protected static ?string $navigationLabel = 'Invitees';

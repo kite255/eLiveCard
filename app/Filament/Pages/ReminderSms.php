@@ -17,6 +17,8 @@ class ReminderSms extends Page implements Forms\Contracts\HasForms
 {
     use Forms\Concerns\InteractsWithForms;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-bell-alert';
 
     protected static ?string $navigationLabel = 'Reminder SMS';

@@ -20,6 +20,8 @@ class CardTemplateResource extends Resource
 {
     protected static ?string $model = CardTemplate::class;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-photo';
 
     protected static ?string $navigationGroup = 'Card Management';

@@ -8,6 +8,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -45,7 +46,30 @@ class AdminPanelProvider extends PanelProvider
 
             /*
             |--------------------------------------------------------------------------
-            | Resources, Pages, Widgets
+            | Sidebar Navigation Groups
+            |--------------------------------------------------------------------------
+            |
+            | Do not add icons to the groups because the items inside the groups
+            | already have their own icons.
+            |
+            */
+            ->navigationGroups([
+                NavigationGroup::make()
+                    ->label('Event Management')
+                    ->collapsible(),
+
+                NavigationGroup::make()
+                    ->label('Attendance')
+                    ->collapsible(),
+
+                NavigationGroup::make()
+                    ->label('Reports')
+                    ->collapsible(),
+            ])
+
+            /*
+            |--------------------------------------------------------------------------
+            | Resources, Pages and Widgets
             |--------------------------------------------------------------------------
             */
             ->discoverResources(

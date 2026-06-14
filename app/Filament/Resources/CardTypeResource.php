@@ -14,6 +14,12 @@ class CardTypeResource extends Resource
 {
     protected static ?string $model = CardType::class;
 
+    /**
+     * Card types are managed inside each Event workspace,
+     * so they should not appear as a separate sidebar item.
+     */
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-identification';
 
     protected static ?string $navigationGroup = 'Event Setup';
@@ -43,14 +49,18 @@ class CardTypeResource extends Resource
 
     public static function canDelete($record): bool
     {
-        return auth()->user()?->isSuperAdmin()
-            || auth()->user()?->isEventOwner();
+        $user = auth()->user();
+
+        return ($user?->isSuperAdmin() ?? false)
+            || ($user?->isEventOwner() ?? false);
     }
 
     public static function canDeleteAny(): bool
     {
-        return auth()->user()?->isSuperAdmin()
-            || auth()->user()?->isEventOwner();
+        $user = auth()->user();
+
+        return ($user?->isSuperAdmin() ?? false)
+            || ($user?->isEventOwner() ?? false);
     }
 
     public static function form(Form $form): Form
@@ -58,7 +68,9 @@ class CardTypeResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Card Type Details')
-                    ->description('Create only the card types you want to use for this specific event.')
+                    ->description(
+                        'Create only the card types you want to use for this specific event.'
+                    )
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
@@ -69,15 +81,20 @@ class CardTypeResource extends Resource
 
                         Forms\Components\TextInput::make('name')
                             ->label('Card Type Name')
-                            ->placeholder('Example: Single, Double, Family, Special Guest')
+                            ->placeholder(
+                                'Example: Single, Double, Family, VIP, VVIP, Committee'
+                            )
                             ->required()
                             ->maxLength(255),
 
                         Forms\Components\TextInput::make('allowed_people')
-                            ->label('Guests')
-                            ->helperText('Total number of people allowed with this card type.')
+                            ->label('Allowed Guests')
+                            ->helperText(
+                                'Total number of people allowed to enter using this card type.'
+                            )
                             ->required()
                             ->numeric()
+                            ->integer()
                             ->minValue(1)
                             ->default(1),
 
@@ -87,14 +104,19 @@ class CardTypeResource extends Resource
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Active')
-                            ->helperText('Only active card types can be used when adding or importing invitees.')
+                            ->helperText(
+                                'Only active card types can be used when adding or importing invitees.'
+                            )
                             ->default(true)
                             ->required(),
 
                         Forms\Components\Textarea::make('description')
                             ->label('Description')
-                            ->placeholder('Optional notes about this card type.')
+                            ->placeholder(
+                                'Optional notes or instructions about this card type.'
+                            )
                             ->rows(3)
+                            ->maxLength(1000)
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
@@ -108,7 +130,8 @@ class CardTypeResource extends Resource
                 Tables\Columns\TextColumn::make('event.title')
                     ->label('Event')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->placeholder('No event'),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Card Type')
@@ -117,7 +140,7 @@ class CardTypeResource extends Resource
                     ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('allowed_people')
-                    ->label('Guests')
+                    ->label('Allowed Guests')
                     ->alignCenter()
                     ->badge()
                     ->color('primary')
@@ -158,25 +181,35 @@ class CardTypeResource extends Resource
                     ->label('Status')
                     ->trueLabel('Active')
                     ->falseLabel('Inactive')
-                    ->placeholder('All')
+                    ->placeholder('All card types')
                     ->native(false),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin()
-                        || auth()->user()?->isEventOwner()),
+                    ->visible(function (): bool {
+                        $user = auth()->user();
+
+                        return ($user?->isSuperAdmin() ?? false)
+                            || ($user?->isEventOwner() ?? false);
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn (): bool => auth()->user()?->isSuperAdmin()
-                            || auth()->user()?->isEventOwner()),
+                        ->visible(function (): bool {
+                            $user = auth()->user();
+
+                            return ($user?->isSuperAdmin() ?? false)
+                                || ($user?->isEventOwner() ?? false);
+                        }),
                 ]),
             ])
             ->emptyStateHeading('No card types yet')
-            ->emptyStateDescription('Create the card types you need for your event.')
+            ->emptyStateDescription(
+                'Open an event workspace and create the card types required for that event.'
+            )
             ->emptyStateIcon('heroicon-o-identification');
     }
 

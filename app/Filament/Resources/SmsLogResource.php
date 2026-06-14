@@ -14,6 +14,8 @@ class SmsLogResource extends Resource
 {
     protected static ?string $model = SmsLog::class;
 
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-chat-bubble-left-right';
 
     protected static ?string $navigationGroup = 'Communication';

@@ -21,15 +21,17 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
 {
     use Forms\Concerns\InteractsWithForms;
 
+    protected static bool $shouldRegisterNavigation = true;
+
     protected static ?string $navigationIcon = 'heroicon-o-qr-code';
 
     protected static string $view = 'filament.pages.gate-check-in';
 
-    protected static ?string $navigationLabel = 'Gate Check-in';
+    protected static ?string $navigationLabel = 'Gate Check-In';
 
-    protected static ?string $title = 'Gate Check-in';
+    protected static ?string $title = 'Gate Check-In';
 
-    protected static ?string $navigationGroup = 'Event Day';
+    protected static ?string $navigationGroup = 'Attendance';
 
     protected static ?int $navigationSort = 1;
 
@@ -78,15 +80,14 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->options(
-                                Event::query()
-                                    ->when(
-                                        Schema::hasColumn('events', 'event_date'),
-                                        fn (Builder $query) => $query->orderByDesc('event_date'),
-                                        fn (Builder $query) => $query->latest()
-                                    )
-                                    ->pluck($eventNameColumn, 'id')
-                            )
+                            ->options(fn (): array => Event::query()
+                                ->when(
+                                    Schema::hasColumn('events', 'event_date'),
+                                    fn (Builder $query) => $query->orderByDesc('event_date'),
+                                    fn (Builder $query) => $query->latest()
+                                )
+                                ->pluck($eventNameColumn, 'id')
+                                ->all())
                             ->searchable()
                             ->preload()
                             ->required()
@@ -316,22 +317,41 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
             $newRemainingGuests = max($allowedGuests - $newCount, 0);
             $checkedInAt = now();
 
-            $invitee->checkIns()->create([
+            $checkInData = [
                 'event_id' => $invitee->event_id,
+                'invitee_id' => $invitee->id,
+            ];
+
+            $optionalCheckInFields = [
                 'checked_in_by' => Auth::id(),
                 'checkin_method' => $this->detectCheckInMethod(),
                 'guests_checked_in' => $guestsToCheckIn,
                 'previous_checked_in_count' => $previousCount,
                 'remaining_guests' => $newRemainingGuests,
-                'status' => CheckIn::STATUS_SUCCESS,
+                'status' => defined(CheckIn::class . '::STATUS_SUCCESS')
+                    ? CheckIn::STATUS_SUCCESS
+                    : 'success',
                 'remarks' => 'Checked in from gate check-in page.',
                 'checked_in_at' => $checkedInAt,
-            ]);
-
-            $updateData = [
-                'checked_in_count' => $newCount,
-                'checked_in_at' => $checkedInAt,
             ];
+
+            foreach ($optionalCheckInFields as $column => $value) {
+                if (Schema::hasColumn('check_ins', $column)) {
+                    $checkInData[$column] = $value;
+                }
+            }
+
+            CheckIn::query()->create($checkInData);
+
+            $updateData = [];
+
+            if (Schema::hasColumn('invitees', 'checked_in_count')) {
+                $updateData['checked_in_count'] = $newCount;
+            }
+
+            if (Schema::hasColumn('invitees', 'checked_in_at')) {
+                $updateData['checked_in_at'] = $checkedInAt;
+            }
 
             if (Schema::hasColumn('invitees', 'check_in_status')) {
                 $updateData['check_in_status'] = $newRemainingGuests <= 0
@@ -339,7 +359,9 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
                     : 'partial';
             }
 
-            $invitee->update($updateData);
+            if ($updateData !== []) {
+                $invitee->update($updateData);
+            }
             $successfulInviteeId = (int) $invitee->id;
 
             $this->invitee = $invitee->fresh(['event', 'cardType', 'checkIns']);
@@ -523,13 +545,22 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
         $invitees = Invitee::query()
             ->where('event_id', $eventId);
 
+        $checkedInColumnExists = Schema::hasColumn('invitees', 'checked_in_count');
+        $allowedColumn = Schema::hasColumn('invitees', 'final_allowed_guests')
+            ? 'final_allowed_guests'
+            : (Schema::hasColumn('invitees', 'allowed_guests') ? 'allowed_guests' : null);
+
         $this->stats = [
             'total_invitees' => (clone $invitees)->count(),
-            'checked_invitees' => (clone $invitees)
-                ->where('checked_in_count', '>', 0)
-                ->count(),
-            'allowed_guests' => (clone $invitees)->sum('allowed_guests'),
-            'checked_guests' => (clone $invitees)->sum('checked_in_count'),
+            'checked_invitees' => $checkedInColumnExists
+                ? (clone $invitees)->where('checked_in_count', '>', 0)->count()
+                : 0,
+            'allowed_guests' => $allowedColumn
+                ? (int) (clone $invitees)->sum($allowedColumn)
+                : (clone $invitees)->count(),
+            'checked_guests' => $checkedInColumnExists
+                ? (int) (clone $invitees)->sum('checked_in_count')
+                : 0,
         ];
     }
 
@@ -541,11 +572,16 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
             return collect();
         }
 
-        return CheckIn::query()
+        $query = CheckIn::query()
             ->with(['invitee', 'checkedInBy'])
-            ->where('event_id', $eventId)
-            ->latest('checked_in_at')
-            ->limit(8)
-            ->get();
+            ->where('event_id', $eventId);
+
+        if (Schema::hasColumn('check_ins', 'checked_in_at')) {
+            $query->latest('checked_in_at');
+        } else {
+            $query->latest();
+        }
+
+        return $query->limit(8)->get();
     }
 }

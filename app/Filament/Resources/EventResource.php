@@ -17,6 +17,8 @@ class EventResource extends Resource
 {
     protected static ?string $model = Event::class;
 
+    protected static bool $shouldRegisterNavigation = true;
+
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
 
     protected static ?string $navigationGroup = 'Event Management';
@@ -380,13 +382,6 @@ class EventResource extends Resource
                                     ->badge()
                                     ->color(fn ($state): string => (int) $state > 0 ? 'danger' : 'gray')
                                     ->icon('heroicon-o-exclamation-triangle'),
-
-                                Infolists\Components\TextEntry::make('auto_sms_reminders_enabled')
-                                    ->label('Auto SMS Reminders')
-                                    ->formatStateUsing(fn ($state): string => $state ? 'Enabled' : 'Disabled')
-                                    ->badge()
-                                    ->color(fn ($state): string => $state ? 'success' : 'gray')
-                                    ->icon('heroicon-o-bell'),
 
                                 Infolists\Components\TextEntry::make('whatsapp_status')
                                     ->label('WhatsApp Mode')

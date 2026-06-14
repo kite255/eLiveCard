@@ -14,6 +14,11 @@ class CheckInResource extends Resource
 {
     protected static ?string $model = CheckIn::class;
 
+    /**
+     * Check-ins are managed from the Event workspace and Gate Check-In page.
+     */
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-o-qr-code';
 
     protected static ?string $navigationLabel = 'Check-ins';
@@ -22,22 +27,53 @@ class CheckInResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Check-ins';
 
-    protected static ?string $navigationGroup = 'Event Management';
+    protected static ?string $navigationGroup = 'Attendance';
 
     protected static ?int $navigationSort = 4;
+
+    public static function canViewAny(): bool
+    {
+        $user = auth()->user();
+
+        return ($user?->isSuperAdmin() ?? false)
+            || ($user?->isEventOwner() ?? false)
+            || ($user?->isEventManager() ?? false)
+            || ($user?->isGateScanner() ?? false)
+            || ($user?->isReportViewer() ?? false);
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->isSuperAdmin() ?? false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->isSuperAdmin() ?? false;
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 Forms\Components\Section::make('Check-in Details')
+                    ->description('Check-in records are read-only and are created from the gate check-in process.')
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
                             ->relationship('event', 'title')
                             ->searchable()
                             ->preload()
-                            ->required()
                             ->disabled(),
 
                         Forms\Components\Select::make('invitee_id')
@@ -45,7 +81,6 @@ class CheckInResource extends Resource
                             ->relationship('invitee', 'name')
                             ->searchable()
                             ->preload()
-                            ->required()
                             ->disabled(),
 
                         Forms\Components\TextInput::make('checkin_method')
@@ -91,57 +126,88 @@ class CheckInResource extends Resource
                 Tables\Columns\TextColumn::make('event.title')
                     ->label('Event')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->placeholder('No event'),
 
                 Tables\Columns\TextColumn::make('invitee.name')
                     ->label('Invitee')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->placeholder('No invitee'),
 
                 Tables\Columns\TextColumn::make('invitee.phone')
                     ->label('Phone')
-                    ->searchable(),
+                    ->searchable()
+                    ->copyable()
+                    ->placeholder('No phone'),
 
                 Tables\Columns\TextColumn::make('invitee.serial_number')
                     ->label('Serial Number')
                     ->searchable()
-                    ->copyable(),
+                    ->copyable()
+                    ->placeholder('No serial'),
 
                 Tables\Columns\TextColumn::make('checkedInBy.name')
                     ->label('Checked In By')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->placeholder('System'),
 
                 Tables\Columns\TextColumn::make('checkin_method')
                     ->label('Method')
-                    ->badge(),
+                    ->badge()
+                    ->formatStateUsing(
+                        fn (?string $state): string =>
+                            str($state ?: 'manual')
+                                ->replace('_', ' ')
+                                ->title()
+                                ->toString()
+                    ),
 
                 Tables\Columns\TextColumn::make('guests_checked_in')
-                    ->label('Guests'),
+                    ->label('Guests')
+                    ->alignCenter()
+                    ->badge()
+                    ->color('primary'),
 
                 Tables\Columns\TextColumn::make('previous_checked_in_count')
-                    ->label('Previous'),
+                    ->label('Previous')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('remaining_guests')
-                    ->label('Remaining'),
+                    ->label('Remaining')
+                    ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->colors([
-                        'success' => 'success',
-                        'danger' => 'rejected',
-                        'warning' => 'duplicate',
-                    ]),
+                    ->formatStateUsing(
+                        fn (?string $state): string =>
+                            str($state ?: 'unknown')
+                                ->replace('_', ' ')
+                                ->title()
+                                ->toString()
+                    )
+                    ->color(
+                        fn (?string $state): string =>
+                            match ($state) {
+                                'success' => 'success',
+                                'rejected' => 'danger',
+                                'duplicate' => 'warning',
+                                default => 'gray',
+                            }
+                    ),
 
                 Tables\Columns\TextColumn::make('checked_in_at')
                     ->label('Checked In At')
-                    ->dateTime()
-                    ->sortable(),
+                    ->dateTime('d M Y, H:i:s')
+                    ->sortable()
+                    ->placeholder('Not recorded'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Created')
-                    ->dateTime()
+                    ->dateTime('d M Y, H:i:s')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
@@ -158,7 +224,8 @@ class CheckInResource extends Resource
                         'success' => 'Success',
                         'rejected' => 'Rejected',
                         'duplicate' => 'Duplicate',
-                    ]),
+                    ])
+                    ->native(false),
 
                 Tables\Filters\SelectFilter::make('checkin_method')
                     ->label('Method')
@@ -168,25 +235,37 @@ class CheckInResource extends Resource
                         'serial_number' => 'Serial Number',
                         'phone_search' => 'Phone Search',
                         'name_search' => 'Name Search',
-                    ]),
+                    ])
+                    ->native(false),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-            ])
-            ->bulkActions([])
-            ->defaultSort('checked_in_at', 'desc');
-    }
 
-    public static function canCreate(): bool
-    {
-        return false;
+                Tables\Actions\DeleteAction::make()
+                    ->visible(
+                        fn (): bool =>
+                            auth()->user()?->isSuperAdmin() ?? false
+                    ),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(
+                            fn (): bool =>
+                                auth()->user()?->isSuperAdmin() ?? false
+                        ),
+                ]),
+            ])
+            ->defaultSort('checked_in_at', 'desc')
+            ->emptyStateHeading('No check-ins yet')
+            ->emptyStateDescription('Guest check-ins will appear here after scanning or manual verification.')
+            ->emptyStateIcon('heroicon-o-qr-code')
+            ->poll('20s');
     }
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
