@@ -25,45 +25,7 @@ class CardTypesRelationManager extends RelationManager
 
     public function form(Form $form): Form
     {
-        return $form
-            ->schema([
-                Forms\Components\Section::make('Card Type Details')
-                    ->description('Create and manage the card types you want to use for this event.')
-                    ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->label('Card Type Name')
-                            ->placeholder('Example: Single, Double, Family')
-                            ->required()
-                            ->maxLength(100)
-                            ->live(onBlur: true)
-                            ->afterStateUpdated(fn ($state, callable $set) => $set('name', trim((string) $state))),
-
-                        Forms\Components\TextInput::make('allowed_people')
-                            ->label('Guests')
-                            ->helperText('Total number of people allowed with this card type.')
-                            ->numeric()
-                            ->minValue(1)
-                            ->default(1)
-                            ->required(),
-
-                        Forms\Components\ColorPicker::make('color')
-                            ->label('Display Color')
-                            ->default('#213B73'),
-
-                        Forms\Components\Toggle::make('is_active')
-                            ->label('Active')
-                            ->helperText('Only active card types should be used when adding or importing invitees.')
-                            ->default(true)
-                            ->required(),
-
-                        Forms\Components\Textarea::make('description')
-                            ->label('Description')
-                            ->placeholder('Optional notes about this card type.')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                    ])
-                    ->columns(2),
-            ]);
+        return $form->schema($this->getCardTypeFormSchema());
     }
 
     public function table(Table $table): Table
@@ -71,11 +33,31 @@ class CardTypesRelationManager extends RelationManager
         return $table
             ->recordTitleAttribute('name')
             ->emptyStateHeading('No card types yet')
-            ->emptyStateDescription('Create default card types such as Single, Double, Family, VIP, VVIP, and Committee.')
+            ->emptyStateDescription('Create your own card type for this event, for example Bride Side VIP, Family Friend, Committee Member, Single, Double, Family, VIP, or VVIP.')
             ->emptyStateIcon('heroicon-o-identification')
+            ->emptyStateActions([
+                Tables\Actions\Action::make('add_card_type_empty')
+                    ->label('Add Card Type')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('primary')
+                    ->modalHeading('Add Card Type')
+                    ->modalSubmitActionLabel('Save Card Type')
+                    ->form($this->getCardTypeFormSchema())
+                    ->action(fn (array $data) => $this->createCardType($data)),
+
+                Tables\Actions\Action::make('create_default_card_types_empty')
+                    ->label('Create Default Card Types')
+                    ->icon('heroicon-o-sparkles')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Create default card types')
+                    ->modalDescription('This will create standard social-event card types for this event. Existing card types with the same name will be skipped.')
+                    ->modalSubmitActionLabel('Create Defaults')
+                    ->action(fn () => $this->createDefaultCardTypes()),
+            ])
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Name')
+                    ->label('Card Type')
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
@@ -83,17 +65,27 @@ class CardTypesRelationManager extends RelationManager
                     ->color('primary'),
 
                 Tables\Columns\TextColumn::make('allowed_people')
-                    ->label('Guests')
+                    ->label('Allowed Guests')
                     ->alignCenter()
+                    ->badge()
+                    ->color('success')
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('invitees_count')
+                    ->label('Invitees')
+                    ->counts('invitees')
+                    ->alignCenter()
+                    ->badge()
+                    ->color(fn ($state): string => (int) $state > 0 ? 'success' : 'gray'),
+
                 Tables\Columns\IconColumn::make('is_active')
-                    ->label('Status')
+                    ->label('Active')
                     ->boolean()
                     ->trueIcon('heroicon-o-check-circle')
                     ->falseIcon('heroicon-o-x-circle')
                     ->trueColor('success')
-                    ->falseColor('danger'),
+                    ->falseColor('danger')
+                    ->alignCenter(),
 
                 Tables\Columns\ColorColumn::make('color')
                     ->label('Color')
@@ -101,9 +93,9 @@ class CardTypesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('description')
                     ->label('Description')
-                    ->limit(40)
+                    ->limit(45)
                     ->placeholder('-')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Created')
@@ -121,105 +113,26 @@ class CardTypesRelationManager extends RelationManager
                     ->native(false),
             ])
             ->headerActions([
-                Tables\Actions\CreateAction::make()
+                Tables\Actions\Action::make('add_card_type')
                     ->label('Add Card Type')
                     ->icon('heroicon-o-plus-circle')
                     ->color('primary')
-                    ->modalHeading('Add card type')
+                    ->button()
+                    ->modalHeading('Add Card Type')
                     ->modalSubmitActionLabel('Save Card Type')
-                    ->mutateFormDataUsing(function (array $data): array {
-                        $data = $this->prepareCardTypeData($data);
-
-                        $this->validateUniqueCardTypeName($data['name']);
-
-                        return $data;
-                    })
-                    ->successNotificationTitle('Card type added successfully'),
+                    ->form($this->getCardTypeFormSchema())
+                    ->action(fn (array $data) => $this->createCardType($data)),
 
                 Tables\Actions\Action::make('create_default_card_types')
                     ->label('Create Default Card Types')
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
+                    ->button()
                     ->requiresConfirmation()
                     ->modalHeading('Create default card types')
                     ->modalDescription('This will create standard social-event card types for this event. Existing card types with the same name will be skipped.')
                     ->modalSubmitActionLabel('Create Defaults')
-                    ->action(function (): void {
-                        $created = 0;
-                        $skipped = 0;
-
-                        $defaults = [
-                            [
-                                'name' => 'Single',
-                                'allowed_people' => 1,
-                                'color' => '#213B73',
-                                'description' => 'One person only.',
-                            ],
-                            [
-                                'name' => 'Double',
-                                'allowed_people' => 2,
-                                'color' => '#FD9618',
-                                'description' => 'Invitee plus one guest.',
-                            ],
-                            [
-                                'name' => 'Family',
-                                'allowed_people' => 5,
-                                'color' => '#16A34A',
-                                'description' => 'Family invitation.',
-                            ],
-                            [
-                                'name' => 'VIP',
-                                'allowed_people' => 1,
-                                'color' => '#7C3AED',
-                                'description' => 'VIP guest invitation.',
-                            ],
-                            [
-                                'name' => 'VVIP',
-                                'allowed_people' => 2,
-                                'color' => '#B45309',
-                                'description' => 'Very important guest invitation.',
-                            ],
-                            [
-                                'name' => 'Committee',
-                                'allowed_people' => 4,
-                                'color' => '#0EA5E9',
-                                'description' => 'Committee or organizing team card.',
-                            ],
-                        ];
-
-                        DB::transaction(function () use ($defaults, &$created, &$skipped): void {
-                            foreach ($defaults as $cardType) {
-                                $exists = $this->getOwnerRecord()
-                                    ->cardTypes()
-                                    ->whereRaw('LOWER(TRIM(name)) = ?', [strtolower(trim($cardType['name']))])
-                                    ->exists();
-
-                                if ($exists) {
-                                    $skipped++;
-                                    continue;
-                                }
-
-                                $this->getOwnerRecord()
-                                    ->cardTypes()
-                                    ->create([
-                                        'name' => $cardType['name'],
-                                        'allowed_people' => $cardType['allowed_people'],
-                                        'color' => $cardType['color'],
-                                        'description' => $cardType['description'],
-                                        'is_active' => true,
-                                    ]);
-
-                                $created++;
-                            }
-                        });
-
-                        Notification::make()
-                            ->title('Default card types prepared')
-                            ->body("Created: {$created}. Skipped existing: {$skipped}.")
-                            ->success()
-                            ->persistent()
-                            ->send();
-                    }),
+                    ->action(fn () => $this->createDefaultCardTypes()),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -236,41 +149,7 @@ class CardTypesRelationManager extends RelationManager
                             'is_active' => (bool) $record->is_active,
                             'description' => $record->description,
                         ])
-                        ->form([
-                            Forms\Components\Section::make('Card Type Details')
-                                ->description('Modify this card type. Existing invitees remain linked to it.')
-                                ->schema([
-                                    Forms\Components\TextInput::make('name')
-                                        ->label('Card Type Name')
-                                        ->placeholder('Example: Single, Double, Family')
-                                        ->required()
-                                        ->maxLength(100),
-
-                                    Forms\Components\TextInput::make('allowed_people')
-                                        ->label('Guests')
-                                        ->helperText('Total number of people allowed with this card type.')
-                                        ->numeric()
-                                        ->minValue(1)
-                                        ->required(),
-
-                                    Forms\Components\ColorPicker::make('color')
-                                        ->label('Display Color')
-                                        ->default('#213B73'),
-
-                                    Forms\Components\Toggle::make('is_active')
-                                        ->label('Active')
-                                        ->helperText('Only active card types should be used when adding or importing invitees.')
-                                        ->default(true)
-                                        ->required(),
-
-                                    Forms\Components\Textarea::make('description')
-                                        ->label('Description')
-                                        ->placeholder('Optional notes about this card type.')
-                                        ->rows(3)
-                                        ->columnSpanFull(),
-                                ])
-                                ->columns(2),
-                        ])
+                        ->form($this->getCardTypeFormSchema())
                         ->action(function (Model $record, array $data): void {
                             $data = $this->prepareCardTypeData($data);
 
@@ -297,7 +176,6 @@ class CardTypesRelationManager extends RelationManager
 
                             Notification::make()
                                 ->title('Card type deactivated')
-                                ->body('Existing invitees will remain linked, but this card type will not be used for new invitees/imports.')
                                 ->success()
                                 ->send();
                         }),
@@ -381,7 +259,7 @@ class CardTypesRelationManager extends RelationManager
                     ->icon('heroicon-o-x-circle')
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->modalDescription('This does not delete card types. Existing invitees remain linked, but inactive card types will not be used for new invitees/imports.')
+                    ->modalDescription('Existing invitees remain linked, but inactive card types will not be used for new invitees/imports.')
                     ->deselectRecordsAfterCompletion()
                     ->action(function ($records): void {
                         $records->each(fn ($record) => $record->update(['is_active' => false]));
@@ -394,12 +272,157 @@ class CardTypesRelationManager extends RelationManager
             ]);
     }
 
+    protected function getCardTypeFormSchema(): array
+    {
+        return [
+            Forms\Components\Section::make('Card Type Details')
+                ->description('Create and manage your own card types for this event.')
+                ->schema([
+                    Forms\Components\TextInput::make('name')
+                        ->label('Card Type Name')
+                        ->placeholder('Example: Bride Side VIP, Family Friend, Committee Member')
+                        ->required()
+                        ->maxLength(100)
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(fn ($state, callable $set) => $set('name', trim((string) $state))),
+
+                    Forms\Components\TextInput::make('allowed_people')
+                        ->label('Allowed Guests')
+                        ->helperText('Total number of people allowed with this card type.')
+                        ->numeric()
+                        ->minValue(1)
+                        ->maxValue(100)
+                        ->default(1)
+                        ->required(),
+
+                    Forms\Components\ColorPicker::make('color')
+                        ->label('Display Color')
+                        ->default('#213B73'),
+
+                    Forms\Components\Toggle::make('is_active')
+                        ->label('Active')
+                        ->helperText('Only active card types should be used when adding or importing invitees.')
+                        ->default(true)
+                        ->required(),
+
+                    Forms\Components\Textarea::make('description')
+                        ->label('Description')
+                        ->placeholder('Optional notes about this card type.')
+                        ->rows(3)
+                        ->maxLength(255)
+                        ->columnSpanFull(),
+                ])
+                ->columns(2),
+        ];
+    }
+
+    protected function createCardType(array $data): void
+    {
+        $data = $this->prepareCardTypeData($data);
+
+        $this->validateUniqueCardTypeName($data['name']);
+
+        $this->getOwnerRecord()
+            ->cardTypes()
+            ->create($data);
+
+        Notification::make()
+            ->title('Card type added successfully')
+            ->success()
+            ->send();
+    }
+
+    protected function createDefaultCardTypes(): void
+    {
+        $created = 0;
+        $skipped = 0;
+
+        $defaults = [
+            [
+                'name' => 'Single',
+                'allowed_people' => 1,
+                'color' => '#213B73',
+                'description' => 'One person only.',
+            ],
+            [
+                'name' => 'Double',
+                'allowed_people' => 2,
+                'color' => '#FD9618',
+                'description' => 'Invitee plus one guest.',
+            ],
+            [
+                'name' => 'Family',
+                'allowed_people' => 5,
+                'color' => '#16A34A',
+                'description' => 'Family invitation.',
+            ],
+            [
+                'name' => 'VIP',
+                'allowed_people' => 1,
+                'color' => '#7C3AED',
+                'description' => 'VIP guest invitation.',
+            ],
+            [
+                'name' => 'VVIP',
+                'allowed_people' => 2,
+                'color' => '#B45309',
+                'description' => 'Very important guest invitation.',
+            ],
+            [
+                'name' => 'Committee',
+                'allowed_people' => 4,
+                'color' => '#0EA5E9',
+                'description' => 'Committee or organizing team card.',
+            ],
+            [
+                'name' => 'Custom',
+                'allowed_people' => 1,
+                'color' => '#111827',
+                'description' => 'Custom card type.',
+            ],
+        ];
+
+        DB::transaction(function () use ($defaults, &$created, &$skipped): void {
+            foreach ($defaults as $cardType) {
+                $exists = $this->getOwnerRecord()
+                    ->cardTypes()
+                    ->whereRaw('LOWER(TRIM(name)) = ?', [strtolower(trim($cardType['name']))])
+                    ->exists();
+
+                if ($exists) {
+                    $skipped++;
+                    continue;
+                }
+
+                $this->getOwnerRecord()
+                    ->cardTypes()
+                    ->create([
+                        'name' => $cardType['name'],
+                        'allowed_people' => $cardType['allowed_people'],
+                        'color' => $cardType['color'],
+                        'description' => $cardType['description'],
+                        'is_active' => true,
+                    ]);
+
+                $created++;
+            }
+        });
+
+        Notification::make()
+            ->title('Default card types prepared')
+            ->body("Created: {$created}. Skipped existing: {$skipped}.")
+            ->success()
+            ->persistent()
+            ->send();
+    }
+
     protected function prepareCardTypeData(array $data): array
     {
         $data['name'] = trim((string) ($data['name'] ?? ''));
         $data['allowed_people'] = max(1, (int) ($data['allowed_people'] ?? 1));
         $data['color'] = $data['color'] ?: '#213B73';
         $data['is_active'] = (bool) ($data['is_active'] ?? true);
+        $data['description'] = $data['description'] ?? null;
 
         return $data;
     }
