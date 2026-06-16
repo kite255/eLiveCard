@@ -537,21 +537,19 @@ class EventResource extends Resource
             ]);
     }
 
-    public static function getRelations(): array
-    {
-        return [
-            RelationManagers\InviteesRelationManager::class,
-            RelationManagers\CardTypesRelationManager::class,
-            RelationManagers\CardTemplatesRelationManager::class,
-            RelationManagers\GeneratedCardsRelationManager::class,
-
-            RelationManagers\MessageTemplatesRelationManager::class,
-            RelationManagers\MessageLogsRelationManager::class,
-
-            RelationManagers\SmsLogsRelationManager::class,
-            RelationManagers\CheckInsRelationManager::class,
-        ];
-    }
+ public static function getRelations(): array
+{
+    return [
+        RelationManagers\CardTypesRelationManager::class,
+        RelationManagers\InviteesRelationManager::class,
+        RelationManagers\CardTemplatesRelationManager::class,
+        RelationManagers\GeneratedCardsRelationManager::class,
+        RelationManagers\MessageTemplatesRelationManager::class,
+        RelationManagers\MessageLogsRelationManager::class,
+        RelationManagers\SmsLogsRelationManager::class,
+        RelationManagers\CheckInsRelationManager::class,
+    ];
+}
 
     public static function getPages(): array
     {
