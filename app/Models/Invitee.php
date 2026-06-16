@@ -105,6 +105,7 @@ class Invitee extends Model
         'invitation_sms_sent_at',
         'reminder_sms_status',
         'reminder_sms_sent_at',
+        'reminder_sms_error',
         'final_sms_status',
         'final_sms_sent_at',
         'last_sms_error',
@@ -612,9 +613,11 @@ class Invitee extends Model
 
         if (in_array($smsType, [SmsLog::TYPE_RSVP_PENDING_REMINDER, SmsLog::TYPE_ATTENDING_REMINDER], true)) {
             $data['reminder_sms_status'] = $status;
+            $data['reminder_sms_error'] = $error;
 
             if (in_array($status, [self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true)) {
                 $data['reminder_sms_sent_at'] = now();
+                $data['reminder_sms_error'] = null;
             }
         }
 
