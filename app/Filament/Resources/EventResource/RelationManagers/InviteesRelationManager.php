@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Throwable;
@@ -542,14 +543,15 @@ class InviteesRelationManager extends RelationManager
                         Forms\Components\FileUpload::make('excel_file')
                             ->label('Excel File')
                             ->required()
-                            ->disk('public')
-                            ->directory('invitee-imports')
-                            ->preserveFilenames()
+                            ->storeFiles(false)
                             ->acceptedFileTypes([
                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                 'application/vnd.ms-excel',
                                 'text/csv',
+                                'application/csv',
+                                'application/octet-stream',
                             ])
+                            ->maxSize(10240)
                             ->helperText('Required columns: name, phone, card_type. Optional: email, category, table_number. Same phone can be used by different invitees.'),
                     ])
                     ->action(function (array $data): void {
@@ -1594,11 +1596,11 @@ class InviteesRelationManager extends RelationManager
         return '-';
     }
 
-    protected function importInviteesFromExcel(string $filePath): void
+    protected function importInviteesFromExcel(mixed $file): void
     {
-        if (! Storage::disk('public')->exists($filePath)) {
+        if (! $file instanceof TemporaryUploadedFile) {
             Notification::make()
-                ->title('Excel file not found')
+                ->title('Invalid Excel upload')
                 ->body('Please upload the Excel file again.')
                 ->danger()
                 ->send();
@@ -1606,7 +1608,17 @@ class InviteesRelationManager extends RelationManager
             return;
         }
 
-        $fullPath = Storage::disk('public')->path($filePath);
+        $fullPath = $file->getRealPath();
+
+        if (! $fullPath || ! file_exists($fullPath)) {
+            Notification::make()
+                ->title('Excel file not found')
+                ->body('The temporary uploaded file could not be found. Please upload again.')
+                ->danger()
+                ->send();
+
+            return;
+        }
 
         $spreadsheet = IOFactory::load($fullPath);
         $rows = collect($spreadsheet->getActiveSheet()->toArray(null, true, true, true));
