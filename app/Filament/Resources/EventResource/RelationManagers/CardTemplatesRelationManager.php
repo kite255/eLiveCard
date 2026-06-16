@@ -44,22 +44,30 @@ class CardTemplatesRelationManager extends RelationManager
                         Forms\Components\FileUpload::make('template_image')
                             ->label('Card Template Image')
                             ->image()
-                            ->imageEditor()
-                            ->imagePreviewHeight('260')
-                            ->loadingIndicatorPosition('left')
-                            ->panelLayout('integrated')
+                            ->required()
                             ->disk('public')
                             ->directory(fn (): string => 'events/' . $this->getOwnerRecord()->id . '/card-templates')
                             ->visibility('public')
-                            ->preserveFilenames()
                             ->acceptedFileTypes([
                                 'image/jpeg',
                                 'image/png',
                                 'image/webp',
                             ])
-                            ->maxSize(10240)
-                            ->required()
-                            ->helperText('Upload JPG, PNG, or WEBP. Recommended portrait size: 1080 × 1920.'),
+                            ->maxSize(5120)
+                            ->imagePreviewHeight('350')
+                            ->loadingIndicatorPosition('left')
+                            ->panelAspectRatio('9:16')
+                            ->panelLayout('integrated')
+                            ->removeUploadedFileButtonPosition('right')
+                            ->uploadButtonPosition('left')
+                            ->uploadProgressIndicatorPosition('left')
+                            ->getUploadedFileNameForStorageUsing(function ($file): string {
+                                $name = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+                                $extension = strtolower($file->getClientOriginalExtension());
+
+                                return Str::slug($name) . '-' . now()->format('YmdHis') . '.' . $extension;
+                            })
+                            ->helperText('Use PNG, JPG, or WEBP. Recommended: high quality portrait invitation card, 1080 × 1920.'),
 
                         Forms\Components\TextInput::make('width')
                             ->label('Template Width')

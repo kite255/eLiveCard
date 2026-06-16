@@ -1,11 +1,51 @@
 <x-filament-panels::page>
     @php
-        $imageUrl = $template->template_image
-            ? asset('storage/' . $template->template_image)
-            : null;
+        /*
+        |--------------------------------------------------------------------------
+        | Template Image URL
+        |--------------------------------------------------------------------------
+        | Support old and new upload columns automatically.
+        | The saved value may be:
+        | - events/1/card-templates/file.jpg
+        | - public/events/1/card-templates/file.jpg
+        | - storage/events/1/card-templates/file.jpg
+        | - a full https URL
+        */
+        $templatePath = $template->template_image
+            ?? $template->template_path
+            ?? $template->image_path
+            ?? $template->file_path
+            ?? $template->background_image
+            ?? null;
 
-        $templateWidth = $template->width ?: 542;
-        $templateHeight = $template->height ?: 768;
+        $imageUrl = null;
+
+        if (filled($templatePath)) {
+            $templatePath = trim((string) $templatePath);
+
+            if (str_starts_with($templatePath, 'http://') || str_starts_with($templatePath, 'https://') || str_starts_with($templatePath, 'data:image/')) {
+                $imageUrl = $templatePath;
+            } else {
+                $templatePath = ltrim($templatePath, '/');
+
+                if (str_starts_with($templatePath, 'public/')) {
+                    $templatePath = substr($templatePath, 7);
+                }
+
+                if (str_starts_with($templatePath, 'storage/')) {
+                    $imageUrl = asset($templatePath);
+                } else {
+                    $imageUrl = asset('storage/' . $templatePath);
+                }
+            }
+        }
+
+        /*
+        | Keep the real uploaded template size for accurate placeholder percentages.
+        | If width/height are missing, use the common eLive portrait size.
+        */
+        $templateWidth = $template->width ?: 1080;
+        $templateHeight = $template->height ?: 1920;
 
         /*
         |--------------------------------------------------------------------------
@@ -98,35 +138,43 @@
         <div class="designer-layout">
             <div class="canvas-panel">
                 <div class="canvas-toolbar">
+                    <button type="button" class="tool-btn" @click="fitToScreen">Fit</button>
+                    <button type="button" class="tool-btn" @click="zoom = 50">50%</button>
                     <button type="button" class="tool-btn" @click="zoom = 75">75%</button>
                     <button type="button" class="tool-btn" @click="zoom = 100">100%</button>
-                    <button type="button" class="tool-btn" @click="zoom = 125">125%</button>
 
                     <div class="zoom-control">
                         <button type="button" @click="decreaseZoom">−</button>
-                        <input type="range" min="40" max="160" step="5" x-model.number="zoom">
+                        <input type="range" min="25" max="160" step="5" x-model.number="zoom">
                         <button type="button" @click="increaseZoom">+</button>
                     </div>
 
                     <span class="zoom-label" x-text="zoom + '%'"></span>
                 </div>
 
-                <div class="workspace">
+                <div class="workspace" x-ref="workspace">
                     <div class="canvas-scroll">
                         <div
-                            class="card-canvas"
-                            tabindex="0"
+                            class="canvas-scale-box"
                             :style="{
-                                width: '{{ $templateWidth }}px',
-                                height: '{{ $templateHeight }}px',
-                                transform: `scale(${zoom / 100})`
+                                width: `${templateWidth * zoom / 100}px`,
+                                height: `${templateHeight * zoom / 100}px`
                             }"
-                            @click="selectedKey = null"
-                            @keydown.arrow-up.prevent="moveSelected('up', $event.shiftKey)"
-                            @keydown.arrow-down.prevent="moveSelected('down', $event.shiftKey)"
-                            @keydown.arrow-left.prevent="moveSelected('left', $event.shiftKey)"
-                            @keydown.arrow-right.prevent="moveSelected('right', $event.shiftKey)"
                         >
+                            <div
+                                class="card-canvas"
+                                tabindex="0"
+                                :style="{
+                                    width: '{{ $templateWidth }}px',
+                                    height: '{{ $templateHeight }}px',
+                                    transform: `scale(${zoom / 100})`
+                                }"
+                                @click="selectedKey = null"
+                                @keydown.arrow-up.prevent="moveSelected('up', $event.shiftKey)"
+                                @keydown.arrow-down.prevent="moveSelected('down', $event.shiftKey)"
+                                @keydown.arrow-left.prevent="moveSelected('left', $event.shiftKey)"
+                                @keydown.arrow-right.prevent="moveSelected('right', $event.shiftKey)"
+                            >
                             @if ($imageUrl)
                                 <img src="{{ $imageUrl }}" class="template-image" alt="Template">
                             @else
@@ -173,6 +221,7 @@
                                     </template>
                                 </div>
                             </template>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -605,7 +654,9 @@
         .template-thumb img {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
+            object-position: center center;
+            background: #ffffff;
         }
 
         .empty-thumb {
@@ -684,35 +735,44 @@
                 linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
             background-size: 22px 22px;
             background-position: 0 0, 0 11px, 11px -11px, -11px 0;
-            padding: 2rem;
-            min-height: 720px;
+            padding: .35rem;
+            min-height: calc(100vh - 260px);
             overflow: auto;
         }
 
         .canvas-scroll {
-            min-width: max-content;
-            min-height: max-content;
+            width: 100%;
+            min-height: auto;
             display: flex;
             justify-content: center;
             align-items: flex-start;
         }
 
+        .canvas-scale-box {
+            position: relative;
+            flex: 0 0 auto;
+        }
+
         .card-canvas,
         .preview-canvas {
             position: relative;
-            transform-origin: top center;
-            background: white;
+            transform-origin: top left;
+            background: #ffffff;
             overflow: hidden;
-            border-radius: .75rem;
-            box-shadow: 0 22px 70px rgba(15, 23, 42, 0.2);
+            border-radius: .25rem;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
         }
 
         .template-image,
         .template-placeholder-bg {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
+            object-position: center center;
             display: block;
+            z-index: 1;
         }
 
         .template-placeholder-bg {
@@ -1091,6 +1151,16 @@
             flex-shrink: 0;
         }
 
+        @media (max-width: 1300px) {
+            .designer-layout {
+                grid-template-columns: minmax(0, 1fr) 340px;
+            }
+
+            .workspace {
+                padding: .6rem;
+            }
+        }
+
         @media (max-width: 1100px) {
             .designer-layout {
                 grid-template-columns: 1fr;
@@ -1148,6 +1218,10 @@
                     if (!this.selectedKey && Object.keys(this.placeholders || {}).length > 0) {
                         this.selectedKey = Object.keys(this.placeholders)[0];
                     }
+
+                    this.$nextTick(() => {
+                        this.fitToScreen();
+                    });
                 },
 
                 get current() {
@@ -1224,12 +1298,29 @@
                     }
                 },
 
+                fitToScreen() {
+                    const workspace = this.$refs?.workspace;
+
+                    if (!workspace) {
+                        this.zoom = Number(this.zoom || 50);
+                        return;
+                    }
+
+                    const availableWidth = Math.max(260, workspace.clientWidth - 8);
+                    const availableHeight = Math.max(360, workspace.clientHeight - 8);
+
+                    const widthZoom = (availableWidth / Number(this.templateWidth || 1080)) * 100;
+                    const heightZoom = (availableHeight / Number(this.templateHeight || 1920)) * 100;
+
+                    this.zoom = clamp(Math.min(widthZoom, heightZoom, 100), 25, 100);
+                },
+
                 increaseZoom() {
                     this.zoom = Math.min(160, Number(this.zoom || 100) + 5);
                 },
 
                 decreaseZoom() {
-                    this.zoom = Math.max(40, Number(this.zoom || 100) - 5);
+                    this.zoom = Math.max(25, Number(this.zoom || 100) - 5);
                 },
 
                 placeholderStyle(placeholder) {
