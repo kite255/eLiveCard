@@ -11,6 +11,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class CardTemplatesRelationManager extends RelationManager
 {
@@ -44,17 +45,21 @@ class CardTemplatesRelationManager extends RelationManager
                             ->label('Card Template Image')
                             ->image()
                             ->imageEditor()
+                            ->imagePreviewHeight('260')
+                            ->loadingIndicatorPosition('left')
+                            ->panelLayout('integrated')
                             ->disk('public')
-                            ->directory('card-templates')
+                            ->directory(fn (): string => 'events/' . $this->getOwnerRecord()->id . '/card-templates')
+                            ->visibility('public')
                             ->preserveFilenames()
                             ->acceptedFileTypes([
                                 'image/jpeg',
                                 'image/png',
                                 'image/webp',
                             ])
-                            ->maxSize(8192)
+                            ->maxSize(10240)
                             ->required()
-                            ->helperText('Upload JPG, PNG, or WEBP. Recommended: high quality portrait invitation card.'),
+                            ->helperText('Upload JPG, PNG, or WEBP. Recommended portrait size: 1080 × 1920.'),
 
                         Forms\Components\TextInput::make('width')
                             ->label('Template Width')
@@ -93,9 +98,12 @@ class CardTemplatesRelationManager extends RelationManager
                 Tables\Columns\ImageColumn::make('template_image')
                     ->label('Preview')
                     ->disk('public')
-                    ->height(70)
-                    ->width(50)
-                    ->square(false),
+                    ->height(95)
+                    ->width(70)
+                    ->square(false)
+                    ->extraImgAttributes([
+                        'style' => 'object-fit: contain; background: #F8FAFC; border-radius: 8px; border: 1px solid #e5e7eb;',
+                    ]),
 
                 Tables\Columns\TextColumn::make('name')
                     ->label('Template Name')
@@ -161,6 +169,14 @@ class CardTemplatesRelationManager extends RelationManager
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['event_id'] = $this->getOwnerRecord()->id;
 
+                        $this->setImageDimensions($data);
+
+                        if (($data['status'] ?? null) === CardTemplate::STATUS_ACTIVE) {
+                            CardTemplate::where('event_id', $this->getOwnerRecord()->id)
+                                ->where('status', CardTemplate::STATUS_ACTIVE)
+                                ->update(['status' => CardTemplate::STATUS_DRAFT]);
+                        }
+
                         return $data;
                     })
                     ->successNotificationTitle('Card template uploaded successfully'),
@@ -174,6 +190,18 @@ class CardTemplatesRelationManager extends RelationManager
                     Tables\Actions\EditAction::make()
                         ->label('Edit Template')
                         ->icon('heroicon-o-pencil-square')
+                        ->mutateFormDataUsing(function (array $data, CardTemplate $record): array {
+                            $this->setImageDimensions($data);
+
+                            if (($data['status'] ?? null) === CardTemplate::STATUS_ACTIVE) {
+                                CardTemplate::where('event_id', $record->event_id)
+                                    ->where('id', '!=', $record->id)
+                                    ->where('status', CardTemplate::STATUS_ACTIVE)
+                                    ->update(['status' => CardTemplate::STATUS_DRAFT]);
+                            }
+
+                            return $data;
+                        })
                         ->successNotificationTitle('Card template updated successfully'),
 
                     Tables\Actions\Action::make('open_template_image')
@@ -434,4 +462,53 @@ class CardTemplatesRelationManager extends RelationManager
                 ]),
             ]);
     }
+
+    protected function setImageDimensions(array &$data): void
+    {
+        if (blank($data['template_image'] ?? null)) {
+            return;
+        }
+
+        $path = $this->normalizeTemplateImagePath($data['template_image']);
+
+        if (blank($path) || ! Storage::disk('public')->exists($path)) {
+            return;
+        }
+
+        $fullPath = Storage::disk('public')->path($path);
+        $imageSize = @getimagesize($fullPath);
+
+        if (! is_array($imageSize)) {
+            return;
+        }
+
+        $data['width'] = (int) ($imageSize[0] ?? ($data['width'] ?? 1080));
+        $data['height'] = (int) ($imageSize[1] ?? ($data['height'] ?? 1920));
+        $data['template_image'] = $path;
+    }
+
+    protected function normalizeTemplateImagePath(?string $path): ?string
+    {
+        if (blank($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        if (Str::startsWith($path, ['http://', 'https://'])) {
+            $urlPath = parse_url($path, PHP_URL_PATH);
+            $path = is_string($urlPath) ? $urlPath : $path;
+        }
+
+        $path = ltrim($path, '/');
+
+        foreach (['storage/', 'public/'] as $prefix) {
+            if (Str::startsWith($path, $prefix)) {
+                $path = Str::after($path, $prefix);
+            }
+        }
+
+        return filled($path) ? $path : null;
+    }
+
 }
