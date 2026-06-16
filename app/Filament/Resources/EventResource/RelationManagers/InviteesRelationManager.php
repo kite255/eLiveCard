@@ -975,6 +975,106 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
+                    Tables\Actions\BulkAction::make('health_check_selected_invitees')
+                        ->label('Health Check Selected Invitees')
+                        ->icon('heroicon-o-shield-check')
+                        ->color('info')
+                        ->requiresConfirmation()
+                        ->modalHeading('Run invitee health check')
+                        ->modalDescription('This will check selected invitees for missing QR images, missing generated cards, missing private links, invalid phone numbers, and inactive card status.')
+                        ->modalSubmitActionLabel('Run Health Check')
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (Collection $records): void {
+                            $total = $records->count();
+                            $healthy = 0;
+                            $withIssues = 0;
+
+                            $qrMissing = 0;
+                            $cardMissing = 0;
+                            $linkMissing = 0;
+                            $invalidPhone = 0;
+                            $inactiveCards = 0;
+
+                            $pendingRsvp = 0;
+                            $attendingRsvp = 0;
+                            $notAttendingRsvp = 0;
+
+                            $issueLines = [];
+
+                            foreach ($records as $record) {
+                                if (! $record instanceof Invitee) {
+                                    continue;
+                                }
+
+                                $record->loadMissing(['latestGeneratedCard', 'cardType', 'event']);
+
+                                $issues = [];
+
+                                if (! $this->inviteeQrExists($record)) {
+                                    $qrMissing++;
+                                    $issues[] = 'QR missing';
+                                }
+
+                                if (! $this->generatedCardFileExists($record)) {
+                                    $cardMissing++;
+                                    $issues[] = 'card missing';
+                                }
+
+                                if (blank($record->short_code)) {
+                                    $linkMissing++;
+                                    $issues[] = 'private link missing';
+                                }
+
+                                if (blank($this->normalizePhone($record->phone))) {
+                                    $invalidPhone++;
+                                    $issues[] = 'invalid phone';
+                                }
+
+                                if ($record->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+                                    $inactiveCards++;
+                                    $issues[] = 'card not active';
+                                }
+
+                                match ($record->rsvp_status) {
+                                    Invitee::RSVP_ATTENDING => $attendingRsvp++,
+                                    Invitee::RSVP_NOT_ATTENDING => $notAttendingRsvp++,
+                                    default => $pendingRsvp++,
+                                };
+
+                                if (empty($issues)) {
+                                    $healthy++;
+                                    continue;
+                                }
+
+                                $withIssues++;
+
+                                if (count($issueLines) < 8) {
+                                    $issueLines[] = ($record->name ?: 'Invitee #' . $record->id) . ': ' . implode(', ', $issues);
+                                }
+                            }
+
+                            $body = "Checked: {$total}. Healthy: {$healthy}. With issues: {$withIssues}.\n"
+                                . "QR missing: {$qrMissing}. Card missing: {$cardMissing}. Private link missing: {$linkMissing}. Invalid phone: {$invalidPhone}. Inactive cards: {$inactiveCards}.\n"
+                                . "RSVP — Pending/Maybe: {$pendingRsvp}. Attending: {$attendingRsvp}. Not attending: {$notAttendingRsvp}.";
+
+                            if (! empty($issueLines)) {
+                                $body .= "\n\nFirst issues:\n" . implode("\n", $issueLines);
+
+                                if ($withIssues > count($issueLines)) {
+                                    $remaining = $withIssues - count($issueLines);
+                                    $body .= "\n...and {$remaining} more.";
+                                }
+                            }
+
+                            Notification::make()
+                                ->title($withIssues > 0 ? 'Invitee health check completed with issues' : 'Invitee health check passed')
+                                ->body($body)
+                                ->color($withIssues > 0 ? 'warning' : 'success')
+                                ->persistent()
+                                ->send();
+                        }),
+
+
                     Tables\Actions\BulkAction::make('generate_cards')
                         ->label('Generate Cards')
                         ->icon('heroicon-o-photo')
@@ -1171,6 +1271,75 @@ class InviteesRelationManager extends RelationManager
                         }),
                 ]),
             ]);
+    }
+
+
+    protected function inviteeQrExists(Invitee $invitee): bool
+    {
+        $qrPath = $this->normalizePublicStoragePath($invitee->qr_code_path ?: $invitee->qr_code);
+
+        return filled($qrPath) && Storage::disk('public')->exists($qrPath);
+    }
+
+    protected function generatedCardFileExists(Invitee $invitee): bool
+    {
+        $invitee->loadMissing('latestGeneratedCard');
+
+        $path = $this->generatedCardStoragePath($invitee);
+
+        return filled($path) && Storage::disk('public')->exists($path);
+    }
+
+    protected function generatedCardStoragePath(Invitee $invitee): ?string
+    {
+        $invitee->loadMissing('latestGeneratedCard');
+
+        $card = $invitee->latestGeneratedCard;
+
+        if (! $card) {
+            return null;
+        }
+
+        $possiblePaths = [
+            $card->file_path ?? null,
+            $card->card_path ?? null,
+            $card->path ?? null,
+            $card->generated_card_path ?? null,
+        ];
+
+        foreach ($possiblePaths as $path) {
+            $normalizedPath = $this->normalizePublicStoragePath($path);
+
+            if (filled($normalizedPath)) {
+                return $normalizedPath;
+            }
+        }
+
+        return null;
+    }
+
+    protected function normalizePublicStoragePath(?string $path): ?string
+    {
+        if (blank($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            $urlPath = parse_url($path, PHP_URL_PATH);
+            $path = is_string($urlPath) ? $urlPath : $path;
+        }
+
+        $path = ltrim($path, '/');
+
+        foreach (['storage/', 'public/'] as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                $path = substr($path, strlen($prefix));
+            }
+        }
+
+        return filled($path) ? $path : null;
     }
 
     protected function buildInvitationMessage(Invitee $invitee): string
