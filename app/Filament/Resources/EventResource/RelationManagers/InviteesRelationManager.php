@@ -7,7 +7,6 @@ use App\Models\CardType;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
 use App\Services\SmsService;
-use App\Services\ReminderSmsService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -924,6 +923,58 @@ class InviteesRelationManager extends RelationManager
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('regenerate_missing_qr_codes')
+                        ->label('Regenerate Missing QR Codes')
+                        ->icon('heroicon-o-qr-code')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Regenerate missing QR codes')
+                        ->modalDescription('This will regenerate QR code images only for selected invitees whose QR image file is missing from storage. Existing QR images will be skipped.')
+                        ->modalSubmitActionLabel('Regenerate QR Codes')
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (Collection $records): void {
+                            $regenerated = 0;
+                            $skipped = 0;
+                            $failed = 0;
+
+                            foreach ($records as $record) {
+                                try {
+                                    if (! $record instanceof Invitee) {
+                                        $skipped++;
+                                        continue;
+                                    }
+
+                                    $qrPath = $record->qr_code_path ?: $record->qr_code;
+
+                                    if (filled($qrPath) && Storage::disk('public')->exists($qrPath)) {
+                                        $skipped++;
+                                        continue;
+                                    }
+
+                                    $this->ensureInviteeQrCode($record);
+
+                                    $record->refresh();
+
+                                    $newQrPath = $record->qr_code_path ?: $record->qr_code;
+
+                                    if (filled($newQrPath) && Storage::disk('public')->exists($newQrPath)) {
+                                        $regenerated++;
+                                    } else {
+                                        $failed++;
+                                    }
+                                } catch (Throwable $e) {
+                                    $failed++;
+                                }
+                            }
+
+                            Notification::make()
+                                ->title('QR regeneration completed')
+                                ->body("Regenerated: {$regenerated}. Skipped: {$skipped}. Failed: {$failed}.")
+                                ->color($failed > 0 ? 'warning' : 'success')
+                                ->persistent()
+                                ->send();
+                        }),
+
                     Tables\Actions\BulkAction::make('generate_cards')
                         ->label('Generate Cards')
                         ->icon('heroicon-o-photo')
@@ -1064,66 +1115,6 @@ class InviteesRelationManager extends RelationManager
                                 ->body("Deleted: {$deleted}. Failed: {$failed}. If some failed, use Cancel Selected Invitees.")
                                 ->success()
                                 ->persistent()
-                                ->send();
-                        }),
-
-                    Tables\Actions\BulkAction::make('send_rsvp_reminder_sms_bulk')
-                        ->label('Send RSVP Reminder SMS')
-                        ->icon('heroicon-o-bell-alert')
-                        ->color('info')
-                        ->requiresConfirmation()
-                        ->modalHeading('Send RSVP Reminder SMS')
-                        ->modalDescription('Send RSVP reminder SMS only to selected invitees with RSVP pending?')
-                        ->modalSubmitActionLabel('Send Reminders')
-                        ->deselectRecordsAfterCompletion()
-                        ->action(function (Collection $records): void {
-                            $result = app(ReminderSmsService::class)
-                                ->sendBulkRsvpPendingReminders($records);
-
-                            Notification::make()
-                                ->title('RSVP reminder SMS completed')
-                                ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
-                                ->send();
-                        }),
-
-                    Tables\Actions\BulkAction::make('send_attending_reminder_sms_bulk')
-                        ->label('Send One Day Reminder SMS')
-                        ->icon('heroicon-o-calendar-days')
-                        ->color('success')
-                        ->requiresConfirmation()
-                        ->modalHeading('Send One Day Reminder SMS')
-                        ->modalDescription('Send one-day-before reminder SMS only to selected invitees marked as attending?')
-                        ->modalSubmitActionLabel('Send Reminders')
-                        ->deselectRecordsAfterCompletion()
-                        ->action(function (Collection $records): void {
-                            $result = app(ReminderSmsService::class)
-                                ->sendBulkAttendingReminders($records);
-
-                            Notification::make()
-                                ->title('One day reminder SMS completed')
-                                ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
-                                ->send();
-                        }),
-
-                    Tables\Actions\BulkAction::make('send_event_day_sms_bulk')
-                        ->label('Send Event Day SMS')
-                        ->icon('heroicon-o-paper-airplane')
-                        ->color('success')
-                        ->requiresConfirmation()
-                        ->modalHeading('Send Event Day SMS')
-                        ->modalDescription('Send final event day SMS to all selected invitees?')
-                        ->modalSubmitActionLabel('Send Final SMS')
-                        ->deselectRecordsAfterCompletion()
-                        ->action(function (Collection $records): void {
-                            $result = app(ReminderSmsService::class)
-                                ->sendBulkEventDayReminders($records);
-
-                            Notification::make()
-                                ->title('Event day SMS completed')
-                                ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
