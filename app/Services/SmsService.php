@@ -224,7 +224,7 @@ class SmsService
             throw new \Exception('Unsupported SMS driver: ' . $driver);
         }
 
-        $apiUrl = config('services.sms.api_url', env('SMS_API_URL'));
+        $apiUrl = $this->resolveSmsApiUrl();
         $apiKey = config('services.sms.api_key', env('SMS_API_KEY'));
         $apiSecret = config('services.sms.api_secret', env('SMS_API_SECRET'));
         $senderId = config('services.sms.sender_id', env('SMS_SENDER_ID', 'eLiveCard'));
@@ -258,11 +258,7 @@ class SmsService
 
         $response = Http::timeout($timeout)
             ->acceptJson()
-            ->withHeaders([
-                'api_key' => $apiKey,
-                'api_secret' => $apiSecret,
-                'Content-Type' => 'application/json',
-            ])
+            ->withHeaders($this->smsAuthHeaders($apiKey, $apiSecret))
             ->post($apiUrl, $payload);
 
         $body = $response->body();
@@ -298,6 +294,50 @@ class SmsService
             'message_size' => data_get($data, 'data.messageSize'),
             'provider_message' => data_get($data, 'message'),
             'response' => $data,
+        ];
+    }
+
+
+    /**
+     * Resolve SMS endpoint from either SMS_API_URL or SMS_BASE_URL.
+     * This keeps staging/production safe even when services.sms.base_url is used instead of services.sms.api_url.
+     */
+    protected function resolveSmsApiUrl(): ?string
+    {
+        $apiUrl = config('services.sms.api_url')
+            ?: env('SMS_API_URL');
+
+        if (filled($apiUrl)) {
+            return rtrim((string) $apiUrl, '/');
+        }
+
+        $baseUrl = config('services.sms.base_url')
+            ?: env('SMS_BASE_URL')
+            ?: env('ELIVE_SMS_BASE_URL');
+
+        if (blank($baseUrl)) {
+            return null;
+        }
+
+        return rtrim((string) $baseUrl, '/') . '/api/v1/vendor/message/send';
+    }
+
+    /**
+     * Send several supported auth header styles because eLive SMS deployments may use
+     * underscore, hyphen, or camel-case header names depending on gateway version.
+     */
+    protected function smsAuthHeaders(string $apiKey, string $apiSecret): array
+    {
+        return [
+            'api_key' => $apiKey,
+            'api_secret' => $apiSecret,
+            'api-key' => $apiKey,
+            'api-secret' => $apiSecret,
+            'Api-Key' => $apiKey,
+            'Api-Secret' => $apiSecret,
+            'X-API-KEY' => $apiKey,
+            'X-API-SECRET' => $apiSecret,
+            'Content-Type' => 'application/json',
         ];
     }
 
