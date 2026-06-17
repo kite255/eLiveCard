@@ -525,6 +525,61 @@ class InviteesRelationManager extends RelationManager
                             ->send();
                     }),
 
+                Tables\Actions\Action::make('generate_missing_cards')
+                    ->label('Generate Missing Cards')
+                    ->icon('heroicon-o-sparkles')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Generate missing invitation cards')
+                    ->modalDescription('This will queue card generation only for invitees whose card is missing, failed, or not yet generated. Already generated, sent, or currently generating cards will be skipped.')
+                    ->modalSubmitActionLabel('Generate Missing Cards')
+                    ->action(function (): void {
+                        $event = $this->getOwnerRecord();
+
+                        $invitees = Invitee::query()
+                            ->where('event_id', $event->id)
+                            ->with(['latestGeneratedCard'])
+                            ->get();
+
+                        $queued = 0;
+                        $skippedGenerated = 0;
+                        $skippedGenerating = 0;
+                        $failed = 0;
+
+                        foreach ($invitees as $invitee) {
+                            try {
+                                if (! $invitee instanceof Invitee) {
+                                    continue;
+                                }
+
+                                if ($this->isInviteeCardGenerating($invitee)) {
+                                    $skippedGenerating++;
+                                    continue;
+                                }
+
+                                if ($this->inviteeHasUsableGeneratedCard($invitee)) {
+                                    $skippedGenerated++;
+                                    continue;
+                                }
+
+                                $this->prepareGeneratedCardForQueue($invitee);
+                                GenerateInviteeCardJob::dispatch($invitee->id);
+                                $queued++;
+                            } catch (Throwable $e) {
+                                $failed++;
+                            }
+                        }
+
+                        $type = $failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info');
+
+                        Notification::make()
+                            ->title($queued > 0 ? 'Missing card generation started' : 'No missing cards to generate')
+                            ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
+                            ->color($type)
+                            ->persistent()
+                            ->send();
+                    }),
+
                 Tables\Actions\Action::make('download_sample_excel')
                     ->label('Download Sample Excel')
                     ->icon('heroicon-o-arrow-down-tray')
@@ -1077,35 +1132,91 @@ class InviteesRelationManager extends RelationManager
                         }),
 
 
-                    Tables\Actions\BulkAction::make('generate_cards')
-                        ->label('Generate Cards')
-                        ->icon('heroicon-o-photo')
-                        ->color('success')
+                    Tables\Actions\BulkAction::make('generate_missing_selected_cards')
+                        ->label('Generate Missing Selected Cards')
+                        ->icon('heroicon-o-sparkles')
+                        ->color('warning')
                         ->requiresConfirmation()
-                        ->modalHeading('Generate selected invitation cards')
-                        ->modalDescription('This will queue card generation jobs for all selected invitees. Keep the queue worker running.')
+                        ->modalHeading('Generate missing cards for selected invitees')
+                        ->modalDescription('This will queue only selected invitees whose cards are missing or failed. Already generated, sent, or currently generating cards will be skipped.')
+                        ->modalSubmitActionLabel('Generate Missing Selected')
                         ->deselectRecordsAfterCompletion()
                         ->action(function (Collection $records): void {
                             $queued = 0;
-                            $skipped = 0;
+                            $skippedGenerated = 0;
+                            $skippedGenerating = 0;
+                            $failed = 0;
 
                             foreach ($records as $record) {
-                                if ($record->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING) {
-                                    $skipped++;
-                                    continue;
+                                try {
+                                    if (! $record instanceof Invitee) {
+                                        continue;
+                                    }
+
+                                    if ($this->isInviteeCardGenerating($record)) {
+                                        $skippedGenerating++;
+                                        continue;
+                                    }
+
+                                    if ($this->inviteeHasUsableGeneratedCard($record)) {
+                                        $skippedGenerated++;
+                                        continue;
+                                    }
+
+                                    $this->prepareGeneratedCardForQueue($record);
+                                    GenerateInviteeCardJob::dispatch($record->id);
+                                    $queued++;
+                                } catch (Throwable $e) {
+                                    $failed++;
                                 }
-
-                                $this->prepareGeneratedCardForQueue($record);
-
-                                GenerateInviteeCardJob::dispatch($record->id);
-
-                                $queued++;
                             }
 
                             Notification::make()
-                                ->title('Card generation jobs started')
-                                ->body($queued . ' card(s) queued. ' . $skipped . ' skipped because they are already generating.')
-                                ->success()
+                                ->title($queued > 0 ? 'Missing selected cards queued' : 'No missing selected cards')
+                                ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
+                                ->color($failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info'))
+                                ->persistent()
+                                ->send();
+                        }),
+
+                    Tables\Actions\BulkAction::make('regenerate_selected_cards')
+                        ->label('Regenerate Selected Cards')
+                        ->icon('heroicon-o-photo')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Regenerate selected invitation cards')
+                        ->modalDescription('This will replace/rebuild cards for the selected invitees. Use this only after editing names, card type, table number, or template positions.')
+                        ->modalSubmitActionLabel('Regenerate Selected Cards')
+                        ->deselectRecordsAfterCompletion()
+                        ->action(function (Collection $records): void {
+                            $queued = 0;
+                            $skippedGenerating = 0;
+                            $failed = 0;
+
+                            foreach ($records as $record) {
+                                try {
+                                    if (! $record instanceof Invitee) {
+                                        continue;
+                                    }
+
+                                    if ($this->isInviteeCardGenerating($record)) {
+                                        $skippedGenerating++;
+                                        continue;
+                                    }
+
+                                    $this->prepareGeneratedCardForQueue($record);
+                                    GenerateInviteeCardJob::dispatch($record->id);
+                                    $queued++;
+                                } catch (Throwable $e) {
+                                    $failed++;
+                                }
+                            }
+
+                            Notification::make()
+                                ->title('Selected card regeneration started')
+                                ->body("Queued: {$queued}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
+                                ->color($failed > 0 ? 'warning' : 'success')
+                                ->persistent()
                                 ->send();
                         }),
 
@@ -1831,6 +1942,42 @@ class InviteesRelationManager extends RelationManager
             'qr_code_path' => $qrPath,
             'qr_code' => $qrPath,
         ])->saveQuietly();
+    }
+
+    protected function isInviteeCardGenerating(Invitee $invitee): bool
+    {
+        $invitee->loadMissing('latestGeneratedCard');
+
+        return $invitee->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING;
+    }
+
+    protected function inviteeHasUsableGeneratedCard(Invitee $invitee): bool
+    {
+        $cards = GeneratedCard::query()
+            ->where('event_id', $invitee->event_id)
+            ->where('invitee_id', $invitee->id)
+            ->whereIn('status', [GeneratedCard::STATUS_GENERATED, GeneratedCard::STATUS_SENT])
+            ->latest('updated_at')
+            ->get();
+
+        foreach ($cards as $card) {
+            $possiblePaths = [
+                $card->file_path ?? null,
+                $card->card_path ?? null,
+                $card->path ?? null,
+                $card->generated_card_path ?? null,
+            ];
+
+            foreach ($possiblePaths as $path) {
+                $normalizedPath = $this->normalizePublicStoragePath($path);
+
+                if (filled($normalizedPath) && Storage::disk('public')->exists($normalizedPath)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     protected function prepareGeneratedCardForQueue(Invitee $invitee): GeneratedCard

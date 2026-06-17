@@ -225,6 +225,13 @@ class Invitee extends Model
         return $this->hasOne(GeneratedCard::class)->latestOfMany('generated_at');
     }
 
+    public function latestSuccessfulGeneratedCard(): HasOne
+    {
+        return $this->hasOne(GeneratedCard::class)
+            ->where('status', 'generated')
+            ->latestOfMany('generated_at');
+    }
+
     public function checkIns(): HasMany
     {
         return $this->hasMany(CheckIn::class);
@@ -522,7 +529,7 @@ class Invitee extends Model
             return $value;
         }
 
-        return $this->latestGeneratedCard?->file_path;
+        return $this->latestSuccessfulGeneratedCard?->file_path;
     }
 
     public function getGeneratedCardUrlAttribute(): ?string
@@ -538,7 +545,33 @@ class Invitee extends Model
 
     public function hasGeneratedCard(): bool
     {
-        return filled($this->generated_card_path);
+        if (filled($this->generated_card_path)) {
+            return true;
+        }
+
+        if ($this->relationLoaded('latestSuccessfulGeneratedCard')) {
+            return filled($this->latestSuccessfulGeneratedCard?->file_path);
+        }
+
+        return $this->generatedCards()
+            ->where('status', 'generated')
+            ->whereNotNull('file_path')
+            ->exists();
+    }
+
+    public function scopeMissingGeneratedCard($query)
+    {
+        return $query
+            ->where(function ($query) {
+                $query
+                    ->whereNull('generated_card_path')
+                    ->orWhere('generated_card_path', '');
+            })
+            ->whereDoesntHave('generatedCards', function ($query) {
+                $query
+                    ->where('status', 'generated')
+                    ->whereNotNull('file_path');
+            });
     }
 
     protected function hexToRgb(?string $hex): array
