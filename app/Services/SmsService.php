@@ -16,7 +16,7 @@ use Throwable;
 class SmsService
 {
     /**
-     * Send the main invitation card link SMS.
+     * Send the main invitation/private card link SMS.
      */
     public function sendInvitation(Invitee $invitee, ?string $customMessage = null): array
     {
@@ -36,7 +36,7 @@ class SmsService
     }
 
     /**
-     * Alias used by Filament actions that specifically send the invitee private card page.
+     * Alias used by Filament actions that send the invitee private card page.
      */
     public function sendCardLink(Invitee $invitee, ?string $customMessage = null): array
     {
@@ -46,13 +46,15 @@ class SmsService
     /**
      * Send RSVP pending reminder SMS.
      */
-    public function sendRsvpPendingReminder(Invitee $invitee): array
+    public function sendRsvpPendingReminder(Invitee $invitee, ?string $customMessage = null): array
     {
         $invitee->loadMissing(['event', 'cardType']);
 
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: $this->buildRsvpPendingReminderMessage($invitee),
+            message: filled($customMessage)
+                ? $this->replacePlaceholders($customMessage, $invitee)
+                : $this->buildRsvpPendingReminderMessage($invitee),
             type: 'rsvp_pending_reminder',
             successCallback: 'markReminderSmsAsSent',
             failedCallback: 'markReminderSmsAsFailed',
@@ -62,13 +64,15 @@ class SmsService
     /**
      * Send reminder to invitees who already confirmed attendance.
      */
-    public function sendAttendingReminder(Invitee $invitee): array
+    public function sendAttendingReminder(Invitee $invitee, ?string $customMessage = null): array
     {
         $invitee->loadMissing(['event', 'cardType']);
 
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: $this->buildAttendingReminderMessage($invitee),
+            message: filled($customMessage)
+                ? $this->replacePlaceholders($customMessage, $invitee)
+                : $this->buildAttendingReminderMessage($invitee),
             type: 'attending_reminder',
             successCallback: 'markReminderSmsAsSent',
             failedCallback: 'markReminderSmsAsFailed',
@@ -78,13 +82,15 @@ class SmsService
     /**
      * Send event-day final reminder SMS.
      */
-    public function sendEventDayReminder(Invitee $invitee): array
+    public function sendEventDayReminder(Invitee $invitee, ?string $customMessage = null): array
     {
         $invitee->loadMissing(['event', 'cardType']);
 
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: $this->buildEventDayReminderMessage($invitee),
+            message: filled($customMessage)
+                ? $this->replacePlaceholders($customMessage, $invitee)
+                : $this->buildEventDayReminderMessage($invitee),
             type: 'event_day_reminder',
             successCallback: 'markFinalSmsAsSent',
             failedCallback: 'markFinalSmsAsFailed',
@@ -92,7 +98,7 @@ class SmsService
     }
 
     /**
-     * Generic custom SMS method for future admin actions.
+     * Generic custom SMS method for admin actions and message templates.
      */
     public function sendCustomMessage(Invitee $invitee, string $message, string $type = 'custom_sms'): array
     {
@@ -102,8 +108,6 @@ class SmsService
             invitee: $invitee,
             message: $this->replacePlaceholders($message, $invitee),
             type: $type,
-            successCallback: null,
-            failedCallback: null,
         );
     }
 
@@ -114,8 +118,15 @@ class SmsService
         ?string $successCallback = null,
         ?string $failedCallback = null,
     ): array {
+        $invitee->loadMissing(['event', 'cardType']);
+
         $phone = $this->formatPhone($invitee->phone);
+        $message = trim($message);
         $reference = 'elive_' . $type . '_' . $invitee->id . '_' . Str::upper(Str::random(8));
+
+        if (blank($message)) {
+            throw new \Exception('SMS message is empty.');
+        }
 
         try {
             $response = $this->send(
@@ -131,11 +142,13 @@ class SmsService
             if ($isLogDriver) {
                 $this->markInviteeSmsAsLogged($invitee, $messageId, $type);
             } else {
-                $this->markInviteeSmsAsSent($invitee, $messageId, $successCallback);
+                $this->markInviteeSmsAsSent($invitee, $messageId, $successCallback, $type);
             }
 
-            $this->recordMessageLog(
-                invitee: $invitee->fresh(['event', 'cardType']) ?? $invitee,
+            $freshInvitee = $invitee->fresh(['event', 'cardType']) ?? $invitee;
+
+            $this->recordCommunicationLog(
+                invitee: $freshInvitee,
                 type: $type,
                 channel: 'sms',
                 recipient: $phone,
@@ -144,24 +157,25 @@ class SmsService
                 providerMessageId: $messageId,
                 errorMessage: null,
                 response: $response,
-                provider: $response['provider'] ?? config('services.sms.provider', env('SMS_PROVIDER', ($response['driver'] ?? 'sms'))),
+                provider: $response['provider'] ?? $this->smsProvider(),
             );
 
             return array_merge($response, [
+                'success' => true,
                 'status' => $status,
                 'type' => $type,
                 'channel' => 'sms',
                 'recipient' => $phone,
                 'message_id' => $messageId,
-                'notification_title' => $isLogDriver ? 'SMS invitation logged' : 'SMS invitation sent',
+                'notification_title' => $isLogDriver ? 'SMS logged' : 'SMS sent',
                 'notification_body' => $isLogDriver
-                    ? 'SMS logged only because SMS_DRIVER=log. Message ID: ' . $messageId
+                    ? 'SMS was logged only because SMS_DRIVER=log. Message ID: ' . $messageId
                     : 'SMS sent successfully. Message ID: ' . $messageId,
             ]);
         } catch (Throwable $e) {
-            $this->markInviteeSmsAsFailed($invitee, $e->getMessage(), $failedCallback);
+            $this->markInviteeSmsAsFailed($invitee, $e->getMessage(), $failedCallback, $type);
 
-            $this->recordMessageLog(
+            $this->recordCommunicationLog(
                 invitee: $invitee,
                 type: $type,
                 channel: 'sms',
@@ -171,11 +185,12 @@ class SmsService
                 providerMessageId: $reference,
                 errorMessage: $e->getMessage(),
                 response: null,
-                provider: config('services.sms.provider', env('SMS_PROVIDER', 'sms')),
+                provider: $this->smsProvider(),
             );
 
             Log::error('eLive Card SMS failed', [
                 'invitee_id' => $invitee->id,
+                'event_id' => $invitee->event_id,
                 'phone' => $phone,
                 'type' => $type,
                 'reference' => $reference,
@@ -190,7 +205,7 @@ class SmsService
                 'recipient' => $phone,
                 'message_id' => $reference,
                 'error' => $e->getMessage(),
-                'notification_title' => 'SMS invitation failed',
+                'notification_title' => 'SMS failed',
                 'notification_body' => $e->getMessage(),
             ];
         }
@@ -202,6 +217,7 @@ class SmsService
     public function send(string $phone, string $message, ?string $reference = null): array
     {
         $driver = config('services.sms.driver', env('SMS_DRIVER', 'log'));
+        $provider = $this->smsProvider();
 
         if ($driver === 'log') {
             Log::info('eLive Card SMS logged only', [
@@ -213,8 +229,8 @@ class SmsService
             return [
                 'success' => true,
                 'driver' => 'log',
+                'provider' => $provider,
                 'message_id' => $reference,
-                'provider' => config('services.sms.provider', env('SMS_PROVIDER', 'log')),
                 'provider_message' => 'SMS logged only. Set SMS_DRIVER=http to send real SMS.',
                 'response' => null,
             ];
@@ -242,15 +258,20 @@ class SmsService
             throw new \Exception('SMS_API_SECRET is not configured.');
         }
 
-        $payload = [
-            'senderId' => $senderId,
-            'messageType' => 'text',
-            'message' => $message,
-            'contacts' => $phone,
-        ];
+        if (blank($senderId)) {
+            throw new \Exception('SMS_SENDER_ID is not configured.');
+        }
+
+        $payload = $this->smsPayload(
+            senderId: (string) $senderId,
+            phone: $phone,
+            message: $message,
+            reference: $reference,
+        );
 
         Log::info('Sending eLive Card SMS request', [
             'url' => $apiUrl,
+            'provider' => $provider,
             'senderId' => $senderId,
             'contacts' => $phone,
             'reference' => $reference,
@@ -258,7 +279,8 @@ class SmsService
 
         $response = Http::timeout($timeout)
             ->acceptJson()
-            ->withHeaders($this->smsAuthHeaders($apiKey, $apiSecret))
+            ->asJson()
+            ->withHeaders($this->smsAuthHeaders((string) $apiKey, (string) $apiSecret))
             ->post($apiUrl, $payload);
 
         $body = $response->body();
@@ -272,19 +294,20 @@ class SmsService
         ]);
 
         if ($response->failed()) {
-            throw new \Exception('SMS sending failed. HTTP ' . $response->status() . ': ' . $body);
+            throw new \Exception('SMS sending failed. HTTP ' . $response->status() . ': ' . Str::limit($body, 500));
         }
 
         if (! $this->providerAccepted($data)) {
-            throw new \Exception('SMS provider rejected the message: ' . json_encode($data));
+            throw new \Exception('SMS provider rejected the message: ' . Str::limit(json_encode($data), 500));
         }
 
         return [
             'success' => true,
             'driver' => 'http',
-            'provider' => config('services.sms.provider', env('SMS_PROVIDER', 'http')),
+            'provider' => $provider,
             'shoot_id' => data_get($data, 'data.shootId'),
             'message_id' => data_get($data, 'data.shootId')
+                ?? data_get($data, 'data.messageId')
                 ?? data_get($data, 'message_id')
                 ?? data_get($data, 'id')
                 ?? $reference,
@@ -297,15 +320,27 @@ class SmsService
         ];
     }
 
+    /**
+     * Provider payload. This includes messageType because the live gateway rejected requests without it.
+     */
+    protected function smsPayload(string $senderId, string $phone, string $message, ?string $reference = null): array
+    {
+        return array_filter([
+            'senderId' => $senderId,
+            'messageType' => 'text',
+            'type' => 'text',
+            'contacts' => $phone,
+            'message' => $message,
+            'reference' => $reference,
+        ], static fn ($value) => filled($value));
+    }
 
     /**
      * Resolve SMS endpoint from either SMS_API_URL or SMS_BASE_URL.
-     * This keeps staging/production safe even when services.sms.base_url is used instead of services.sms.api_url.
      */
     protected function resolveSmsApiUrl(): ?string
     {
-        $apiUrl = config('services.sms.api_url')
-            ?: env('SMS_API_URL');
+        $apiUrl = config('services.sms.api_url') ?: env('SMS_API_URL');
 
         if (filled($apiUrl)) {
             return rtrim((string) $apiUrl, '/');
@@ -323,8 +358,7 @@ class SmsService
     }
 
     /**
-     * Send several supported auth header styles because eLive SMS deployments may use
-     * underscore, hyphen, or camel-case header names depending on gateway version.
+     * Send supported auth header styles because deployments may use different names.
      */
     protected function smsAuthHeaders(string $apiKey, string $apiSecret): array
     {
@@ -346,6 +380,7 @@ class SmsService
         $success = $data['success'] ?? null;
         $status = Str::lower((string) ($data['status'] ?? ''));
         $message = Str::lower((string) ($data['message'] ?? ''));
+        $code = (string) ($data['code'] ?? data_get($data, 'data.code', ''));
 
         if ($success === true || $success === 1 || $success === 'true' || $success === '1') {
             return true;
@@ -355,11 +390,16 @@ class SmsService
             return true;
         }
 
+        if (in_array($code, ['200', '201', '202'], true)) {
+            return true;
+        }
+
         if (str_contains($message, 'success') || str_contains($message, 'queued') || str_contains($message, 'accepted')) {
             return true;
         }
 
-        return filled(data_get($data, 'data.shootId'));
+        return filled(data_get($data, 'data.shootId'))
+            || filled(data_get($data, 'data.messageId'));
     }
 
     protected function extractMessageId(array $response, string $reference): string
@@ -368,8 +408,14 @@ class SmsService
             $response['shoot_id']
             ?? $response['message_id']
             ?? data_get($response, 'response.data.shootId')
+            ?? data_get($response, 'response.data.messageId')
             ?? $reference
         );
+    }
+
+    protected function smsProvider(): string
+    {
+        return (string) config('services.sms.provider', env('SMS_PROVIDER', 'sms'));
     }
 
     protected function markInviteeSmsAsLogged(Invitee $invitee, string $messageId, string $type): void
@@ -377,60 +423,93 @@ class SmsService
         $updates = [
             'message_status' => 'logged',
             'last_message_channel' => 'sms',
+            'sms_status' => 'logged',
             'sms_message_id' => $messageId,
         ];
 
-        if ($type === 'invitation_card') {
-            $updates['invitation_sms_status'] = 'logged';
-            $updates['invitation_sms_message_id'] = $messageId;
-        }
+        $updates = array_merge($updates, $this->typeStatusUpdates($type, 'logged', $messageId));
 
         $this->safeUpdateInvitee($invitee, $updates);
     }
 
-    protected function markInviteeSmsAsSent(Invitee $invitee, string $messageId, ?string $callback = null): void
+    protected function markInviteeSmsAsSent(Invitee $invitee, string $messageId, ?string $callback = null, ?string $type = null): void
     {
         if ($callback && method_exists($invitee, $callback)) {
             $invitee->{$callback}($messageId);
+            $invitee->refresh();
             return;
         }
 
         if (method_exists($invitee, 'markSmsAsSent')) {
             $invitee->markSmsAsSent($messageId);
+            $invitee->refresh();
             return;
         }
 
-        $this->safeUpdateInvitee($invitee, [
+        $updates = [
             'message_status' => 'sent',
+            'last_message_channel' => 'sms',
             'sms_status' => 'sent',
-            'invitation_sms_status' => 'sent',
             'sms_message_id' => $messageId,
-            'invitation_sms_message_id' => $messageId,
             'sent_at' => now(),
             'sms_sent_at' => now(),
-            'invitation_sms_sent_at' => now(),
-        ]);
+        ];
+
+        $updates = array_merge($updates, $this->typeStatusUpdates($type, 'sent', $messageId));
+
+        $this->safeUpdateInvitee($invitee, $updates);
     }
 
-    protected function markInviteeSmsAsFailed(Invitee $invitee, string $error, ?string $callback = null): void
+    protected function markInviteeSmsAsFailed(Invitee $invitee, string $error, ?string $callback = null, ?string $type = null): void
     {
         if ($callback && method_exists($invitee, $callback)) {
             $invitee->{$callback}($error);
+            $invitee->refresh();
             return;
         }
 
         if (method_exists($invitee, 'markSmsAsFailed')) {
             $invitee->markSmsAsFailed($error);
+            $invitee->refresh();
             return;
         }
 
-        $this->safeUpdateInvitee($invitee, [
+        $updates = [
             'message_status' => 'failed',
             'sms_status' => 'failed',
-            'invitation_sms_status' => 'failed',
             'sms_error' => $error,
-            'invitation_sms_error' => $error,
-        ]);
+        ];
+
+        $updates = array_merge($updates, $this->typeStatusUpdates($type, 'failed', null, $error));
+
+        $this->safeUpdateInvitee($invitee, $updates);
+    }
+
+    protected function typeStatusUpdates(?string $type, string $status, ?string $messageId = null, ?string $error = null): array
+    {
+        $now = now();
+
+        return match ($type) {
+            'invitation_card' => [
+                'invitation_sms_status' => $status,
+                'invitation_sms_message_id' => $messageId,
+                'invitation_sms_error' => $error,
+                'invitation_sms_sent_at' => in_array($status, ['sent', 'logged'], true) ? $now : null,
+            ],
+            'rsvp_pending_reminder', 'attending_reminder' => [
+                'reminder_sms_status' => $status,
+                'reminder_sms_message_id' => $messageId,
+                'reminder_sms_error' => $error,
+                'reminder_sms_sent_at' => in_array($status, ['sent', 'logged'], true) ? $now : null,
+            ],
+            'event_day_reminder' => [
+                'final_sms_status' => $status,
+                'final_sms_message_id' => $messageId,
+                'final_sms_error' => $error,
+                'final_sms_sent_at' => in_array($status, ['sent', 'logged'], true) ? $now : null,
+            ],
+            default => [],
+        };
     }
 
     protected function safeUpdateInvitee(Invitee $invitee, array $updates): void
@@ -449,7 +528,7 @@ class SmsService
         }
     }
 
-    protected function recordMessageLog(
+    protected function recordCommunicationLog(
         Invitee $invitee,
         string $type,
         string $channel,
@@ -461,20 +540,66 @@ class SmsService
         ?array $response = null,
         ?string $provider = null,
     ): void {
-        if (! Schema::hasTable('message_logs')) {
+        $this->recordTableLog(
+            table: 'message_logs',
+            invitee: $invitee,
+            type: $type,
+            channel: $channel,
+            recipient: $recipient,
+            message: $message,
+            status: $status,
+            providerMessageId: $providerMessageId,
+            errorMessage: $errorMessage,
+            response: $response,
+            provider: $provider,
+        );
+
+        $this->recordTableLog(
+            table: 'sms_logs',
+            invitee: $invitee,
+            type: $type,
+            channel: $channel,
+            recipient: $recipient,
+            message: $message,
+            status: $status,
+            providerMessageId: $providerMessageId,
+            errorMessage: $errorMessage,
+            response: $response,
+            provider: $provider,
+        );
+    }
+
+    protected function recordTableLog(
+        string $table,
+        Invitee $invitee,
+        string $type,
+        string $channel,
+        string $recipient,
+        string $message,
+        string $status,
+        ?string $providerMessageId = null,
+        ?string $errorMessage = null,
+        ?array $response = null,
+        ?string $provider = null,
+    ): void {
+        if (! Schema::hasTable($table)) {
             return;
         }
 
         $now = now();
-        $columns = Schema::getColumnListing('message_logs');
+        $columns = Schema::getColumnListing($table);
+        $encodedResponse = $response ? json_encode($response) : null;
 
         $row = [
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
             'type' => $type,
+            'sms_type' => $type,
+            'message_type' => $type,
             'channel' => $channel,
             'recipient' => $recipient,
             'phone' => $recipient,
+            'to' => $recipient,
             'message' => $message,
             'body' => $message,
             'status' => $status,
@@ -483,27 +608,25 @@ class SmsService
             'message_id' => $providerMessageId,
             'error_message' => $errorMessage,
             'error' => $errorMessage,
+            'send_source' => 'system',
             'sent_by' => Auth::id(),
             'user_id' => Auth::id(),
-            'sent_at' => $status === 'sent' ? $now : null,
+            'sent_at' => in_array($status, ['sent', 'logged'], true) ? $now : null,
             'failed_at' => $status === 'failed' ? $now : null,
-            'response' => $response ? json_encode($response) : null,
-            'meta' => $response ? json_encode($response) : null,
+            'provider_response' => $encodedResponse,
+            'response' => $encodedResponse,
+            'meta' => $encodedResponse,
             'created_at' => $now,
             'updated_at' => $now,
         ];
 
         $insertable = Arr::only($row, $columns);
 
-        if (in_array('type', $columns, true) && blank($insertable['type'] ?? null)) {
-            $insertable['type'] = $type;
-        }
-
         if (in_array('status', $columns, true) && blank($insertable['status'] ?? null)) {
             $insertable['status'] = $status;
         }
 
-        DB::table('message_logs')->insert($insertable);
+        DB::table($table)->insert($insertable);
     }
 
     public function buildInvitationMessage(Invitee $invitee): string
@@ -513,9 +636,11 @@ class SmsService
         $eventName = $this->eventName($invitee);
         $invitationLink = $this->privateInvitationLink($invitee);
         $serial = $invitee->serial_number ?: 'N/A';
+        $guestCount = $invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1;
 
         return "Habari {$invitee->name},\n\n"
             . "Karibu kwenye {$eventName}. Fungua kadi yako ya mwaliko hapa:\n{$invitationLink}\n\n"
+            . "Wageni: {$guestCount}\n"
             . "Serial No: {$serial}\n\n"
             . "eLive Card";
     }
@@ -527,12 +652,13 @@ class SmsService
         $eventName = $this->eventName($invitee);
         $date = $this->eventDate($invitee);
         $rsvpLink = $this->rsvpLink($invitee);
+        $serial = $invitee->serial_number ?: 'N/A';
 
         return "Habari {$invitee->name},\n\n"
             . "Tafadhali thibitisha kuhudhuria {$eventName}.\n"
             . "Tarehe: {$date}\n"
             . "RSVP: {$rsvpLink}\n\n"
-            . "Serial No: {$invitee->serial_number}\n\n"
+            . "Serial No: {$serial}\n\n"
             . "eLive Card";
     }
 
@@ -545,6 +671,7 @@ class SmsService
         $date = $this->eventDate($invitee);
         $time = $this->eventTime($invitee);
         $confirmedGuests = $invitee->confirmed_guests ?: ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1);
+        $serial = $invitee->serial_number ?: 'N/A';
 
         return "Habari {$invitee->name},\n\n"
             . "Tunakukumbusha kuhusu {$eventName}.\n"
@@ -552,7 +679,7 @@ class SmsService
             . "Muda: {$time}\n"
             . "Ukumbi: {$venue}\n"
             . "Wageni: {$confirmedGuests}\n"
-            . "Serial No: {$invitee->serial_number}\n\n"
+            . "Serial No: {$serial}\n\n"
             . "eLive Card";
     }
 
@@ -564,12 +691,13 @@ class SmsService
         $venue = $this->eventVenue($invitee);
         $time = $this->eventTime($invitee);
         $mapsLink = $invitee->event?->google_maps_link;
+        $serial = $invitee->serial_number ?: 'N/A';
 
         $message = "Habari {$invitee->name},\n\n"
             . "Leo ni {$eventName}.\n"
             . "Muda: {$time}\n"
             . "Ukumbi: {$venue}\n"
-            . "Serial No: {$invitee->serial_number}\n";
+            . "Serial No: {$serial}\n";
 
         if (filled($mapsLink)) {
             $message .= "Ramani: {$mapsLink}\n";
@@ -584,16 +712,35 @@ class SmsService
 
         $replacements = [
             '#NAME#' => (string) $invitee->name,
+            '{{name}}' => (string) $invitee->name,
+            '#PHONE#' => (string) $invitee->phone,
+            '{{phone}}' => (string) $invitee->phone,
             '#EVENT_NAME#' => $this->eventName($invitee),
+            '{{event_name}}' => $this->eventName($invitee),
             '#INVITATION_LINK#' => $this->privateInvitationLink($invitee),
+            '{{invitation_link}}' => $this->privateInvitationLink($invitee),
+            '#CARD_LINK#' => $this->privateInvitationLink($invitee),
+            '{{card_link}}' => $this->privateInvitationLink($invitee),
             '#RSVP_LINK#' => $this->rsvpLink($invitee),
+            '{{rsvp_link}}' => $this->rsvpLink($invitee),
             '#SERIAL_NUMBER#' => (string) $invitee->serial_number,
+            '{{serial_number}}' => (string) $invitee->serial_number,
             '#CARD_TYPE#' => (string) ($invitee->cardType?->name ?? $invitee->card_type ?? ''),
+            '{{card_type}}' => (string) ($invitee->cardType?->name ?? $invitee->card_type ?? ''),
             '#GUEST_COUNT#' => (string) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1),
+            '{{guest_count}}' => (string) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1),
             '#TABLE_NUMBER#' => (string) ($invitee->table_number ?? ''),
+            '{{table_number}}' => (string) ($invitee->table_number ?? ''),
+            '#CATEGORY#' => (string) ($invitee->category ?? ''),
+            '{{category}}' => (string) ($invitee->category ?? ''),
             '#EVENT_DATE#' => $this->eventDate($invitee),
+            '{{event_date}}' => $this->eventDate($invitee),
             '#EVENT_TIME#' => $this->eventTime($invitee),
+            '{{event_time}}' => $this->eventTime($invitee),
             '#EVENT_VENUE#' => $this->eventVenue($invitee),
+            '{{event_venue}}' => $this->eventVenue($invitee),
+            '#LOCATION_LINK#' => (string) ($invitee->event?->google_maps_link ?? ''),
+            '{{location_link}}' => (string) ($invitee->event?->google_maps_link ?? ''),
         ];
 
         return str_replace(array_keys($replacements), array_values($replacements), $message);
@@ -682,6 +829,10 @@ class SmsService
 
         if (str_starts_with($phone, '00255')) {
             $phone = '255' . substr($phone, 5);
+        }
+
+        if (str_starts_with($phone, '2550')) {
+            $phone = '255' . substr($phone, 4);
         }
 
         if (str_starts_with($phone, '0') && strlen($phone) === 10) {

@@ -6,6 +6,8 @@ use App\Jobs\GenerateInviteeCardJob;
 use App\Models\CardType;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
+use App\Models\MessageTemplate;
+use App\Services\MessageTemplateRenderer;
 use App\Services\SmsService;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -504,11 +506,11 @@ class InviteesRelationManager extends RelationManager
 
                         $invitee = Invitee::create($preparedData);
 
-                        $this->ensureInviteeQrCode($invitee);
+                        $this->queueAutomaticCardGeneration($invitee);
 
                         Notification::make()
                             ->title('Invitee added manually')
-                            ->body('Serial number, short code, QR code, and RSVP token have been prepared automatically.')
+                            ->body('Serial number, short code, QR code, RSVP token, and card generation have been started automatically.')
                             ->success()
                             ->send();
                     }),
@@ -751,10 +753,32 @@ class InviteesRelationManager extends RelationManager
                                 $data['confirmed_guests'] = $data['allowed_guests'];
                             }
 
+                            $cardSensitiveFields = [
+                                'name',
+                                'phone',
+                                'card_type_id',
+                                'allowed_guests',
+                                'category',
+                                'table_number',
+                            ];
+
+                            $originalData = $record->only($cardSensitiveFields);
+
                             $record->update($data);
+                            $record->refresh();
+
+                            $shouldRegenerateCard = collect($cardSensitiveFields)
+                                ->contains(fn (string $field): bool => ($originalData[$field] ?? null) != ($record->{$field} ?? null));
+
+                            if ($shouldRegenerateCard) {
+                                $this->queueAutomaticCardGeneration($record, true);
+                            }
 
                             Notification::make()
                                 ->title('Invitee updated successfully')
+                                ->body($shouldRegenerateCard
+                                    ? 'Card-related details changed, so card regeneration has started automatically.'
+                                    : 'Invitee details updated. Card regeneration was not needed.')
                                 ->success()
                                 ->send();
                         }),
@@ -776,9 +800,7 @@ class InviteesRelationManager extends RelationManager
                                 return;
                             }
 
-                            $this->prepareGeneratedCardForQueue($record);
-
-                            GenerateInviteeCardJob::dispatch($record->id);
+                            $this->queueAutomaticCardGeneration($record, true);
 
                             Notification::make()
                                 ->title('Card generation started')
@@ -802,9 +824,7 @@ class InviteesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->visible(fn (Invitee $record): bool => $record->latestGeneratedCard?->status === GeneratedCard::STATUS_FAILED)
                         ->action(function (Invitee $record): void {
-                            $this->prepareGeneratedCardForQueue($record);
-
-                            GenerateInviteeCardJob::dispatch($record->id);
+                            $this->queueAutomaticCardGeneration($record, true);
 
                             Notification::make()
                                 ->title('Card generation restarted')
@@ -834,12 +854,12 @@ class InviteesRelationManager extends RelationManager
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
                     Tables\Actions\Action::make('send_card_link')
-                        ->label('Send Card Link')
+                        ->label('Send Message')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
-                        ->modalHeading(fn (Invitee $record): string => 'Send invitation to ' . $record->name)
+                        ->modalHeading(fn (Invitee $record): string => 'Send message to ' . $record->name)
                         ->modalSubmitActionLabel('Send / Record')
-                        ->form(fn (Invitee $record): array => [
+                        ->form([
                             Forms\Components\Select::make('channel')
                                 ->label('Channel')
                                 ->options([
@@ -847,17 +867,33 @@ class InviteesRelationManager extends RelationManager
                                     'whatsapp' => 'WhatsApp',
                                 ])
                                 ->default('sms')
+                                ->live()
                                 ->required(),
 
-                            Forms\Components\Textarea::make('message')
-                                ->label('Message')
-                                ->rows(6)
-                                ->required()
-                                ->default(fn () => $this->buildInvitationMessage($record))
-                                ->helperText('SMS will call SmsService. WhatsApp is still recorded only until WhatsApp API is connected.'),
+                            Forms\Components\Select::make('template_type')
+                                ->label('Message Template')
+                                ->options([
+                                    'invitation' => 'Invitation',
+                                    'rsvp_pending_reminder' => 'RSVP Pending Reminder',
+                                    'attending_reminder' => 'Attending Reminder',
+                                    'event_day_reminder' => 'Event Day Reminder',
+                                    'welcome_checkin' => 'Welcome After Check-in',
+                                    'thank_you' => 'Thank You',
+                                    'custom' => 'Custom',
+                                ])
+                                ->default('invitation')
+                                ->required(),
+
+                            Forms\Components\Placeholder::make('template_note')
+                                ->label('Template Source')
+                                ->content('The system will use the active template for this event, channel, and type. Edit messages in the Message Templates tab.'),
                         ])
                         ->action(function (Invitee $record, array $data): void {
-                            $result = $this->recordCardMessageAsSent($record, $data['channel'], $data['message']);
+                            $result = $this->sendInviteeMessageUsingTemplate(
+                                invitee: $record,
+                                channel: $data['channel'],
+                                templateType: $data['template_type'],
+                            );
 
                             $notification = Notification::make()
                                 ->title($result['title'])
@@ -1332,12 +1368,12 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\BulkAction::make('send_selected_message')
-                        ->label('Send Card Link to Selected')
+                        ->label('Send Message to Selected')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->modalHeading('Send card link to selected invitees')
-                        ->modalDescription('SMS will call SmsService for each selected invitee. WhatsApp is still recorded only until WhatsApp API is connected.')
+                        ->modalHeading('Send message to selected invitees')
+                        ->modalDescription('The selected active template will be used for each invitee.')
                         ->form([
                             Forms\Components\Select::make('channel')
                                 ->label('Channel')
@@ -1348,12 +1384,19 @@ class InviteesRelationManager extends RelationManager
                                 ->default('sms')
                                 ->required(),
 
-                            Forms\Components\Textarea::make('message_template')
+                            Forms\Components\Select::make('template_type')
                                 ->label('Message Template')
-                                ->rows(7)
-                                ->required()
-                                ->default("Habari #NAME#,\n\nKaribu kwenye #EVENT_NAME#. Fungua kadi yako ya mwaliko hapa: #INVITATION_LINK#\n\nSerial No: #SERIAL_NUMBER#")
-                                ->helperText('Available placeholders: #NAME#, #EVENT_NAME#, #INVITATION_LINK#, #SERIAL_NUMBER#, #CARD_TYPE#, #GUEST_COUNT#, #TABLE_NUMBER#.'),
+                                ->options([
+                                    'invitation' => 'Invitation',
+                                    'rsvp_pending_reminder' => 'RSVP Pending Reminder',
+                                    'attending_reminder' => 'Attending Reminder',
+                                    'event_day_reminder' => 'Event Day Reminder',
+                                    'welcome_checkin' => 'Welcome After Check-in',
+                                    'thank_you' => 'Thank You',
+                                    'custom' => 'Custom',
+                                ])
+                                ->default('invitation')
+                                ->required(),
                         ])
                         ->deselectRecordsAfterCompletion()
                         ->action(function (Collection $records, array $data): void {
@@ -1362,11 +1405,19 @@ class InviteesRelationManager extends RelationManager
                             $failed = 0;
 
                             foreach ($records as $record) {
-                                $message = $this->replaceMessagePlaceholders($data['message_template'], $record);
+                                if (! $record instanceof Invitee) {
+                                    $skipped++;
+                                    continue;
+                                }
 
-                                $result = $this->recordCardMessageAsSent($record, $data['channel'], $message, false);
+                                $result = $this->sendInviteeMessageUsingTemplate(
+                                    invitee: $record,
+                                    channel: $data['channel'],
+                                    templateType: $data['template_type'],
+                                    notifySkipped: false,
+                                );
 
-                                if ($result['status'] === 'sent') {
+                                if (in_array($result['status'], ['sent', 'logged'], true)) {
                                     $sent++;
                                 } elseif ($result['status'] === 'skipped') {
                                     $skipped++;
@@ -1376,14 +1427,163 @@ class InviteesRelationManager extends RelationManager
                             }
 
                             Notification::make()
-                                ->title('Selected card links processed')
+                                ->title('Selected messages processed')
                                 ->body("Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
-                                ->success()
+                                ->color($failed > 0 ? 'warning' : 'success')
                                 ->persistent()
                                 ->send();
                         }),
                 ]),
             ]);
+    }
+
+
+
+    protected function activeMessageTemplate(string $channel, string $type): ?MessageTemplate
+    {
+        return MessageTemplate::query()
+            ->where('event_id', $this->getOwnerRecord()->id)
+            ->where('channel', $channel)
+            ->where('type', $type)
+            ->where('status', 'active')
+            ->first();
+    }
+
+    protected function renderMessageTemplate(MessageTemplate $template, Invitee $invitee): string
+    {
+        return app(MessageTemplateRenderer::class)
+            ->render($template->content, $invitee);
+    }
+
+    protected function sendInviteeMessageUsingTemplate(
+        Invitee $invitee,
+        string $channel,
+        string $templateType,
+        bool $notifySkipped = true,
+    ): array {
+        $invitee->loadMissing(['event', 'cardType', 'latestGeneratedCard']);
+
+        if (! in_array($channel, ['sms', 'whatsapp'], true)) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'Invalid channel',
+                'body' => 'Please choose SMS or WhatsApp.',
+            ];
+        }
+
+        $template = $this->activeMessageTemplate($channel, $templateType);
+
+        if (! $template) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'Template not found',
+                'body' => "No active {$channel} {$templateType} template found for this event. Create it from the Message Templates tab.",
+            ];
+        }
+
+        $message = $this->renderMessageTemplate($template, $invitee);
+
+        if ($channel === 'sms') {
+            return $this->sendSmsUsingTemplate($invitee, $templateType, $message);
+        }
+
+        return $this->recordWhatsappUsingTemplate($invitee, $template, $message);
+    }
+
+    protected function sendSmsUsingTemplate(Invitee $invitee, string $templateType, string $message): array
+    {
+        try {
+            $response = $this->sendCardLinkBySms($invitee, $message);
+
+            if (($response['status'] ?? null) !== 'failed') {
+                $response['title'] = match ($templateType) {
+                    'invitation' => $response['title'] ?? 'SMS invitation sent',
+                    'thank_you' => 'SMS thank you message sent',
+                    'welcome_checkin' => 'Welcome SMS sent',
+                    default => 'SMS message sent',
+                };
+            }
+
+            return $response;
+        } catch (Throwable $e) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'SMS failed',
+                'body' => $e->getMessage(),
+            ];
+        }
+    }
+
+    protected function recordWhatsappUsingTemplate(Invitee $invitee, MessageTemplate $template, string $message): array
+    {
+        /*
+         * MVP behavior:
+         * This records WhatsApp sending until real WhatsApp template sending is connected.
+         * Later this method should call WhatsAppCloudService using $template->whatsapp_template_name.
+         */
+        DB::transaction(function () use ($invitee, $message): void {
+            $now = now();
+
+            $this->safeUpdateInvitee($invitee, [
+                'message_status' => 'sent',
+                'sent_at' => $now,
+                'last_message_channel' => 'whatsapp',
+                'last_message_body' => $message,
+            ]);
+
+            $this->markLatestGeneratedCardAsSent($invitee, $now);
+
+            $this->createMessageLog($invitee, 'whatsapp', $message, 'sent');
+        });
+
+        return [
+            'status' => 'sent',
+            'type' => 'success',
+            'title' => 'WhatsApp message recorded',
+            'body' => 'WhatsApp template "' . ($template->whatsapp_template_name ?: $template->name) . '" recorded. Real WhatsApp API sending will be connected next.',
+        ];
+    }
+
+
+    /**
+     * Queue automatic card generation for a single invitee.
+     *
+     * This is used after manual add, Excel import, and card-sensitive edits.
+     * It keeps the UI actions safe by avoiding duplicate generation jobs where possible.
+     */
+    protected function queueAutomaticCardGeneration(Invitee $invitee, bool $forceRegenerate = false): void
+    {
+        try {
+            $invitee->refresh();
+
+            if (! $forceRegenerate && $this->inviteeHasUsableGeneratedCard($invitee)) {
+                return;
+            }
+
+            if ($this->isInviteeCardGenerating($invitee)) {
+                return;
+            }
+
+            $this->ensureInviteeQrCode($invitee);
+
+            $invitee->refresh();
+
+            $this->prepareGeneratedCardForQueue($invitee);
+
+            GenerateInviteeCardJob::dispatch($invitee->id);
+        } catch (Throwable $e) {
+            report($e);
+
+            Notification::make()
+                ->title('Invitee saved, but card generation was not started')
+                ->body($e->getMessage())
+                ->warning()
+                ->persistent()
+                ->send();
+        }
     }
 
 
@@ -1868,7 +2068,7 @@ class InviteesRelationManager extends RelationManager
                 'table_number' => $data['table_number'] ?? null,
             ]));
 
-            $this->ensureInviteeQrCode($invitee);
+            $this->queueAutomaticCardGeneration($invitee);
 
             $created++;
         }

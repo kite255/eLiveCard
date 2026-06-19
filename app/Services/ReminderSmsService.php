@@ -14,9 +14,12 @@ class ReminderSmsService
     public function sendInvitationSms(
         Invitee $invitee,
         string $sendSource = SmsLog::SOURCE_MANUAL,
-        ?string $batchId = null
+        ?string $batchId = null,
+        ?string $customMessage = null
     ): bool {
-        $message = $this->buildMessage($invitee, SmsLog::TYPE_INVITATION);
+        $message = $customMessage
+            ? $this->replacePlaceholders($customMessage, $invitee)
+            : $this->buildMessage($invitee, SmsLog::TYPE_INVITATION);
 
         return $this->sendSms(
             invitee: $invitee,
@@ -30,13 +33,16 @@ class ReminderSmsService
     public function sendRsvpPendingReminder(
         Invitee $invitee,
         string $sendSource = SmsLog::SOURCE_MANUAL,
-        ?string $batchId = null
+        ?string $batchId = null,
+        ?string $customMessage = null
     ): bool {
-        if ($invitee->rsvp_status !== Invitee::RSVP_STATUS_PENDING) {
+        if (($invitee->rsvp_status ?? null) !== Invitee::RSVP_STATUS_PENDING) {
             return false;
         }
 
-        $message = $this->buildMessage($invitee, SmsLog::TYPE_RSVP_PENDING_REMINDER);
+        $message = $customMessage
+            ? $this->replacePlaceholders($customMessage, $invitee)
+            : $this->buildMessage($invitee, SmsLog::TYPE_RSVP_PENDING_REMINDER);
 
         return $this->sendSms(
             invitee: $invitee,
@@ -50,13 +56,16 @@ class ReminderSmsService
     public function sendAttendingReminder(
         Invitee $invitee,
         string $sendSource = SmsLog::SOURCE_MANUAL,
-        ?string $batchId = null
+        ?string $batchId = null,
+        ?string $customMessage = null
     ): bool {
-        if ($invitee->rsvp_status !== Invitee::RSVP_STATUS_ATTENDING) {
+        if (($invitee->rsvp_status ?? null) !== Invitee::RSVP_STATUS_ATTENDING) {
             return false;
         }
 
-        $message = $this->buildMessage($invitee, SmsLog::TYPE_ATTENDING_REMINDER);
+        $message = $customMessage
+            ? $this->replacePlaceholders($customMessage, $invitee)
+            : $this->buildMessage($invitee, SmsLog::TYPE_ATTENDING_REMINDER);
 
         return $this->sendSms(
             invitee: $invitee,
@@ -70,9 +79,12 @@ class ReminderSmsService
     public function sendEventDayReminder(
         Invitee $invitee,
         string $sendSource = SmsLog::SOURCE_MANUAL,
-        ?string $batchId = null
+        ?string $batchId = null,
+        ?string $customMessage = null
     ): bool {
-        $message = $this->buildMessage($invitee, SmsLog::TYPE_EVENT_DAY_REMINDER);
+        $message = $customMessage
+            ? $this->replacePlaceholders($customMessage, $invitee)
+            : $this->buildMessage($invitee, SmsLog::TYPE_EVENT_DAY_REMINDER);
 
         return $this->sendSms(
             invitee: $invitee,
@@ -83,40 +95,76 @@ class ReminderSmsService
         );
     }
 
-    public function sendBulkInvitationSms(
-        $invitees,
-        string $sendSource = SmsLog::SOURCE_BULK_MANUAL
-    ): array {
-        return $this->sendBulk($invitees, SmsLog::TYPE_INVITATION, $sendSource);
+    /**
+     * Send any custom SMS message to one invitee.
+     * Useful for Filament modal actions where admin types message manually.
+     */
+    public function sendCustomSms(
+        Invitee $invitee,
+        string $message,
+        string $sendSource = SmsLog::SOURCE_MANUAL,
+        ?string $batchId = null
+    ): bool {
+        return $this->sendSms(
+            invitee: $invitee,
+            message: $this->replacePlaceholders($message, $invitee),
+            smsType: defined(SmsLog::class . '::TYPE_CUSTOM') ? SmsLog::TYPE_CUSTOM : 'custom',
+            sendSource: $sendSource,
+            batchId: $batchId
+        );
     }
 
-    public function sendBulkRsvpPendingReminders(
-        $invitees,
-        string $sendSource = SmsLog::SOURCE_BULK_MANUAL
-    ): array {
-        return $this->sendBulk($invitees, SmsLog::TYPE_RSVP_PENDING_REMINDER, $sendSource);
+    public function sendBulkInvitationSms($invitees, string $sendSource = SmsLog::SOURCE_BULK_MANUAL, ?string $customMessage = null): array
+    {
+        return $this->sendBulk($invitees, SmsLog::TYPE_INVITATION, $sendSource, $customMessage);
     }
 
-    public function sendBulkAttendingReminders(
-        $invitees,
-        string $sendSource = SmsLog::SOURCE_BULK_MANUAL
-    ): array {
-        return $this->sendBulk($invitees, SmsLog::TYPE_ATTENDING_REMINDER, $sendSource);
+    public function sendBulkRsvpPendingReminders($invitees, string $sendSource = SmsLog::SOURCE_BULK_MANUAL, ?string $customMessage = null): array
+    {
+        return $this->sendBulk($invitees, SmsLog::TYPE_RSVP_PENDING_REMINDER, $sendSource, $customMessage);
     }
 
-    public function sendBulkEventDayReminders(
-        $invitees,
-        string $sendSource = SmsLog::SOURCE_BULK_MANUAL
-    ): array {
-        return $this->sendBulk($invitees, SmsLog::TYPE_EVENT_DAY_REMINDER, $sendSource);
+    public function sendBulkAttendingReminders($invitees, string $sendSource = SmsLog::SOURCE_BULK_MANUAL, ?string $customMessage = null): array
+    {
+        return $this->sendBulk($invitees, SmsLog::TYPE_ATTENDING_REMINDER, $sendSource, $customMessage);
     }
 
-    protected function sendBulk($invitees, string $smsType, string $sendSource): array
+    public function sendBulkEventDayReminders($invitees, string $sendSource = SmsLog::SOURCE_BULK_MANUAL, ?string $customMessage = null): array
+    {
+        return $this->sendBulk($invitees, SmsLog::TYPE_EVENT_DAY_REMINDER, $sendSource, $customMessage);
+    }
+
+    public function sendBulkCustomSms($invitees, string $message, string $sendSource = SmsLog::SOURCE_BULK_MANUAL): array
     {
         $sent = 0;
         $failed = 0;
         $skipped = 0;
+        $batchId = (string) Str::uuid();
 
+        foreach ($invitees as $invitee) {
+            if (! $invitee instanceof Invitee) {
+                $skipped++;
+                continue;
+            }
+
+            $success = $this->sendCustomSms(
+                invitee: $invitee,
+                message: $message,
+                sendSource: $sendSource,
+                batchId: $batchId
+            );
+
+            $success ? $sent++ : $failed++;
+        }
+
+        return compact('sent', 'failed', 'skipped', 'batchId') + ['batch_id' => $batchId];
+    }
+
+    protected function sendBulk($invitees, string $smsType, string $sendSource, ?string $customMessage = null): array
+    {
+        $sent = 0;
+        $failed = 0;
+        $skipped = 0;
         $batchId = (string) Str::uuid();
 
         foreach ($invitees as $invitee) {
@@ -126,38 +174,14 @@ class ReminderSmsService
             }
 
             $success = match ($smsType) {
-                SmsLog::TYPE_INVITATION => $this->sendInvitationSms(
-                    invitee: $invitee,
-                    sendSource: $sendSource,
-                    batchId: $batchId
-                ),
-
-                SmsLog::TYPE_RSVP_PENDING_REMINDER => $this->sendRsvpPendingReminder(
-                    invitee: $invitee,
-                    sendSource: $sendSource,
-                    batchId: $batchId
-                ),
-
-                SmsLog::TYPE_ATTENDING_REMINDER => $this->sendAttendingReminder(
-                    invitee: $invitee,
-                    sendSource: $sendSource,
-                    batchId: $batchId
-                ),
-
-                SmsLog::TYPE_EVENT_DAY_REMINDER => $this->sendEventDayReminder(
-                    invitee: $invitee,
-                    sendSource: $sendSource,
-                    batchId: $batchId
-                ),
-
+                SmsLog::TYPE_INVITATION => $this->sendInvitationSms($invitee, $sendSource, $batchId, $customMessage),
+                SmsLog::TYPE_RSVP_PENDING_REMINDER => $this->sendRsvpPendingReminder($invitee, $sendSource, $batchId, $customMessage),
+                SmsLog::TYPE_ATTENDING_REMINDER => $this->sendAttendingReminder($invitee, $sendSource, $batchId, $customMessage),
+                SmsLog::TYPE_EVENT_DAY_REMINDER => $this->sendEventDayReminder($invitee, $sendSource, $batchId, $customMessage),
                 default => false,
             };
 
-            if ($success) {
-                $sent++;
-            } else {
-                $failed++;
-            }
+            $success ? $sent++ : $failed++;
         }
 
         return [
@@ -176,26 +200,28 @@ class ReminderSmsService
         ?string $batchId = null
     ): bool {
         $batchId ??= (string) Str::uuid();
+        $message = trim($message);
+
+        if ($message === '') {
+            $this->markInviteeSmsFailed($invitee, $smsType, 'SMS message is empty.');
+            return false;
+        }
 
         $smsLog = SmsLog::create([
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
             'phone' => $invitee->phone,
             'sms_type' => $smsType,
-
-            // Audit fields
             'send_source' => $sendSource,
             'sent_by_user_id' => Auth::id(),
             'batch_id' => $batchId,
-
             'message' => $message,
             'status' => SmsLog::STATUS_PENDING,
-            'provider' => config('sms.provider', 'default'),
+            'provider' => config('sms.provider', config('services.sms.provider', 'default')),
         ]);
 
         try {
             $response = app(SmsService::class)->send($invitee->phone, $message);
-
             $messageId = $this->extractMessageId($response);
 
             $smsLog->update([
@@ -203,30 +229,35 @@ class ReminderSmsService
                 'provider_message_id' => $messageId,
                 'provider_response' => $this->normalizeProviderResponse($response),
                 'sent_at' => now(),
+                'failed_at' => null,
                 'error_message' => null,
             ]);
 
-            $invitee->updateSmsStatusByType(
-                smsType: $smsType,
-                status: Invitee::SMS_STATUS_SENT,
-                messageId: $messageId,
-                error: null
-            );
+            $this->markInviteeSmsSent($invitee, $smsType, $messageId);
+
+            Log::info('Reminder SMS sent', [
+                'event_id' => $invitee->event_id,
+                'invitee_id' => $invitee->id,
+                'sms_log_id' => $smsLog->id,
+                'sms_type' => $smsType,
+                'send_source' => $sendSource,
+                'batch_id' => $batchId,
+                'phone' => $invitee->phone,
+                'provider_message_id' => $messageId,
+            ]);
 
             return true;
         } catch (\Throwable $e) {
             $smsLog->update([
                 'status' => SmsLog::STATUS_FAILED,
+                'provider_response' => [
+                    'error' => $e->getMessage(),
+                ],
                 'error_message' => $e->getMessage(),
                 'failed_at' => now(),
             ]);
 
-            $invitee->updateSmsStatusByType(
-                smsType: $smsType,
-                status: Invitee::SMS_STATUS_FAILED,
-                messageId: null,
-                error: $e->getMessage()
-            );
+            $this->markInviteeSmsFailed($invitee, $smsType, $e->getMessage());
 
             Log::error('Reminder SMS failed', [
                 'event_id' => $invitee->event_id,
@@ -253,15 +284,12 @@ class ReminderSmsService
                     ->where('event_id', $invitee->event_id)
                     ->orWhereNull('event_id');
             })
-            ->orderByRaw(
-                'CASE WHEN event_id = ? THEN 0 ELSE 1 END',
-                [$invitee->event_id]
-            )
+            ->orderByRaw('CASE WHEN event_id = ? THEN 0 ELSE 1 END', [$invitee->event_id])
             ->orderByDesc('is_default')
             ->latest()
             ->first();
 
-        $message = $template?->message ?? $this->defaultTemplateMessage($smsType);
+        $message = $template?->message ?: $this->defaultTemplateMessage($smsType);
 
         return $this->replacePlaceholders($message, $invitee);
     }
@@ -269,15 +297,11 @@ class ReminderSmsService
     protected function defaultTemplateMessage(string $smsType): string
     {
         return match ($smsType) {
-            SmsLog::TYPE_INVITATION => 'Dear {name}, you are invited to {event_name} on {event_date} at {venue}. Time: {event_time}. Serial: {serial_number}. Guests: {guest_count}. RSVP: {private_url}',
-
+            SmsLog::TYPE_INVITATION => 'Dear {name}, you are invited to {event_name} on {event_date} at {venue}. Time: {event_time}. Serial: {serial_number}. Guests: {guest_count}. View card: {private_url}',
             SmsLog::TYPE_RSVP_PENDING_REMINDER => 'Dear {name}, kindly confirm your attendance for {event_name}. Serial: {serial_number}. RSVP here: {rsvp_link}',
-
             SmsLog::TYPE_ATTENDING_REMINDER => 'Dear {name}, reminder: {event_name} is tomorrow at {venue}. Time: {event_time}. Table: {table_number}. Serial: {serial_number}.',
-
-            SmsLog::TYPE_EVENT_DAY_REMINDER => 'Dear {name}, {event_name} is today at {venue}. Serial: {serial_number}. Map: {google_maps_link}',
-
-            default => 'Dear {name}, you have a message from {event_name}. Serial: {serial_number}.',
+            SmsLog::TYPE_EVENT_DAY_REMINDER => 'Dear {name}, {event_name} is today at {venue}. Time: {event_time}. Serial: {serial_number}. Map: {google_maps_link}',
+            default => 'Dear {name}, you have a message from {event_name}. Serial: {serial_number}. Link: {private_url}',
         };
     }
 
@@ -286,133 +310,147 @@ class ReminderSmsService
         $invitee->loadMissing(['event', 'cardType']);
 
         $event = $invitee->event;
+        $cardType = $invitee->cardType;
 
-        $eventName = $event?->title ?? 'the event';
+        $eventName = $event?->title ?? $event?->name ?? 'the event';
         $eventType = $event?->event_type ?? '';
 
-        $eventDate = $event?->event_date
-            ? $event->event_date->format('d M Y')
-            : '';
+        $eventDate = $this->formatDate($event?->event_date ?? $event?->date ?? null);
+        $eventTime = $this->formatTime($event?->start_time ?? $event?->time ?? null);
+        $eventEndTime = $this->formatTime($event?->end_time ?? null);
 
-        $eventTime = $event?->start_time
-            ? $event->start_time->format('H:i')
-            : '';
-
-        $eventEndTime = $event?->end_time
-            ? $event->end_time->format('H:i')
-            : '';
-
-        $venueName = $event?->venue_name ?? '';
-        $venueAddress = $event?->venue_address ?? '';
+        $venueName = $event?->venue_name ?? $event?->venue ?? '';
+        $venueAddress = $event?->venue_address ?? $event?->address ?? '';
         $venue = $venueName ?: $venueAddress ?: 'the venue';
 
-        $googleMapsLink = $event?->google_maps_link ?? '';
-        $dressCode = $event?->dress_code ?? '';
-        $program = $event?->program ?? '';
-
-        $contactPersonName = $event?->contact_person_name ?? '';
-        $contactPersonPhone = $event?->contact_person_phone ?? '';
-
-        $cardType = $invitee->cardType?->name ?? '';
+        $privateUrl = $invitee->private_invitation_url ?? '';
+        $cardUrl = $invitee->generated_card_url ?? $privateUrl;
+        $rsvpLink = $privateUrl;
+        $locationLink = $event?->google_maps_link ?? '';
 
         $guestCount = $invitee->final_allowed_guests
             ?? $invitee->allowed_guests
+            ?? $cardType?->allowed_people
             ?? 1;
 
-        $allowedGuests = $guestCount;
+        $values = [
+            'name' => $invitee->name ?? '',
+            'invitee_name' => $invitee->name ?? '',
+            'phone' => $invitee->phone ?? '',
+            'event_name' => $eventName,
+            'event_type' => $eventType,
+            'event_date' => $eventDate,
+            'date' => $eventDate,
+            'event_time' => $eventTime,
+            'time' => $eventTime,
+            'event_end_time' => $eventEndTime,
+            'venue' => $venue,
+            'event_venue' => $venue,
+            'venue_name' => $venueName,
+            'venue_address' => $venueAddress,
+            'google_maps_link' => $locationLink,
+            'location_link' => $locationLink,
+            'dress_code' => $event?->dress_code ?? '',
+            'program' => $event?->program ?? '',
+            'contact_person_name' => $event?->contact_person_name ?? '',
+            'contact_person_phone' => $event?->contact_person_phone ?? '',
+            'card_type' => $cardType?->name ?? '',
+            'guest_count' => (string) $guestCount,
+            'allowed_guests' => (string) $guestCount,
+            'category' => $invitee->category ?? '',
+            'table_number' => $invitee->table_number ?? '',
+            'serial_number' => $invitee->serial_number ?? '',
+            'short_code' => $invitee->short_code ?? '',
+            'private_url' => $privateUrl,
+            'private_link' => $privateUrl,
+            'invitation_link' => $privateUrl,
+            'rsvp_link' => $rsvpLink,
+            'card_link' => $cardUrl,
+            'qr_code_url' => $invitee->qr_code_url ?? '',
+        ];
 
-        $category = $invitee->category ?? '';
-        $tableNumber = $invitee->table_number ?? '';
-        $serialNumber = $invitee->serial_number ?? '';
-        $shortCode = $invitee->short_code ?? '';
+        foreach ($values as $key => $value) {
+            $message = str_replace(
+                [
+                    '{' . $key . '}',
+                    '{{' . $key . '}}',
+                    '#' . strtoupper($key) . '#',
+                ],
+                (string) $value,
+                $message
+            );
+        }
 
-        $privateUrl = $invitee->private_invitation_url ?? '';
-        $rsvpLink = $privateUrl;
-        $qrCodeUrl = $invitee->qr_code_url ?? '';
+        return trim(preg_replace('/\s+/', ' ', $message) ?? $message);
+    }
 
-        $message = str_replace(
-            [
-                '{name}',
-                '{phone}',
-                '{event_name}',
-                '{event_type}',
-                '{event_date}',
-                '{event_time}',
-                '{event_end_time}',
-                '{venue}',
-                '{venue_name}',
-                '{venue_address}',
-                '{google_maps_link}',
-                '{dress_code}',
-                '{program}',
-                '{contact_person_name}',
-                '{contact_person_phone}',
-                '{card_type}',
-                '{guest_count}',
-                '{allowed_guests}',
-                '{category}',
-                '{table_number}',
-                '{serial_number}',
-                '{short_code}',
-                '{private_url}',
-                '{rsvp_link}',
-                '{qr_code_url}',
-            ],
-            [
-                $invitee->name,
-                $invitee->phone,
-                $eventName,
-                $eventType,
-                $eventDate,
-                $eventTime,
-                $eventEndTime,
-                $venue,
-                $venueName,
-                $venueAddress,
-                $googleMapsLink,
-                $dressCode,
-                $program,
-                $contactPersonName,
-                $contactPersonPhone,
-                $cardType,
-                $guestCount,
-                $allowedGuests,
-                $category,
-                $tableNumber,
-                $serialNumber,
-                $shortCode,
-                $privateUrl,
-                $rsvpLink,
-                $qrCodeUrl,
-            ],
-            $message
-        );
+    protected function markInviteeSmsSent(Invitee $invitee, string $smsType, ?string $messageId = null): void
+    {
+        if (method_exists($invitee, 'updateSmsStatusByType')) {
+            $invitee->updateSmsStatusByType(
+                smsType: $smsType,
+                status: Invitee::SMS_STATUS_SENT,
+                messageId: $messageId,
+                error: null
+            );
 
-        return trim(preg_replace('/\s+/', ' ', $message));
+            return;
+        }
+
+        $invitee->forceFill([
+            'reminder_sms_status' => Invitee::SMS_STATUS_SENT,
+            'reminder_sms_sent_at' => now(),
+            'reminder_sms_error' => null,
+        ])->save();
+    }
+
+    protected function markInviteeSmsFailed(Invitee $invitee, string $smsType, string $error): void
+    {
+        if (method_exists($invitee, 'updateSmsStatusByType')) {
+            $invitee->updateSmsStatusByType(
+                smsType: $smsType,
+                status: Invitee::SMS_STATUS_FAILED,
+                messageId: null,
+                error: $error
+            );
+
+            return;
+        }
+
+        $invitee->forceFill([
+            'reminder_sms_status' => Invitee::SMS_STATUS_FAILED,
+            'reminder_sms_error' => $error,
+        ])->save();
     }
 
     protected function extractMessageId(mixed $response): ?string
     {
         if (is_array($response)) {
             return $response['message_id']
+                ?? $response['messageId']
                 ?? $response['shoot_id']
+                ?? $response['shootId']
                 ?? $response['id']
                 ?? $response['sms_id']
+                ?? $response['smsId']
                 ?? $response['data']['message_id']
+                ?? $response['data']['messageId']
+                ?? $response['data']['shoot_id']
                 ?? $response['data']['shootId']
                 ?? $response['response']['data']['shootId']
                 ?? null;
         }
 
-        if (is_string($response)) {
-            return $response;
+        if (is_object($response)) {
+            return $response->message_id
+                ?? $response->messageId
+                ?? $response->shoot_id
+                ?? $response->shootId
+                ?? $response->id
+                ?? null;
         }
 
-        if (is_object($response) && isset($response->message_id)) {
-            return $response->message_id;
-        }
-
-        return null;
+        return is_string($response) ? $response : null;
     }
 
     protected function normalizeProviderResponse(mixed $response): array
@@ -426,13 +464,43 @@ class ReminderSmsService
         }
 
         if (is_string($response)) {
-            return [
-                'message_id' => $response,
-            ];
+            return ['message_id' => $response];
         }
 
-        return [
-            'response' => $response,
-        ];
+        return ['response' => $response];
+    }
+
+    protected function formatDate(mixed $value): string
+    {
+        if (! $value) {
+            return '';
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('d M Y');
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value)->format('d M Y');
+        } catch (\Throwable) {
+            return (string) $value;
+        }
+    }
+
+    protected function formatTime(mixed $value): string
+    {
+        if (! $value) {
+            return '';
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('H:i');
+        }
+
+        try {
+            return \Carbon\Carbon::parse($value)->format('H:i');
+        } catch (\Throwable) {
+            return (string) $value;
+        }
     }
 }
