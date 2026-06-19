@@ -527,6 +527,12 @@ class EventResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->label('Edit'),
 
+                Tables\Actions\Action::make('send_message')
+                    ->label('Send Message')
+                    ->icon('heroicon-o-paper-airplane')
+                    ->color('primary')
+                    ->url(fn (Event $record): string => static::getUrl('send-message', ['record' => $record])),
+
                 Tables\Actions\DeleteAction::make()
                     ->label('Delete'),
             ])
@@ -537,19 +543,19 @@ class EventResource extends Resource
             ]);
     }
 
- public static function getRelations(): array
-{
-    return [
-        RelationManagers\CardTypesRelationManager::class,
-        RelationManagers\InviteesRelationManager::class,
-        RelationManagers\CardTemplatesRelationManager::class,
-        RelationManagers\GeneratedCardsRelationManager::class,
-        RelationManagers\MessageTemplatesRelationManager::class,
-        RelationManagers\MessageLogsRelationManager::class,
-        RelationManagers\SmsLogsRelationManager::class,
-        RelationManagers\CheckInsRelationManager::class,
-    ];
-}
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\CardTypesRelationManager::class,
+            RelationManagers\InviteesRelationManager::class,
+            RelationManagers\CardTemplatesRelationManager::class,
+            RelationManagers\GeneratedCardsRelationManager::class,
+            RelationManagers\MessageTemplatesRelationManager::class,
+            RelationManagers\MessageLogsRelationManager::class,
+            RelationManagers\SmsLogsRelationManager::class,
+            RelationManagers\CheckInsRelationManager::class,
+        ];
+    }
 
     public static function getPages(): array
     {
@@ -558,6 +564,7 @@ class EventResource extends Resource
             'create' => Pages\CreateEvent::route('/create'),
             'view' => Pages\ViewEvent::route('/{record}'),
             'edit' => Pages\EditEvent::route('/{record}/edit'),
+            'send-message' => Pages\SendEventMessage::route('/{record}/send-message'),
         ];
     }
 }
