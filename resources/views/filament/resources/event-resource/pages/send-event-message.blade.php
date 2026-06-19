@@ -14,11 +14,15 @@
 
                 <div class="rounded-lg bg-[#F8FAFC] px-4 py-3 text-sm">
                     <div class="font-semibold text-[#213B73]">
-                        {{ $record->title ?? 'Untitled Event' }}
+                        {{ $this->record->title ?? $this->record->name ?? 'Untitled Event' }}
                     </div>
 
                     <div class="mt-1 text-gray-600">
-                        {{ optional($record->event_date)->format('d M Y') ?? 'Date not set' }}
+                        @if (! empty($this->record->event_date))
+                            {{ \Carbon\Carbon::parse($this->record->event_date)->format('d M Y') }}
+                        @else
+                            Date not set
+                        @endif
                     </div>
                 </div>
             </div>
@@ -31,7 +35,7 @@
                 </div>
 
                 <div class="mt-2 text-2xl font-bold text-[#111827]">
-                    {{ $record->invitees()->count() }}
+                    {{ $this->record->invitees()->count() }}
                 </div>
             </div>
 
@@ -41,7 +45,7 @@
                 </div>
 
                 <div class="mt-2 text-2xl font-bold text-[#111827]">
-                    {{ $record->generatedCards()->where('status', 'generated')->count() }}
+                    {{ $this->record->generatedCards()->where('status', 'generated')->count() }}
                 </div>
             </div>
 
@@ -51,7 +55,7 @@
                 </div>
 
                 <div class="mt-2 text-2xl font-bold text-[#111827]">
-                    {{ $record->invitees()->where('rsvp_status', 'attending')->count() }}
+                    {{ $this->record->invitees()->where('rsvp_status', 'attending')->count() }}
                 </div>
             </div>
         </div>
