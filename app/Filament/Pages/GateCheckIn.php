@@ -283,10 +283,12 @@ class GateCheckIn extends Page implements Forms\Contracts\HasForms
                 return;
             }
 
-            if (($invitee->card_status ?? 'active') !== 'active') {
+            $allowedCardStatuses = ['active', 'generated', 'sent'];
+
+            if (! in_array(($invitee->card_status ?? 'active'), $allowedCardStatuses, true)) {
                 Notification::make()
-                    ->title('Card not active')
-                    ->body('Only active cards are allowed for check-in.')
+                    ->title('Card not valid')
+                    ->body('Only active, generated, or sent cards are allowed for check-in.')
                     ->danger()
                     ->send();
 
