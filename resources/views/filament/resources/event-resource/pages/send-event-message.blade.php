@@ -1,5 +1,6 @@
 <x-filament-panels::page>
     <div class="space-y-6">
+        {{-- Page Header --}}
         <div class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5">
             <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -8,7 +9,7 @@
                     </h2>
 
                     <p class="mt-1 text-sm text-gray-600">
-                        Send SMS or WhatsApp invitations, RSVP reminders, and event day reminders for this event.
+                        Send SMS invitations, check generated cards, and monitor message delivery for this event.
                     </p>
                 </div>
 
@@ -34,10 +35,11 @@
             </div>
         </div>
 
+        {{-- Main Statistics --}}
         <div class="grid gap-4 md:grid-cols-3">
             <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
                 <div class="text-sm font-semibold text-gray-500">
-                    Invitees
+                    Total Invitees
                 </div>
 
                 <div class="mt-3 text-3xl font-bold text-[#213B73]">
@@ -57,24 +59,29 @@
 
             <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
                 <div class="text-sm font-semibold text-gray-500">
-                    Attending
+                    Missing Cards
                 </div>
 
-                <div class="mt-3 text-3xl font-bold text-[#213B73]">
-                    {{ $this->attendingCount }}
+                <div class="mt-3 text-3xl font-bold text-[#FD9618]">
+                    {{ $this->missingCardsCount }}
                 </div>
             </div>
         </div>
 
+        {{-- SMS Readiness --}}
         <div class="grid gap-4 md:grid-cols-3">
             <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
                 <div class="text-sm font-semibold text-gray-500">
-                    Pending RSVP
+                    Eligible for SMS
                 </div>
 
-                <div class="mt-3 text-3xl font-bold text-[#FD9618]">
-                    {{ $this->pendingRsvpCount }}
+                <div class="mt-3 text-3xl font-bold text-[#213B73]">
+                    {{ $this->eligibleSmsInviteesCount }}
                 </div>
+
+                <p class="mt-2 text-xs text-gray-500">
+                    Has phone number, private link, and generated card.
+                </p>
             </div>
 
             <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
@@ -89,6 +96,39 @@
 
             <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
                 <div class="text-sm font-semibold text-gray-500">
+                    Failed SMS
+                </div>
+
+                <div class="mt-3 text-3xl font-bold text-red-600">
+                    {{ $this->failedSmsCount }}
+                </div>
+            </div>
+        </div>
+
+        {{-- RSVP / WhatsApp --}}
+        <div class="grid gap-4 md:grid-cols-3">
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
+                <div class="text-sm font-semibold text-gray-500">
+                    Attending
+                </div>
+
+                <div class="mt-3 text-3xl font-bold text-[#213B73]">
+                    {{ $this->attendingCount }}
+                </div>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
+                <div class="text-sm font-semibold text-gray-500">
+                    Pending RSVP
+                </div>
+
+                <div class="mt-3 text-3xl font-bold text-[#FD9618]">
+                    {{ $this->pendingRsvpCount }}
+                </div>
+            </div>
+
+            <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-950/5">
+                <div class="text-sm font-semibold text-gray-500">
                     WhatsApp / Messages
                 </div>
 
@@ -98,6 +138,7 @@
             </div>
         </div>
 
+        {{-- Message Center --}}
         <div class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -106,7 +147,7 @@
                     </h3>
 
                     <p class="mt-2 text-sm text-gray-600">
-                        Choose the message type you want to send. For now, message sending can continue from the Invitees bulk actions while we connect these buttons to queued jobs.
+                        Use the top-right page actions to generate missing cards and send SMS invitations.
                     </p>
                 </div>
             </div>
@@ -119,30 +160,22 @@
                     Open Invitees
                 </a>
 
-                <button
-                    type="button"
-                    class="rounded-lg bg-[#FD9618] px-4 py-3 text-sm font-semibold text-white hover:bg-[#E48600]"
-                >
-                    Send Invitations
-                </button>
+                <div class="rounded-lg bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#213B73] ring-1 ring-gray-200">
+                    Generate Missing Cards
+                </div>
 
-                <button
-                    type="button"
-                    class="rounded-lg border border-[#213B73] px-4 py-3 text-sm font-semibold text-[#213B73] hover:bg-[#F8FAFC]"
-                >
-                    RSVP Reminder
-                </button>
+                <div class="rounded-lg bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-[#213B73] ring-1 ring-gray-200">
+                    Send SMS Invitations
+                </div>
 
-                <button
-                    type="button"
-                    class="rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-[#111827] hover:bg-[#F8FAFC]"
-                >
-                    Event Day Reminder
-                </button>
+                <div class="rounded-lg bg-[#F8FAFC] px-4 py-3 text-center text-sm font-semibold text-gray-500 ring-1 ring-gray-200">
+                    WhatsApp Coming Next
+                </div>
             </div>
 
             <div class="mt-5 rounded-lg border border-dashed border-gray-300 bg-[#F8FAFC] p-4 text-sm text-gray-600">
-                Next implementation: connect each button to SMS / WhatsApp sending jobs, save logs, and prevent duplicate sending.
+                <strong class="text-[#111827]">Live flow:</strong>
+                generate missing cards first, then send SMS invitations. SMS will only be queued for invitees with phone number, private link, and generated card.
             </div>
         </div>
     </div>
