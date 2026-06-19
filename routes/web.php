@@ -2,6 +2,7 @@
 
 use App\Exports\InviteeSampleExport;
 use App\Http\Controllers\CardTemplateDesignerController;
+use App\Http\Controllers\GateCheckInController;
 use App\Http\Controllers\GateVerifyController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
@@ -31,6 +32,9 @@ Route::get('/', function () {
 |
 | Staging callback:
 | https://staging-digital.elive.co.tz/api/whatsapp/webhook
+|
+| Live callback:
+| https://digital.elive.co.tz/api/whatsapp/webhook
 |
 | These routes must remain public. Do not place them inside auth middleware.
 |
@@ -166,9 +170,37 @@ Route::middleware(['auth'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | Gate Check-in Submit
+    | Professional Gate Check-in Page
     |--------------------------------------------------------------------------
-    | Only logged-in gate users/admin users should check in invitees.
+    | Simple scanner page for gate users.
+    |
+    | Example:
+    | Local: https://127.0.0.1:8002/gate/events/6/check-in
+    | Live:  https://digital.elive.co.tz/gate/events/6/check-in
+    |
+    | These routes are protected because only logged-in gate users/admin users
+    | should scan, verify, and confirm invitee check-ins.
+    */
+    Route::get(
+        '/gate/events/{event}/check-in',
+        [GateCheckInController::class, 'show']
+    )->name('gate.check-in.show');
+
+    Route::post(
+        '/gate/events/{event}/verify',
+        [GateCheckInController::class, 'verify']
+    )->name('gate.check-in.verify');
+
+    Route::post(
+        '/gate/events/{event}/confirm',
+        [GateCheckInController::class, 'confirm']
+    )->name('gate.check-in.confirm');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Existing Gate Check-in Submit
+    |--------------------------------------------------------------------------
+    | Keep this for your existing /gate/verify/{token} flow.
     */
     Route::post(
         '/gate/verify/{token}/check-in',
@@ -215,6 +247,9 @@ Route::get('/card-template-preview/{cardTemplate}', function (
 |--------------------------------------------------------------------------
 | This route displays the scanned invitee verification page.
 | The actual check-in action is protected by auth above.
+|
+| Example:
+| https://digital.elive.co.tz/gate/verify/{token}
 */
 Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
     ->name('gate.verify.show');

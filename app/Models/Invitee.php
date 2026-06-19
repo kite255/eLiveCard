@@ -28,6 +28,15 @@ class Invitee extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | Check-in Status Constants
+    |--------------------------------------------------------------------------
+    */
+
+    public const CHECK_IN_STATUS_NOT_CHECKED_IN = 'not_checked_in';
+    public const CHECK_IN_STATUS_CHECKED_IN = 'checked_in';
+
+    /*
+    |--------------------------------------------------------------------------
     | RSVP Status Constants
     |--------------------------------------------------------------------------
     */
@@ -95,6 +104,7 @@ class Invitee extends Model
 
         'checked_in_count',
         'checked_in_at',
+        'check_in_status',
 
         'sms_status',
         'sms_sent_at',
@@ -132,6 +142,7 @@ class Invitee extends Model
         'private_invitation_url',
         'rsvp_url',
         'is_checked_in',
+        'check_in_status_label',
     ];
 
     protected static function booted(): void
@@ -159,6 +170,13 @@ class Invitee extends Model
 
             if (blank($invitee->card_status)) {
                 $invitee->card_status = self::CARD_STATUS_ACTIVE;
+            }
+
+            if (
+                Schema::hasColumn('invitees', 'check_in_status')
+                && blank($invitee->check_in_status)
+            ) {
+                $invitee->check_in_status = self::CHECK_IN_STATUS_NOT_CHECKED_IN;
             }
 
             if (blank($invitee->rsvp_status)) {
@@ -271,6 +289,14 @@ class Invitee extends Model
             self::CARD_STATUS_CANCELLED => 'Cancelled',
             self::CARD_STATUS_BLOCKED => 'Blocked',
             self::CARD_STATUS_USED => 'Used',
+        ];
+    }
+
+    public static function checkInStatuses(): array
+    {
+        return [
+            self::CHECK_IN_STATUS_NOT_CHECKED_IN => 'Not Checked In',
+            self::CHECK_IN_STATUS_CHECKED_IN => 'Checked In',
         ];
     }
 
@@ -679,6 +705,8 @@ class Invitee extends Model
 
     public function canCheckIn(int $guests = 1): bool
     {
+        $guests = max(1, $guests);
+
         if ($this->card_status !== self::CARD_STATUS_ACTIVE) {
             return false;
         }
@@ -690,10 +718,16 @@ class Invitee extends Model
     {
         $guests = max(1, $guests);
 
-        $this->forceFill([
+        $data = [
             'checked_in_count' => (int) ($this->checked_in_count ?? 0) + $guests,
-            'checked_in_at' => now(),
-        ])->saveQuietly();
+            'checked_in_at' => $this->checked_in_at ?? now(),
+        ];
+
+        if (Schema::hasColumn('invitees', 'check_in_status')) {
+            $data['check_in_status'] = self::CHECK_IN_STATUS_CHECKED_IN;
+        }
+
+        $this->forceFill($data)->saveQuietly();
 
         $this->markAsUsedIfFullyCheckedIn();
     }
@@ -705,6 +739,21 @@ class Invitee extends Model
                 'card_status' => self::CARD_STATUS_USED,
             ])->saveQuietly();
         }
+    }
+
+    public function resetCheckIn(): void
+    {
+        $data = [
+            'checked_in_count' => 0,
+            'checked_in_at' => null,
+            'card_status' => self::CARD_STATUS_ACTIVE,
+        ];
+
+        if (Schema::hasColumn('invitees', 'check_in_status')) {
+            $data['check_in_status'] = self::CHECK_IN_STATUS_NOT_CHECKED_IN;
+        }
+
+        $this->forceFill($data)->saveQuietly();
     }
 
     /*
@@ -747,6 +796,19 @@ class Invitee extends Model
     {
         return self::cardStatuses()[$this->card_status]
             ?? ucfirst(str_replace('_', ' ', (string) $this->card_status));
+    }
+
+    public function getCheckInStatusLabelAttribute(): string
+    {
+        $status = $this->check_in_status
+            ?? (
+                $this->is_checked_in
+                    ? self::CHECK_IN_STATUS_CHECKED_IN
+                    : self::CHECK_IN_STATUS_NOT_CHECKED_IN
+            );
+
+        return self::checkInStatuses()[$status]
+            ?? ucfirst(str_replace('_', ' ', (string) $status));
     }
 
     public function getSmsStatusLabelAttribute(): string
