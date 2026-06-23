@@ -38,11 +38,11 @@ class ViewEvent extends ViewRecord
                 ->color('success')
                 ->url(fn () => url('/admin/events/' . $this->record->id . '/send-whatsapp')),
 
-            Actions\Action::make('openScanner')
-                ->label('Open Scanner')
+            Actions\Action::make('gateCheckIn')
+                ->label('Gate Check-In')
                 ->icon('heroicon-o-qr-code')
                 ->color('primary')
-                ->url(fn () => url('/admin/gate-scanner?event_id=' . $this->record->id))
+                ->url(fn () => route('gate.check-in.show', $this->record))
                 ->openUrlInNewTab(),
 
             Actions\Action::make('viewReports')
