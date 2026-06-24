@@ -53,7 +53,8 @@ class CardTemplatesRelationManager extends RelationManager
                                 'image/png',
                                 'image/webp',
                             ])
-                            ->maxSize(5120)
+                            ->maxSize(25600) // 25MB
+                            ->maxFiles(1)
                             ->imagePreviewHeight('350')
                             ->loadingIndicatorPosition('left')
                             ->panelAspectRatio('9:16')
