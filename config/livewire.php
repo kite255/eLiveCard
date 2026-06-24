@@ -53,15 +53,15 @@ return [
     | Temporary File Uploads
     |--------------------------------------------------------------------------
     |
-    | eLive Card uses high quality invitation template images.
-    | This allows PNG, JPG, JPEG, and WEBP uploads up to 25MB.
+    | Keep the Livewire temporary upload stage permissive.
+    | Filament FileUpload will still validate image type and final upload size.
     |
     */
 
     'temporary_file_upload' => [
         'disk' => null,
 
-        'rules' => 'file|mimes:png,jpg,jpeg,webp|max:25600',
+        'rules' => ['required', 'file', 'max:51200'],
 
         'directory' => null,
 
@@ -86,7 +86,7 @@ return [
             'wma',
         ],
 
-        'max_upload_time' => 10,
+        'max_upload_time' => 20,
 
         'cleanup' => true,
     ],
