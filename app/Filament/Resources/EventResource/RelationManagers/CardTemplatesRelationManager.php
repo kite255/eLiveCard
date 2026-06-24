@@ -48,6 +48,19 @@ class CardTemplatesRelationManager extends RelationManager
                             ->disk('public')
                             ->directory(fn (): string => 'events/' . $this->getOwnerRecord()->id . '/card-templates')
                             ->visibility('public')
+                            ->storeFiles(true)
+                            ->moveFiles()
+                            ->saveUploadedFileUsing(function ($file): string {
+                                $directory = 'events/' . $this->getOwnerRecord()->id . '/card-templates';
+
+                                Storage::disk('public')->makeDirectory($directory);
+
+                                $name = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+                                $extension = strtolower($file->getClientOriginalExtension() ?: 'jpg');
+                                $filename = Str::slug($name) . '-' . now()->format('YmdHis') . '.' . $extension;
+
+                                return $file->storeAs($directory, $filename, 'public');
+                            })
                             ->acceptedFileTypes([
                                 'image/jpeg',
                                 'image/png',
@@ -478,7 +491,11 @@ class CardTemplatesRelationManager extends RelationManager
             return;
         }
 
-        $path = $this->normalizeTemplateImagePath($data['template_image']);
+        $imageValue = is_array($data['template_image'])
+            ? collect($data['template_image'])->filter()->first()
+            : $data['template_image'];
+
+        $path = $this->normalizeTemplateImagePath($imageValue);
 
         if (blank($path) || ! Storage::disk('public')->exists($path)) {
             return;
