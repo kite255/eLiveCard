@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 mkdir -p storage/app/public
 mkdir -p storage/app/livewire-tmp
@@ -12,7 +13,7 @@ chmod -R 775 storage bootstrap/cache || true
 
 php artisan optimize:clear || true
 
-php -d upload_max_filesize=25M \
+exec php -d upload_max_filesize=25M \
     -d post_max_size=30M \
     -d memory_limit=512M \
     artisan serve --host=0.0.0.0 --port=80

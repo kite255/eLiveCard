@@ -68,7 +68,7 @@ class CardTemplatesRelationManager extends RelationManager
 
                                 return Str::slug($name) . '-' . now()->format('YmdHis') . '.' . $extension;
                             })
-                            ->helperText('Use PNG, JPG, or WEBP. Recommended: high quality portrait invitation card, 1080 × 1920.'),
+                            ->helperText('Use PNG, JPG, or WEBP. Recommended: high quality portrait invitation card, 1080 × 1920. Maximum upload size: 25MB.'),
 
                         Forms\Components\TextInput::make('width')
                             ->label('Template Width')
