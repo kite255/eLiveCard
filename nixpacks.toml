@@ -5,3 +5,6 @@ nixPkgs = [
     "nodejs_22",
     "imagemagick"
 ]
+
+[start]
+cmd = "sh docker/start.sh"
