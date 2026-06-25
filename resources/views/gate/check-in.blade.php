@@ -97,7 +97,7 @@
         .container {
             max-width: 1100px;
             margin: 20px auto;
-            padding: 0 16px 32px;
+            padding: 0 16px 180px;
         }
 
         .event-card,
@@ -483,6 +483,137 @@
             width: 100%;
         }
 
+
+        .sticky-checkin-bar {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 9990;
+            display: none;
+            padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+            border-top: 1px solid rgba(17, 24, 39, 0.10);
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 -18px 45px rgba(17, 24, 39, 0.18);
+            backdrop-filter: blur(10px);
+        }
+
+        .sticky-checkin-bar.active {
+            display: block;
+        }
+
+        .sticky-checkin-inner {
+            max-width: 520px;
+            margin: 0 auto;
+        }
+
+        .sticky-checkin-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px 12px;
+            border-radius: 16px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+        }
+
+        .sticky-checkin-name {
+            min-width: 0;
+        }
+
+        .sticky-checkin-name strong {
+            display: block;
+            color: var(--dark);
+            font-size: 15px;
+            font-weight: 900;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sticky-checkin-name span {
+            display: block;
+            margin-top: 2px;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .sticky-guest-select {
+            min-width: 116px;
+        }
+
+        .sticky-guest-select label {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+            text-align: right;
+        }
+
+        .sticky-guest-select select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: #FFFFFF;
+            color: var(--dark);
+            font-size: 15px;
+            font-weight: 900;
+            outline: none;
+        }
+
+        .sticky-confirm-button {
+            width: 100%;
+            min-height: 54px;
+            border-radius: 18px;
+            background: var(--orange);
+            color: var(--dark);
+            font-size: 18px;
+            font-weight: 900;
+            box-shadow: 0 10px 24px rgba(253, 150, 24, 0.35);
+        }
+
+        .sticky-confirm-button:active {
+            transform: scale(0.99);
+        }
+
+        .sticky-confirm-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.65;
+            box-shadow: none;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                margin-top: 14px;
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-bottom: 190px;
+            }
+
+            #reader {
+                min-height: 260px;
+            }
+
+            .panel {
+                padding: 14px;
+            }
+
+            .sticky-checkin-summary {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .sticky-guest-select label {
+                text-align: left;
+            }
+        }
+
+
         @media (max-width: 850px) {
             .grid {
                 grid-template-columns: 1fr;
@@ -597,9 +728,10 @@
                 <div class="info-list" id="inviteeInfo"></div>
 
                 <div class="guest-control" id="guestControl">
-                    <label for="guestCount">Number of guests entering now</label>
-                    <input type="number" min="1" value="1" id="guestCount">
-                    <button type="button" class="btn-primary" onclick="confirmCheckIn()">Confirm Check-in</button>
+                    <label>Check-in action</label>
+                    <div class="recent-meta">
+                        Use the fixed button at the bottom of the screen to confirm check-in.
+                    </div>
                 </div>
             </div>
         </div>
@@ -627,6 +759,35 @@
     </div>
 </div>
 
+
+
+{{-- Sticky Confirm Check-in Bar --}}
+<div id="stickyCheckInBar" class="sticky-checkin-bar" aria-live="polite">
+    <div class="sticky-checkin-inner">
+        <div class="sticky-checkin-summary">
+            <div class="sticky-checkin-name">
+                <strong id="stickyInviteeName">No invitee selected</strong>
+                <span id="stickyInviteeSummary">Scan or search an invitee first.</span>
+            </div>
+
+            <div class="sticky-guest-select">
+                <label for="stickyGuestCount">Guests</label>
+                <select id="stickyGuestCount">
+                    <option value="1">1 guest</option>
+                </select>
+            </div>
+        </div>
+
+        <button
+            type="button"
+            id="stickyConfirmButton"
+            class="sticky-confirm-button"
+            onclick="confirmCheckIn()"
+        >
+            Confirm Check-in
+        </button>
+    </div>
+</div>
 
 {{-- Check-in Success Popup --}}
 <div id="checkInPopup" class="popup-overlay" role="dialog" aria-modal="true" aria-labelledby="popupTitle">
@@ -710,6 +871,60 @@
             .replaceAll("'", '&#039;');
     }
 
+    function hideStickyCheckInBar() {
+        const bar = document.getElementById('stickyCheckInBar');
+
+        if (bar) {
+            bar.classList.remove('active');
+        }
+
+        const button = document.getElementById('stickyConfirmButton');
+
+        if (button) {
+            button.disabled = false;
+            button.innerText = 'Confirm Check-in';
+        }
+    }
+
+    function showStickyCheckInBar(invitee) {
+        const bar = document.getElementById('stickyCheckInBar');
+        const nameEl = document.getElementById('stickyInviteeName');
+        const summaryEl = document.getElementById('stickyInviteeSummary');
+        const selectEl = document.getElementById('stickyGuestCount');
+        const button = document.getElementById('stickyConfirmButton');
+
+        if (!bar || !invitee || !selectEl) {
+            return;
+        }
+
+        const remaining = Math.max(Number(invitee.remaining_guests || 0), 0);
+        const checkedIn = Number(invitee.checked_in_count || 0);
+        const allowed = Number(invitee.allowed_guests || 1);
+
+        nameEl.innerText = invitee.name || 'Selected invitee';
+        summaryEl.innerText = `Remaining: ${remaining} • Checked in: ${checkedIn}/${allowed}`;
+
+        selectEl.innerHTML = '';
+
+        for (let i = 1; i <= remaining; i++) {
+            const option = document.createElement('option');
+            option.value = i;
+            option.textContent = i === 1 ? '1 guest' : `${i} guests`;
+            selectEl.appendChild(option);
+        }
+
+        if (button) {
+            button.disabled = remaining <= 0;
+            button.innerText = 'Confirm Check-in';
+        }
+
+        if (remaining > 0) {
+            bar.classList.add('active');
+        } else {
+            bar.classList.remove('active');
+        }
+    }
+
     function showResult(type, title, message, invitee = null) {
         const box = document.getElementById('resultBox');
         const titleEl = document.getElementById('resultTitle');
@@ -725,6 +940,7 @@
 
         selectedInviteeId = null;
         remainingGuests = 0;
+        hideStickyCheckInBar();
 
         if (invitee) {
             selectedInviteeId = invitee.id;
@@ -744,10 +960,7 @@
 
             if (type === 'success' && remainingGuests > 0) {
                 guestControl.style.display = 'block';
-
-                const guestCountInput = document.getElementById('guestCount');
-                guestCountInput.value = 1;
-                guestCountInput.max = remainingGuests;
+                showStickyCheckInBar(invitee);
             }
         }
     }
@@ -833,6 +1046,7 @@
         resultBox.className = 'result';
         inviteeInfo.innerHTML = '';
         guestControl.style.display = 'none';
+        hideStickyCheckInBar();
 
         startScanner();
     }
@@ -882,11 +1096,19 @@
             return;
         }
 
-        const guestCount = parseInt(document.getElementById('guestCount').value || '1');
+        const guestCountInput = document.getElementById('stickyGuestCount');
+        const guestCount = parseInt((guestCountInput && guestCountInput.value) || '1');
 
         if (guestCount < 1 || guestCount > remainingGuests) {
             showResult('error', 'Invalid Guest Count', `Guest count must be between 1 and ${remainingGuests}.`);
             return;
+        }
+
+        const confirmButton = document.getElementById('stickyConfirmButton');
+
+        if (confirmButton) {
+            confirmButton.disabled = true;
+            confirmButton.innerText = 'Checking in...';
         }
 
         try {
@@ -906,8 +1128,14 @@
             const data = await response.json();
 
             if (data.status === 'success') {
+                hideStickyCheckInBar();
                 showCheckInPopup(data);
                 return;
+            }
+
+            if (confirmButton) {
+                confirmButton.disabled = false;
+                confirmButton.innerText = 'Confirm Check-in';
             }
 
             showResult(
@@ -917,6 +1145,11 @@
                 data.invitee || null
             );
         } catch (error) {
+            if (confirmButton) {
+                confirmButton.disabled = false;
+                confirmButton.innerText = 'Confirm Check-in';
+            }
+
             showResult('error', 'Check-in Failed', 'Could not complete check-in. Please try again.');
         }
     }
