@@ -14,6 +14,8 @@ class CheckIn extends Model
     */
     public const STATUS_SUCCESS = 'success';
     public const STATUS_FAILED = 'failed';
+    public const STATUS_DUPLICATE = 'duplicate';
+    public const STATUS_BLOCKED = 'blocked';
     public const STATUS_CANCELLED = 'cancelled';
 
     /*
@@ -23,9 +25,10 @@ class CheckIn extends Model
     */
     public const METHOD_QR = 'qr';
     public const METHOD_MANUAL = 'manual';
-    public const METHOD_SERIAL = 'serial';
-    public const METHOD_PHONE = 'phone';
-    public const METHOD_NAME = 'name';
+    public const METHOD_MANUAL_SEARCH = 'manual_search';
+    public const METHOD_SERIAL = 'manual_serial';
+    public const METHOD_PHONE = 'manual_phone';
+    public const METHOD_NAME = 'manual_name';
     public const METHOD_GATE_SCANNER = 'gate_scanner';
 
     protected $fillable = [
@@ -83,6 +86,8 @@ class CheckIn extends Model
         return [
             self::STATUS_SUCCESS => 'Success',
             self::STATUS_FAILED => 'Failed',
+            self::STATUS_DUPLICATE => 'Duplicate',
+            self::STATUS_BLOCKED => 'Blocked',
             self::STATUS_CANCELLED => 'Cancelled',
         ];
     }
@@ -92,6 +97,7 @@ class CheckIn extends Model
         return [
             self::METHOD_QR => 'QR Code',
             self::METHOD_MANUAL => 'Manual',
+            self::METHOD_MANUAL_SEARCH => 'Manual Search',
             self::METHOD_SERIAL => 'Serial Number',
             self::METHOD_PHONE => 'Phone Number',
             self::METHOD_NAME => 'Name Search',
@@ -115,6 +121,16 @@ class CheckIn extends Model
         return $this->status === self::STATUS_FAILED;
     }
 
+    public function isDuplicate(): bool
+    {
+        return $this->status === self::STATUS_DUPLICATE;
+    }
+
+    public function isBlocked(): bool
+    {
+        return $this->status === self::STATUS_BLOCKED;
+    }
+
     public function isCancelled(): bool
     {
         return $this->status === self::STATUS_CANCELLED;
@@ -122,7 +138,13 @@ class CheckIn extends Model
 
     public function isManualCheckIn(): bool
     {
-        return $this->checkin_method === self::METHOD_MANUAL;
+        return in_array($this->checkin_method, [
+            self::METHOD_MANUAL,
+            self::METHOD_MANUAL_SEARCH,
+            self::METHOD_SERIAL,
+            self::METHOD_PHONE,
+            self::METHOD_NAME,
+        ], true);
     }
 
     public function isQrCheckIn(): bool
@@ -142,11 +164,21 @@ class CheckIn extends Model
 
     public function statusLabel(): string
     {
-        return self::statuses()[$this->status] ?? ucfirst((string) $this->status);
+        return self::statuses()[$this->status] ?? ucfirst(str_replace('_', ' ', (string) $this->status));
     }
 
     public function methodLabel(): string
     {
-        return self::methods()[$this->checkin_method] ?? ucfirst((string) $this->checkin_method);
+        return self::methods()[$this->checkin_method] ?? ucfirst(str_replace('_', ' ', (string) $this->checkin_method));
+    }
+
+    public function guestsLabel(): string
+    {
+        return $this->guests_checked_in . ' guest(s)';
+    }
+
+    public function checkedInTimeLabel(): string
+    {
+        return $this->checked_in_at?->format('d M Y, H:i') ?? 'N/A';
     }
 }

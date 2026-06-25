@@ -33,12 +33,28 @@
         $event = $invitee->event;
 
         $eventName = $event?->title ?? $event?->name ?? 'Special Event';
+
         $eventDate = $event?->event_date ?? $event?->date ?? null;
-        $eventTime = $event?->event_time ?? $event?->time ?? null;
-        $eventVenue = $event?->venue ?? 'Venue to be announced';
+
+        $startTime = $event?->start_time ?? null;
+        $endTime = $event?->end_time ?? null;
+
+        $eventVenue = $event?->venue_name
+            ?? $event?->venue
+            ?? $event?->venue_address
+            ?? 'Venue to be announced';
+
+        if (! empty($event?->venue_name) && ! empty($event?->venue_address)) {
+            $eventVenue = $event->venue_name . ', ' . $event->venue_address;
+        }
+
+        $googleMapsLink = $event?->google_maps_link ?? null;
 
         $cardType = $invitee->cardType?->name ?? 'Invitation';
-        $guestCount = $invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1;
+
+        $guestCount = $invitee->final_allowed_guests
+            ?? $invitee->allowed_guests
+            ?? 1;
 
         $rsvpStatus = $invitee->rsvp_status ?? 'pending';
         $statusText = strtoupper(str_replace('_', ' ', $rsvpStatus));
@@ -53,31 +69,41 @@
             ? \Carbon\Carbon::parse($eventDate)->format('d M Y')
             : 'To be announced';
 
-        $formattedTime = $eventTime
-            ? \Carbon\Carbon::parse($eventTime)->format('h:i A')
-            : 'To be announced';
+        $formattedTime = 'To be announced';
+
+        if (! empty($startTime) && ! empty($endTime)) {
+            $formattedTime = \Carbon\Carbon::parse($startTime)->format('h:i A')
+                . ' - '
+                . \Carbon\Carbon::parse($endTime)->format('h:i A');
+        } elseif (! empty($startTime)) {
+            $formattedTime = \Carbon\Carbon::parse($startTime)->format('h:i A');
+        }
+
+        $rsvpUrl = ! empty($invitee->rsvp_token)
+            ? route('rsvp.show', $invitee->rsvp_token)
+            : null;
     @endphp
 
     <main class="min-h-screen">
-        {{-- Simple Header --}}
-    <header class="fixed left-0 right-0 top-0 z-50 bg-white/95 border-b border-slate-200 backdrop-blur">
-    <div class="mx-auto flex max-w-md items-center justify-between px-4 py-4">
-        <img
-            src="{{ asset('images/elive-card-logo.png') }}"
-            alt="eLive Card"
-            class="h-11 w-auto object-contain"
-        >
+        {{-- Header --}}
+        <header class="fixed left-0 right-0 top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+            <div class="mx-auto flex max-w-md items-center justify-between px-4 py-4">
+                <img
+                    src="{{ asset('images/elive-card-logo.png') }}"
+                    alt="eLive Card"
+                    class="h-11 w-auto object-contain"
+                >
 
-        <span class="rounded-full bg-eliveOrange px-4 py-2 text-xs font-black uppercase tracking-wide text-white">
-            RSVP
-        </span>
-    </div>
-</header>
+                <span class="rounded-full bg-eliveOrange px-4 py-2 text-xs font-black uppercase tracking-wide text-white">
+                    RSVP
+                </span>
+            </div>
+        </header>
 
-        <section class="px-4 py-6">
+        <section class="px-4 pb-6 pt-24">
             <div class="mx-auto max-w-md">
                 {{-- Invitation Card --}}
-                <div class="overflow-hidden rounded-3xl bg-white shadow-xl border border-slate-200">
+                <div class="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
                     {{-- Card Hero --}}
                     <div class="bg-eliveBlue px-6 py-7 text-center text-white">
                         <p class="text-xs font-bold uppercase tracking-widest text-eliveOrange">
@@ -123,6 +149,17 @@
                         <div class="rounded-2xl bg-slate-50 p-4">
                             <p class="text-xs font-bold uppercase text-slate-500">Venue</p>
                             <p class="mt-1 font-bold">{{ $eventVenue }}</p>
+
+                            @if (! empty($googleMapsLink))
+                                <a
+                                    href="{{ $googleMapsLink }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="mt-3 inline-flex rounded-full bg-eliveBlue px-4 py-2 text-xs font-bold text-white"
+                                >
+                                    Open Location
+                                </a>
+                            @endif
                         </div>
 
                         <div class="grid grid-cols-2 gap-3">
@@ -184,7 +221,17 @@
                             </div>
                         @endif
 
-                        {{-- RSVP --}}
+                        {{-- Full RSVP Page --}}
+                        @if ($rsvpUrl)
+                            <a
+                                href="{{ $rsvpUrl }}"
+                                class="block w-full rounded-2xl bg-eliveOrange px-5 py-4 text-center font-black text-white shadow-md transition hover:opacity-95"
+                            >
+                                Confirm Attendance
+                            </a>
+                        @endif
+
+                        {{-- Quick RSVP --}}
                         <form method="POST" action="{{ route('invitee.rsvp', $invitee->short_code) }}" class="space-y-3">
                             @csrf
 

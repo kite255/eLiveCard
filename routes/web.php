@@ -23,12 +23,7 @@ Route::get('/', function () {
 | WhatsApp Cloud API Webhook
 |--------------------------------------------------------------------------
 |
-| GET:
-| Used by Meta to verify the webhook callback URL.
-|
-| POST:
-| Receives incoming WhatsApp messages and delivery status updates such as
-| sent, delivered, read, and failed.
+| These routes must remain public.
 |
 | Staging callback:
 | https://staging-digital.elive.co.tz/api/whatsapp/webhook
@@ -36,18 +31,11 @@ Route::get('/', function () {
 | Live callback:
 | https://digital.elive.co.tz/api/whatsapp/webhook
 |
-| These routes must remain public. Do not place them inside auth middleware.
-|
 */
-Route::get(
-    '/api/whatsapp/webhook',
-    [WhatsAppWebhookController::class, 'verify']
-)->name('whatsapp.webhook.verify');
+Route::get('/api/whatsapp/webhook', [WhatsAppWebhookController::class, 'verify'])
+    ->name('whatsapp.webhook.verify');
 
-Route::post(
-    '/api/whatsapp/webhook',
-    [WhatsAppWebhookController::class, 'handle']
-)
+Route::post('/api/whatsapp/webhook', [WhatsAppWebhookController::class, 'handle'])
     ->withoutMiddleware([VerifyCsrfToken::class])
     ->name('whatsapp.webhook.handle');
 
@@ -55,21 +43,16 @@ Route::post(
 |--------------------------------------------------------------------------
 | Public Invitee Page
 |--------------------------------------------------------------------------
-| Main private invitation page.
 |
 | Example:
 | Local: http://127.0.0.1:8002/i/NPTUIN
 | Live:  https://digital.elive.co.tz/i/NPTUIN
+|
 */
 Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.page');
 
-/*
-|--------------------------------------------------------------------------
-| Invitee RSVP From Private Page
-|--------------------------------------------------------------------------
-*/
 Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.rsvp');
@@ -78,11 +61,6 @@ Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
 |--------------------------------------------------------------------------
 | Standalone RSVP Confirmation Page
 |--------------------------------------------------------------------------
-| Useful for SMS and WhatsApp reminder links.
-|
-| Example:
-| Local: http://127.0.0.1:8002/rsvp/{token}
-| Live:  https://digital.elive.co.tz/rsvp/{token}
 */
 Route::get('/rsvp/{token}', [RsvpController::class, 'show'])
     ->where('token', '[A-Za-z0-9]+')
@@ -100,11 +78,11 @@ Route::get('/rsvp/{token}/thank-you', [RsvpController::class, 'thankYou'])
 |--------------------------------------------------------------------------
 | Public Generated Invitation Card
 |--------------------------------------------------------------------------
-| Invitees can view and download their personalized card.
 |
 | Example:
 | View:     https://digital.elive.co.tz/card/ELV-2026-ZRKJ7A
 | Download: https://digital.elive.co.tz/card/ELV-2026-ZRKJ7A/download
+|
 */
 Route::get('/card/{serialNumber}', [PublicCardController::class, 'show'])
     ->where('serialNumber', '[A-Za-z0-9\-]+')
@@ -116,23 +94,61 @@ Route::get('/card/{serialNumber}/download', [PublicCardController::class, 'downl
 
 /*
 |--------------------------------------------------------------------------
+| Card Template Preview
+|--------------------------------------------------------------------------
+|
+| This route serves uploaded card template images through Laravel.
+| It helps when direct /storage access returns 403 Forbidden.
+|
+*/
+Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $cardTemplate) {
+    abort_if(
+        ! $cardTemplate->template_image,
+        404,
+        'Template image is missing.'
+    );
+
+    abort_if(
+        ! Storage::disk('public')->exists($cardTemplate->template_image),
+        404,
+        'Template image file was not found.'
+    );
+
+    return response()->file(
+        Storage::disk('public')->path($cardTemplate->template_image)
+    );
+})->name('card-template.preview');
+
+/*
+|--------------------------------------------------------------------------
+| Public Gate Verification Page
+|--------------------------------------------------------------------------
+|
+| This page displays the scanned invitee verification result.
+| It can be public because the QR code itself contains the secure token.
+| The actual check-in submit is protected by auth below.
+|
+| Example:
+| https://digital.elive.co.tz/gate/verify/{token}
+|
+*/
+Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
+    ->where('token', '[A-Za-z0-9]+')
+    ->name('gate.verify.show');
+
+/*
+|--------------------------------------------------------------------------
 | Authenticated Admin/User Routes
 |--------------------------------------------------------------------------
+|
 | These routes require login.
+|
 */
 Route::middleware(['auth'])->group(function () {
     /*
     |--------------------------------------------------------------------------
     | Invitee Sample Excel Download
     |--------------------------------------------------------------------------
-    | Excel columns:
-    | name, phone, card_type, allowed_guests, category, table_number
-    |
-    | Required:
-    | name, phone, card_type
-    |
-    | Optional:
-    | allowed_guests, category, table_number
     */
     Route::get('/invitees/sample-excel', function () {
         return Excel::download(
@@ -145,8 +161,6 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     | Drag-and-Drop Card Template Designer
     |--------------------------------------------------------------------------
-    | This is used by the admin/card designer to visually place placeholders
-    | such as name, QR code, serial number, guest count, and table number.
     */
     Route::get(
         '/admin/card-templates/{cardTemplate}/designer',
@@ -172,14 +186,13 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     | Professional Gate Check-in Page
     |--------------------------------------------------------------------------
-    | Simple scanner page for gate users.
+    |
+    | This is the main mobile-friendly scanner page for gate users.
     |
     | Example:
-    | Local: https://127.0.0.1:8002/gate/events/6/check-in
+    | Local: http://127.0.0.1:8002/gate/events/6/check-in
     | Live:  https://digital.elive.co.tz/gate/events/6/check-in
     |
-    | These routes are protected because only logged-in gate users/admin users
-    | should scan, verify, and confirm invitee check-ins.
     */
     Route::get(
         '/gate/events/{event}/check-in',
@@ -198,58 +211,16 @@ Route::middleware(['auth'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | Existing Gate Check-in Submit
+    | QR Token Check-in Submit
     |--------------------------------------------------------------------------
-    | Keep this for your existing /gate/verify/{token} flow.
+    |
+    | This submits check-in from /gate/verify/{token}.
+    |
     */
     Route::post(
         '/gate/verify/{token}/check-in',
         [GateVerifyController::class, 'checkIn']
-    )->name('gate.verify.check-in');
+    )
+        ->where('token', '[A-Za-z0-9]+')
+        ->name('gate.verify.check-in');
 });
-
-/*
-|--------------------------------------------------------------------------
-| Card Template Preview
-|--------------------------------------------------------------------------
-| This route serves uploaded card template images through Laravel.
-| It fixes staging/server cases where direct /storage/card-templates access
-| returns 403 Forbidden even when the file exists.
-|
-| Example:
-| https://staging-digital.elive.co.tz/card-template-preview/1
-*/
-Route::get('/card-template-preview/{cardTemplate}', function (
-    CardTemplate $cardTemplate
-) {
-    abort_if(
-        ! $cardTemplate->template_image,
-        404,
-        'Template image is missing.'
-    );
-
-    abort_if(
-        ! Storage::disk('public')->exists($cardTemplate->template_image),
-        404,
-        'Template image file was not found.'
-    );
-
-    return response()->file(
-        Storage::disk('public')->path(
-            $cardTemplate->template_image
-        )
-    );
-})->name('card-template.preview');
-
-/*
-|--------------------------------------------------------------------------
-| Gate Verification Page
-|--------------------------------------------------------------------------
-| This route displays the scanned invitee verification page.
-| The actual check-in action is protected by auth above.
-|
-| Example:
-| https://digital.elive.co.tz/gate/verify/{token}
-*/
-Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
-    ->name('gate.verify.show');

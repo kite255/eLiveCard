@@ -26,23 +26,32 @@ class ViewEvent extends ViewRecord
                 ->icon('heroicon-o-pencil-square')
                 ->color('gray'),
 
+            Actions\Action::make('gateCheckIn')
+                ->label('Gate Check-in')
+                ->icon('heroicon-o-qr-code')
+                ->color('success')
+                ->url(fn () => route('gate.check-in.show', $this->record))
+                ->openUrlInNewTab(),
+
             Actions\Action::make('sendSms')
                 ->label('Send SMS')
                 ->icon('heroicon-o-chat-bubble-left-right')
                 ->color('warning')
-                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-sms')),
+                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-sms'))
+                ->openUrlInNewTab(),
 
             Actions\Action::make('sendWhatsapp')
                 ->label('Send WhatsApp')
                 ->icon('heroicon-o-paper-airplane')
-                ->color('success')
-                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-whatsapp')),
-
-            Actions\Action::make('gateCheckIn')
-                ->label('Gate Check-In')
-                ->icon('heroicon-o-qr-code')
                 ->color('primary')
-                ->url(fn () => route('gate.check-in.show', $this->record))
+                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-whatsapp'))
+                ->openUrlInNewTab(),
+
+            Actions\Action::make('sendMessage')
+                ->label('Send Message')
+                ->icon('heroicon-o-envelope')
+                ->color('info')
+                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-message'))
                 ->openUrlInNewTab(),
 
             Actions\Action::make('viewReports')
@@ -61,11 +70,11 @@ class ViewEvent extends ViewRecord
 
     public function getTitle(): string
     {
-        return 'Event Workspace: ' . $this->record->title;
+        return 'Event Workspace: ' . ($this->record->title ?? 'Event');
     }
 
     public function getSubheading(): ?string
     {
-        return 'Manage invitations, invitees, card templates, SMS, WhatsApp, RSVP, and check-ins for this event.';
+        return 'Manage invitations, invitees, card templates, SMS, WhatsApp, RSVP, and gate check-ins for this event.';
     }
 }
