@@ -7,6 +7,7 @@ use App\Models\Invitee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class GateCheckInController extends Controller
 {
@@ -16,6 +17,7 @@ class GateCheckInController extends Controller
     public function show(Event $event)
     {
         $recentCheckIns = Invitee::query()
+            ->with('cardType')
             ->where('event_id', $event->id)
             ->where(function ($query) {
                 $query->whereNotNull('checked_in_at')
@@ -139,6 +141,12 @@ class GateCheckInController extends Controller
                     'status' => 'warning',
                     'title' => 'Already Checked In',
                     'message' => 'This card has already used all allowed guest entries.',
+                    'invitee' => $this->inviteePayload(
+                        invitee: $invitee,
+                        allowedGuests: $allowedGuests,
+                        checkedInCount: $checkedInCount,
+                        remainingGuests: $remainingGuests
+                    ),
                 ], 422);
             }
 
@@ -147,26 +155,56 @@ class GateCheckInController extends Controller
                     'status' => 'error',
                     'title' => 'Guest Limit Exceeded',
                     'message' => "Only {$remainingGuests} guest(s) remaining for this card.",
+                    'invitee' => $this->inviteePayload(
+                        invitee: $invitee,
+                        allowedGuests: $allowedGuests,
+                        checkedInCount: $checkedInCount,
+                        remainingGuests: $remainingGuests
+                    ),
                 ], 422);
             }
 
             $invitee->checked_in_count = $checkedInCount + $guestCount;
             $invitee->checked_in_at = $invitee->checked_in_at ?? now();
 
-            if ($this->hasColumn($invitee, 'check_in_status')) {
+            if ($this->hasColumn('check_in_status')) {
                 $invitee->check_in_status = 'checked_in';
+            }
+
+            if ($this->hasColumn('checked_in_by') && auth()->check()) {
+                $invitee->checked_in_by = auth()->id();
             }
 
             $invitee->save();
 
-            $newRemainingGuests = max($allowedGuests - (int) $invitee->checked_in_count, 0);
+            $newCheckedInCount = (int) $invitee->checked_in_count;
+            $newRemainingGuests = max($allowedGuests - $newCheckedInCount, 0);
+
+            $inviteePayload = $this->inviteePayload(
+                invitee: $invitee,
+                allowedGuests: $allowedGuests,
+                checkedInCount: $newCheckedInCount,
+                remainingGuests: $newRemainingGuests
+            );
 
             return response()->json([
                 'status' => 'success',
                 'title' => 'Check-in Successful',
-                'message' => "{$guestCount} guest(s) checked in successfully.",
-                'checked_in_count' => (int) $invitee->checked_in_count,
-                'remaining_guests' => $newRemainingGuests,
+                'message' => "{$invitee->name} has been checked in successfully.",
+                'success_message' => [
+                    'heading' => 'Check-in Successful',
+                    'body' => "{$guestCount} guest(s) checked in successfully.",
+                    'invitee_name' => $invitee->name,
+                    'card_type' => $invitee->cardType?->name ?? 'N/A',
+                    'guests_checked_in_now' => $guestCount,
+                    'total_checked_in' => $newCheckedInCount,
+                    'allowed_guests' => $allowedGuests,
+                    'remaining_guests' => $newRemainingGuests,
+                    'table_number' => $invitee->table_number ?? 'N/A',
+                    'category' => $invitee->category ?? 'N/A',
+                    'checked_in_time' => now()->format('d M Y, h:i A'),
+                ],
+                'invitee' => $inviteePayload,
             ]);
         });
     }
@@ -221,21 +259,26 @@ class GateCheckInController extends Controller
             'phone' => $invitee->phone,
             'serial_number' => $invitee->serial_number,
             'short_code' => $invitee->short_code,
-            'card_type' => $invitee->cardType?->name,
+            'card_type' => $invitee->cardType?->name ?? 'N/A',
             'allowed_guests' => $allowedGuests,
             'checked_in_count' => $checkedInCount,
             'remaining_guests' => $remainingGuests,
-            'table_number' => $invitee->table_number,
-            'category' => $invitee->category,
+            'table_number' => $invitee->table_number ?? 'N/A',
+            'category' => $invitee->category ?? 'N/A',
+            'checked_in_at' => $invitee->checked_in_at
+                ? $invitee->checked_in_at->format('d M Y, h:i A')
+                : null,
+            'check_in_status' => $this->hasColumn('check_in_status')
+                ? ($invitee->check_in_status ?? null)
+                : null,
         ];
     }
 
     /**
      * Safe check before setting optional columns.
      */
-    private function hasColumn(Invitee $invitee, string $column): bool
+    private function hasColumn(string $column): bool
     {
-        return array_key_exists($column, $invitee->getAttributes())
-            || in_array($column, $invitee->getFillable(), true);
+        return Schema::hasColumn('invitees', $column);
     }
 }
