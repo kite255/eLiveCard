@@ -429,13 +429,21 @@ class Invitee extends Model
         $qrUrl = $this->getQrTargetUrl();
 
         $folder = 'events/' . $this->event_id . '/qr-codes';
-        $fileName = $this->serial_number . '.png';
+        $fileName = $this->serial_number . '.svg';
         $path = $folder . '/' . $fileName;
 
         [$foregroundRed, $foregroundGreen, $foregroundBlue] = $this->hexToRgb(self::QR_FOREGROUND_COLOR);
         [$backgroundRed, $backgroundGreen, $backgroundBlue] = $this->hexToRgb(self::QR_BACKGROUND_COLOR);
 
-        $qrPng = QrCode::format('png')
+        /*
+         * Use SVG instead of PNG.
+         *
+         * PNG generation with simplesoftwareio/simple-qrcode uses the BaconQrCode
+         * Imagick image backend. On Nixpacks/Coolify, Imagick may exist in the
+         * image path but not be loaded as a PHP extension, causing queued card
+         * generation jobs to fail. SVG generation does not require Imagick.
+         */
+        $qrSvg = QrCode::format('svg')
             ->size(self::QR_SIZE)
             ->margin(self::QR_MARGIN)
             ->errorCorrection(self::QR_ERROR_CORRECTION)
@@ -443,7 +451,7 @@ class Invitee extends Model
             ->backgroundColor($backgroundRed, $backgroundGreen, $backgroundBlue)
             ->generate($qrUrl);
 
-        Storage::disk('public')->put($path, $qrPng);
+        Storage::disk('public')->put($path, $qrSvg);
 
         $data = [];
 
