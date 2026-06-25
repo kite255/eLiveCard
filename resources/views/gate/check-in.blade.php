@@ -322,6 +322,167 @@
             margin-top: 16px;
         }
 
+
+        .popup-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(17, 24, 39, 0.68);
+        }
+
+        .popup-overlay.active {
+            display: flex;
+        }
+
+        .popup-card {
+            width: 100%;
+            max-width: 430px;
+            overflow: hidden;
+            border-radius: 24px;
+            background: #FFFFFF;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+            animation: popupIn 180ms ease-out;
+        }
+
+        @keyframes popupIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px) scale(0.97);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .popup-header {
+            padding: 24px 20px;
+            text-align: center;
+            color: #FFFFFF;
+            background: var(--green);
+        }
+
+        .popup-header.warning {
+            background: var(--orange);
+            color: var(--dark);
+        }
+
+        .popup-header.error {
+            background: var(--red);
+        }
+
+        .popup-icon {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: #FFFFFF;
+            color: var(--green);
+            font-size: 44px;
+            font-weight: 900;
+            line-height: 1;
+        }
+
+        .popup-header.warning .popup-icon {
+            color: var(--orange);
+        }
+
+        .popup-header.error .popup-icon {
+            color: var(--red);
+        }
+
+        .popup-title {
+            margin: 0;
+            font-size: 25px;
+            font-weight: 900;
+        }
+
+        .popup-message {
+            margin: 6px 0 0;
+            font-size: 14px;
+            opacity: 0.95;
+        }
+
+        .popup-body {
+            padding: 18px;
+        }
+
+        .popup-name-box {
+            margin-bottom: 12px;
+            padding: 14px;
+            border-radius: 18px;
+            background: var(--bg);
+            text-align: center;
+        }
+
+        .popup-label {
+            margin: 0 0 4px;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .popup-name {
+            margin: 0;
+            color: var(--dark);
+            font-size: 22px;
+            font-weight: 900;
+        }
+
+        .popup-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .popup-info {
+            padding: 12px;
+            border-radius: 16px;
+            background: var(--bg);
+        }
+
+        .popup-info span {
+            display: block;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .popup-info strong {
+            display: block;
+            margin-top: 3px;
+            color: var(--dark);
+            font-size: 16px;
+            font-weight: 900;
+        }
+
+        .popup-time {
+            margin: 14px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .popup-actions {
+            display: grid;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .popup-actions button {
+            width: 100%;
+        }
+
         @media (max-width: 850px) {
             .grid {
                 grid-template-columns: 1fr;
@@ -466,6 +627,65 @@
     </div>
 </div>
 
+
+{{-- Check-in Success Popup --}}
+<div id="checkInPopup" class="popup-overlay" role="dialog" aria-modal="true" aria-labelledby="popupTitle">
+    <div class="popup-card">
+        <div id="popupHeader" class="popup-header">
+            <div id="popupIcon" class="popup-icon">✓</div>
+            <h2 id="popupTitle" class="popup-title">Check-in Successful</h2>
+            <p id="popupMessage" class="popup-message">Invitee checked in successfully.</p>
+        </div>
+
+        <div class="popup-body">
+            <div class="popup-name-box">
+                <p class="popup-label">Invitee Name</p>
+                <p id="popupInviteeName" class="popup-name">-</p>
+            </div>
+
+            <div class="popup-grid">
+                <div class="popup-info">
+                    <span>Card Type</span>
+                    <strong id="popupCardType">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Table</span>
+                    <strong id="popupTableNumber">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Checked In</span>
+                    <strong id="popupCheckedIn">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Remaining</span>
+                    <strong id="popupRemaining">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Category</span>
+                    <strong id="popupCategory">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Guests Now</span>
+                    <strong id="popupGuestsNow">-</strong>
+                </div>
+            </div>
+
+            <p id="popupTime" class="popup-time">-</p>
+
+            <div class="popup-actions">
+                <button type="button" class="btn-orange" onclick="closeCheckInPopup()">
+                    Continue Scanning
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     let html5QrCode = null;
     let selectedInviteeId = null;
@@ -530,6 +750,91 @@
                 guestCountInput.max = remainingGuests;
             }
         }
+    }
+
+
+    function showCheckInPopup(response) {
+        const popup = document.getElementById('checkInPopup');
+        const header = document.getElementById('popupHeader');
+        const icon = document.getElementById('popupIcon');
+
+        const success = response.success_message || {};
+        const invitee = response.invitee || {};
+        const status = response.status || 'success';
+
+        header.className = 'popup-header';
+
+        if (status === 'warning') {
+            header.classList.add('warning');
+            icon.innerText = '!';
+        } else if (status === 'error') {
+            header.classList.add('error');
+            icon.innerText = '×';
+        } else {
+            icon.innerText = '✓';
+        }
+
+        document.getElementById('popupTitle').innerText =
+            success.heading || response.title || 'Check-in Result';
+
+        document.getElementById('popupMessage').innerText =
+            response.message || success.body || 'Operation completed.';
+
+        document.getElementById('popupInviteeName').innerText =
+            success.invitee_name || invitee.name || '-';
+
+        document.getElementById('popupCardType').innerText =
+            success.card_type || invitee.card_type || 'N/A';
+
+        document.getElementById('popupTableNumber').innerText =
+            success.table_number || invitee.table_number || 'N/A';
+
+        const totalCheckedIn = success.total_checked_in ?? invitee.checked_in_count ?? 0;
+        const allowedGuests = success.allowed_guests ?? invitee.allowed_guests ?? 1;
+
+        document.getElementById('popupCheckedIn').innerText =
+            totalCheckedIn + ' / ' + allowedGuests;
+
+        document.getElementById('popupRemaining').innerText =
+            success.remaining_guests ?? invitee.remaining_guests ?? 0;
+
+        document.getElementById('popupCategory').innerText =
+            success.category || invitee.category || 'N/A';
+
+        document.getElementById('popupGuestsNow').innerText =
+            success.guests_checked_in_now ?? '-';
+
+        document.getElementById('popupTime').innerText =
+            success.checked_in_time ? 'Checked in at ' + success.checked_in_time : '';
+
+        popup.classList.add('active');
+    }
+
+    function closeCheckInPopup() {
+        const popup = document.getElementById('checkInPopup');
+
+        popup.classList.remove('active');
+
+        selectedInviteeId = null;
+        remainingGuests = 0;
+        lastScannedValue = null;
+
+        const manualInput = document.getElementById('manualInput');
+
+        if (manualInput) {
+            manualInput.value = '';
+            manualInput.focus();
+        }
+
+        const resultBox = document.getElementById('resultBox');
+        const inviteeInfo = document.getElementById('inviteeInfo');
+        const guestControl = document.getElementById('guestControl');
+
+        resultBox.className = 'result';
+        inviteeInfo.innerHTML = '';
+        guestControl.style.display = 'none';
+
+        startScanner();
     }
 
     async function verifyValue(value) {
@@ -600,15 +905,17 @@
 
             const data = await response.json();
 
-            showResult(
-                data.status || 'success',
-                data.title || 'Checked In',
-                data.message || 'Check-in completed.'
-            );
+            if (data.status === 'success') {
+                showCheckInPopup(data);
+                return;
+            }
 
-            setTimeout(() => {
-                window.location.reload();
-            }, 900);
+            showResult(
+                data.status || 'error',
+                data.title || 'Check-in Failed',
+                data.message || 'Check-in could not be completed.',
+                data.invitee || null
+            );
         } catch (error) {
             showResult('error', 'Check-in Failed', 'Could not complete check-in. Please try again.');
         }
