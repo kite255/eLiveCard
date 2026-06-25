@@ -10,7 +10,10 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use SimpleSoftwareIO\QrCode\Facades\QrCode;
+use Endroid\QrCode\Builder\Builder;
+use Endroid\QrCode\Encoding\Encoding;
+use Endroid\QrCode\ErrorCorrectionLevel;
+use Endroid\QrCode\Writer\PngWriter;
 
 class Invitee extends Model
 {
@@ -429,29 +432,25 @@ class Invitee extends Model
         $qrUrl = $this->getQrTargetUrl();
 
         $folder = 'events/' . $this->event_id . '/qr-codes';
-        $fileName = $this->serial_number . '.svg';
+        $fileName = $this->serial_number . '.png';
         $path = $folder . '/' . $fileName;
 
-        [$foregroundRed, $foregroundGreen, $foregroundBlue] = $this->hexToRgb(self::QR_FOREGROUND_COLOR);
-        [$backgroundRed, $backgroundGreen, $backgroundBlue] = $this->hexToRgb(self::QR_BACKGROUND_COLOR);
-
         /*
-         * Use SVG instead of PNG.
+         * Generate PNG QR codes using Endroid's PngWriter.
          *
-         * PNG generation with simplesoftwareio/simple-qrcode uses the BaconQrCode
-         * Imagick image backend. On Nixpacks/Coolify, Imagick may exist in the
-         * image path but not be loaded as a PHP extension, causing queued card
-         * generation jobs to fail. SVG generation does not require Imagick.
+         * This produces a PNG file that Intervention Image can read and place
+         * on generated invitation cards.
          */
-        $qrSvg = QrCode::format('svg')
+        $result = Builder::create()
+            ->writer(new PngWriter())
+            ->data($qrUrl)
+            ->encoding(new Encoding('UTF-8'))
+            ->errorCorrectionLevel(ErrorCorrectionLevel::High)
             ->size(self::QR_SIZE)
             ->margin(self::QR_MARGIN)
-            ->errorCorrection(self::QR_ERROR_CORRECTION)
-            ->color($foregroundRed, $foregroundGreen, $foregroundBlue)
-            ->backgroundColor($backgroundRed, $backgroundGreen, $backgroundBlue)
-            ->generate($qrUrl);
+            ->build();
 
-        Storage::disk('public')->put($path, $qrSvg);
+        Storage::disk('public')->put($path, $result->getString());
 
         $data = [];
 
