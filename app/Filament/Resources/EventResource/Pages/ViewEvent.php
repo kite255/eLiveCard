@@ -26,13 +26,6 @@ class ViewEvent extends ViewRecord
                 ->icon('heroicon-o-pencil-square')
                 ->color('gray'),
 
-            Actions\Action::make('gateCheckIn')
-                ->label('Gate Check-in')
-                ->icon('heroicon-o-qr-code')
-                ->color('success')
-                ->url(fn () => route('gate.check-in.show', $this->record))
-                ->openUrlInNewTab(),
-
             Actions\Action::make('messageCenter')
                 ->label('Message Center')
                 ->icon('heroicon-o-envelope')
@@ -40,6 +33,21 @@ class ViewEvent extends ViewRecord
                 ->url(fn () => EventResource::getUrl('send-message', [
                     'record' => $this->record,
                 ])),
+
+            Actions\Action::make('inviteeResponses')
+                ->label('Invitee Responses')
+                ->icon('heroicon-o-chat-bubble-left-right')
+                ->color('warning')
+                ->url(fn () => EventResource::getUrl('invitee-responses', [
+                    'record' => $this->record,
+                ])),
+
+            Actions\Action::make('gateCheckIn')
+                ->label('Gate Check-in')
+                ->icon('heroicon-o-qr-code')
+                ->color('success')
+                ->url(fn () => route('gate.check-in.show', $this->record))
+                ->openUrlInNewTab(),
 
             Actions\Action::make('viewReports')
                 ->label('Reports')
@@ -62,6 +70,6 @@ class ViewEvent extends ViewRecord
 
     public function getSubheading(): ?string
     {
-        return 'Manage invitations, invitees, card templates, SMS, WhatsApp, RSVP, and gate check-ins for this event.';
+        return 'Manage invitations, invitees, card templates, SMS, WhatsApp, RSVP, responses, replies, and gate check-ins for this event.';
     }
 }

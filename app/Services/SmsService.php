@@ -158,6 +158,7 @@ class SmsService
                 errorMessage: null,
                 response: $response,
                 provider: $response['provider'] ?? $this->smsProvider(),
+                providerStatus: $response['provider_status'] ?? $status,
             );
 
             return array_merge($response, [
@@ -186,6 +187,7 @@ class SmsService
                 errorMessage: $e->getMessage(),
                 response: null,
                 provider: $this->smsProvider(),
+                providerStatus: 'failed',
             );
 
             Log::error('eLive Card SMS failed', [
@@ -241,8 +243,15 @@ class SmsService
         }
 
         $apiUrl = $this->resolveSmsApiUrl();
-        $apiKey = config('services.sms.api_key', env('SMS_API_KEY'));
-        $apiSecret = config('services.sms.api_secret', env('SMS_API_SECRET'));
+        $apiKey = config('services.sms.api_key')
+            ?: config('services.elive_sms.api_key')
+            ?: env('SMS_API_KEY')
+            ?: env('ELIVE_SMS_API_KEY');
+
+        $apiSecret = config('services.sms.api_secret')
+            ?: config('services.elive_sms.api_secret')
+            ?: env('SMS_API_SECRET')
+            ?: env('ELIVE_SMS_API_SECRET');
         $senderId = config('services.sms.sender_id', env('SMS_SENDER_ID', 'eLiveCard'));
         $timeout = (int) config('services.sms.timeout', env('SMS_TIMEOUT', 30));
 
@@ -305,8 +314,14 @@ class SmsService
             'success' => true,
             'driver' => 'http',
             'provider' => $provider,
-            'shoot_id' => data_get($data, 'data.shootId'),
+            'shoot_id' => data_get($data, 'data.shootId')
+                ?? data_get($data, 'data.shoot_id')
+                ?? data_get($data, 'shootId')
+                ?? data_get($data, 'shoot_id'),
             'message_id' => data_get($data, 'data.shootId')
+                ?? data_get($data, 'data.shoot_id')
+                ?? data_get($data, 'shootId')
+                ?? data_get($data, 'shoot_id')
                 ?? data_get($data, 'data.messageId')
                 ?? data_get($data, 'message_id')
                 ?? data_get($data, 'id')
@@ -315,6 +330,7 @@ class SmsService
             'invalid_contacts' => data_get($data, 'data.invalidContacts'),
             'duplicated_contacts' => data_get($data, 'data.duplicatedContacts'),
             'message_size' => data_get($data, 'data.messageSize'),
+            'provider_status' => 'sent',
             'provider_message' => data_get($data, 'message'),
             'response' => $data,
         ];
@@ -336,7 +352,11 @@ class SmsService
     }
 
     /**
-     * Resolve SMS endpoint from either SMS_API_URL or SMS_BASE_URL.
+     * Resolve SMS send endpoint from either SMS_API_URL or base URL.
+     *
+     * Supported base URL formats:
+     * - https://message.elive.co.tz
+     * - https://message.elive.co.tz/api/v1/vendor/message
      */
     protected function resolveSmsApiUrl(): ?string
     {
@@ -346,15 +366,7 @@ class SmsService
             return rtrim((string) $apiUrl, '/');
         }
 
-        $baseUrl = config('services.sms.base_url')
-            ?: env('SMS_BASE_URL')
-            ?: env('ELIVE_SMS_BASE_URL');
-
-        if (blank($baseUrl)) {
-            return null;
-        }
-
-        return rtrim((string) $baseUrl, '/') . '/api/v1/vendor/message/send';
+        return rtrim($this->smsMessageBaseUrl(), '/') . '/send';
     }
 
     /**
@@ -399,6 +411,9 @@ class SmsService
         }
 
         return filled(data_get($data, 'data.shootId'))
+            || filled(data_get($data, 'data.shoot_id'))
+            || filled(data_get($data, 'shootId'))
+            || filled(data_get($data, 'shoot_id'))
             || filled(data_get($data, 'data.messageId'));
     }
 
@@ -408,6 +423,9 @@ class SmsService
             $response['shoot_id']
             ?? $response['message_id']
             ?? data_get($response, 'response.data.shootId')
+            ?? data_get($response, 'response.data.shoot_id')
+            ?? data_get($response, 'response.shootId')
+            ?? data_get($response, 'response.shoot_id')
             ?? data_get($response, 'response.data.messageId')
             ?? $reference
         );
@@ -415,7 +433,7 @@ class SmsService
 
     protected function smsProvider(): string
     {
-        return (string) config('services.sms.provider', env('SMS_PROVIDER', 'sms'));
+        return (string) config('services.sms.provider', env('SMS_PROVIDER', 'eLive SMS'));
     }
 
     protected function markInviteeSmsAsLogged(Invitee $invitee, string $messageId, string $type): void
@@ -539,6 +557,7 @@ class SmsService
         ?string $errorMessage = null,
         ?array $response = null,
         ?string $provider = null,
+        ?string $providerStatus = null,
     ): void {
         $this->recordTableLog(
             table: 'message_logs',
@@ -552,6 +571,7 @@ class SmsService
             errorMessage: $errorMessage,
             response: $response,
             provider: $provider,
+            providerStatus: $providerStatus,
         );
 
         $this->recordTableLog(
@@ -566,6 +586,7 @@ class SmsService
             errorMessage: $errorMessage,
             response: $response,
             provider: $provider,
+            providerStatus: $providerStatus,
         );
     }
 
@@ -581,6 +602,7 @@ class SmsService
         ?string $errorMessage = null,
         ?array $response = null,
         ?string $provider = null,
+        ?string $providerStatus = null,
     ): void {
         if (! Schema::hasTable($table)) {
             return;
@@ -604,15 +626,21 @@ class SmsService
             'body' => $message,
             'status' => $status,
             'provider' => $provider,
+            'provider_name' => $provider,
+            'provider_status' => $providerStatus ?? $status,
             'provider_message_id' => $providerMessageId,
+            'shoot_id' => $providerMessageId,
             'message_id' => $providerMessageId,
             'error_message' => $errorMessage,
             'error' => $errorMessage,
             'send_source' => 'system',
             'sent_by' => Auth::id(),
             'user_id' => Auth::id(),
-            'sent_at' => in_array($status, ['sent', 'logged'], true) ? $now : null,
-            'failed_at' => $status === 'failed' ? $now : null,
+            'sent_at' => in_array($status, ['sent', 'logged', 'delivered', 'read'], true) ? $now : null,
+            'delivered_at' => $status === 'delivered' ? $now : null,
+            'read_at' => $status === 'read' ? $now : null,
+            'failed_at' => in_array($status, ['failed', 'undelivered', 'expired', 'rejected'], true) ? $now : null,
+            'provider_request' => $encodedResponse,
             'provider_response' => $encodedResponse,
             'response' => $encodedResponse,
             'meta' => $encodedResponse,
@@ -627,6 +655,559 @@ class SmsService
         }
 
         DB::table($table)->insert($insertable);
+    }
+
+
+    /**
+     * Fetch the actual SMS delivery report from eLive SMS provider using the shootId.
+     *
+     * Important:
+     * Some providers may accept SMS successfully, but their delivery-report endpoint
+     * may be unavailable or wrongly documented. This method must not crash the UI/job.
+     * It returns a structured response instead.
+     */
+    public function getDeliveryReport(string $shootId): array
+    {
+        $shootId = trim($shootId);
+
+        if (blank($shootId)) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'SMS shootId is missing.',
+                'shoot_id' => $shootId,
+                'url' => null,
+                'data' => null,
+            ];
+        }
+
+        $apiKey = config('services.elive_sms.api_key')
+            ?: config('services.sms.api_key')
+            ?: env('ELIVE_SMS_API_KEY')
+            ?: env('SMS_API_KEY');
+
+        $apiSecret = config('services.elive_sms.api_secret')
+            ?: config('services.sms.api_secret')
+            ?: env('ELIVE_SMS_API_SECRET')
+            ?: env('SMS_API_SECRET');
+
+        if (blank($apiKey) || blank($apiSecret)) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'SMS API key or API secret is not configured.',
+                'shoot_id' => $shootId,
+                'url' => null,
+                'data' => null,
+            ];
+        }
+
+        $url = $this->deliveryReportUrl($shootId);
+
+        try {
+            $response = Http::timeout((int) config('services.elive_sms.timeout', config('services.sms.timeout', env('SMS_TIMEOUT', 30))))
+                ->acceptJson()
+                ->withHeaders($this->smsAuthHeaders((string) $apiKey, (string) $apiSecret))
+                ->get($url);
+        } catch (Throwable $exception) {
+            Log::warning('eLive SMS delivery report request exception', [
+                'shoot_id' => $shootId,
+                'url' => $url,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'status' => 0,
+                'message' => $exception->getMessage(),
+                'shoot_id' => $shootId,
+                'url' => $url,
+                'data' => null,
+            ];
+        }
+
+        $data = $response->json();
+
+        Log::info('eLive SMS delivery report response', [
+            'shoot_id' => $shootId,
+            'url' => $url,
+            'http_status' => $response->status(),
+            'response' => $data,
+            'body' => $response->failed() ? Str::limit($response->body(), 500) : null,
+        ]);
+
+        if (! $response->successful()) {
+            return [
+                'success' => false,
+                'status' => $response->status(),
+                'message' => $data['message'] ?? Str::limit($response->body(), 500),
+                'shoot_id' => $shootId,
+                'url' => $url,
+                'data' => $data,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'status' => $response->status(),
+            'message' => $data['message'] ?? 'SMS delivery report fetched.',
+            'shoot_id' => $shootId,
+            'url' => $url,
+            'data' => $data,
+        ];
+    }
+
+    /**
+     * Fetch delivery report by shootId and update sms_logs/message_logs with actual provider status.
+     *
+     * If the provider delivery endpoint fails, the SMS must remain "sent" because
+     * the original send API already accepted/submitted the message.
+     */
+    public function refreshDeliveryReport(string $shootId): array
+    {
+        $reportResponse = $this->getDeliveryReport($shootId);
+
+        if (! ($reportResponse['success'] ?? false)) {
+            $this->markDeliveryReportUnavailable(
+                shootId: $shootId,
+                message: $reportResponse['message'] ?? 'Delivery report unavailable.',
+                response: $reportResponse,
+            );
+
+            return $reportResponse;
+        }
+
+        $data = $reportResponse['data'] ?? [];
+
+        $reports = $data['data'] ?? [];
+
+        if (is_array($reports) && Arr::isAssoc($reports)) {
+            $reports = [$reports];
+        }
+
+        if (! is_array($reports) || $reports === []) {
+            $providerStatus = $data['status']
+                ?? $data['provider_status']
+                ?? $data['messageStatus']
+                ?? $data['message_status']
+                ?? null;
+
+            if (filled($providerStatus)) {
+                $reports = [[
+                    'status' => $providerStatus,
+                    'message' => $data['message'] ?? null,
+                ]];
+            }
+        }
+
+        foreach ($reports as $report) {
+            $this->updateDeliveryReportLogs($shootId, is_array($report) ? $report : []);
+        }
+
+        return $reportResponse;
+    }
+
+    /**
+     * Check the current SMS balance from eLive SMS provider.
+     */
+    public function getBalance(): ?int
+    {
+        $apiKey = config('services.sms.api_key')
+            ?: config('services.elive_sms.api_key')
+            ?: env('SMS_API_KEY')
+            ?: env('ELIVE_SMS_API_KEY');
+
+        $apiSecret = config('services.sms.api_secret')
+            ?: config('services.elive_sms.api_secret')
+            ?: env('SMS_API_SECRET')
+            ?: env('ELIVE_SMS_API_SECRET');
+
+        if (blank($apiKey) || blank($apiSecret)) {
+            return null;
+        }
+
+        $response = Http::timeout((int) config('services.sms.timeout', env('SMS_TIMEOUT', 30)))
+            ->acceptJson()
+            ->withHeaders($this->smsAuthHeaders((string) $apiKey, (string) $apiSecret))
+            ->get($this->balanceUrl());
+
+        if ($response->failed()) {
+            Log::warning('Failed to fetch eLive SMS balance', [
+                'http_status' => $response->status(),
+                'body' => Str::limit($response->body(), 500),
+            ]);
+
+            return null;
+        }
+
+        return (int) (
+            $response->json('data.totalSms')
+            ?? $response->json('data.total_sms')
+            ?? $response->json('totalSms')
+            ?? $response->json('total_sms')
+            ?? 0
+        );
+    }
+
+    /**
+     * Keep SMS as sent when the provider delivery endpoint is unavailable.
+     *
+     * Important:
+     * - Do NOT mark the SMS as failed because the original send API accepted it.
+     * - Do NOT overwrite provider_response because it contains the original send response/shootId.
+     * - Store the delivery-report error only in error/provider_status fields.
+     */
+    protected function markDeliveryReportUnavailable(string $shootId, string $message, array $response = []): void
+    {
+        $now = now();
+        $encodedResponse = json_encode($response);
+
+        foreach (['message_logs', 'sms_logs'] as $table) {
+            if (! Schema::hasTable($table)) {
+                continue;
+            }
+
+            $columns = Schema::getColumnListing($table);
+
+            $update = [
+                'provider_status' => 'delivery_report_unavailable',
+                'delivery_status' => 'delivery_report_unavailable',
+                'delivery_report_status' => 'unavailable',
+                'delivery_report_error' => $message,
+                'delivery_report_response' => $encodedResponse,
+                'delivery_report_checked_at' => $now,
+                'error_message' => $message,
+                'error' => $message,
+                'updated_at' => $now,
+            ];
+
+            /*
+             * Keep the display status honest:
+             * - If the SMS is still sent/queued/sending/unknown, keep or set it to sent.
+             * - Never mark it as failed because only the report lookup failed.
+             */
+            if (in_array('status', $columns, true)) {
+                $update['status'] = DB::raw("CASE WHEN status IN ('delivered', 'failed', 'undelivered', 'expired', 'rejected') THEN status ELSE 'sent' END");
+            }
+
+            $safeUpdate = Arr::only($update, $columns);
+
+            if ($safeUpdate === []) {
+                continue;
+            }
+
+            DB::table($table)
+                ->where(function ($query) use ($columns, $shootId) {
+                    if (in_array('provider_message_id', $columns, true)) {
+                        $query->orWhere('provider_message_id', $shootId);
+                    }
+
+                    if (in_array('message_id', $columns, true)) {
+                        $query->orWhere('message_id', $shootId);
+                    }
+
+                    if (in_array('shoot_id', $columns, true)) {
+                        $query->orWhere('shoot_id', $shootId);
+                    }
+                })
+                ->update($safeUpdate);
+        }
+    }
+
+    protected function updateDeliveryReportLogs(string $shootId, array $report): void
+    {
+        /*
+         * Example eLive provider report:
+         * status: Operator Submitted
+         * statusCode: ACK
+         *
+         * This means the SMS was accepted/submitted by the operator.
+         * It is NOT a handset delivery confirmation, so our internal status stays "sent".
+         */
+        $providerStatus = trim((string) (
+            $report['status']
+            ?? $report['provider_status']
+            ?? $report['messageStatus']
+            ?? $report['message_status']
+            ?? 'unknown'
+        ));
+
+        $providerStatusCode = trim((string) (
+            $report['statusCode']
+            ?? $report['status_code']
+            ?? $report['code']
+            ?? ''
+        ));
+
+        $status = $this->normalizeProviderDeliveryStatus($providerStatus, $providerStatusCode);
+        $now = now();
+        $reportTime = $this->providerReportTime($report) ?? $now;
+
+        $update = [
+            'status' => $status,
+            'provider_status' => $providerStatus,
+            'provider_response' => json_encode($report),
+            'response' => json_encode($report),
+            'delivery_report_checked_at' => $now,
+            'updated_at' => $now,
+        ];
+
+        if ($status === 'sent') {
+            $update['sent_at'] = DB::raw('COALESCE(sent_at, NOW())');
+            $update['delivered_at'] = null;
+            $update['failed_at'] = null;
+            $update['error_message'] = null;
+            $update['error'] = null;
+        }
+
+        if ($status === 'delivered') {
+            $update['delivered_at'] = $reportTime;
+            $update['failed_at'] = null;
+            $update['error_message'] = null;
+            $update['error'] = null;
+        }
+
+        if ($status === 'read') {
+            $update['read_at'] = $reportTime;
+            $update['failed_at'] = null;
+            $update['error_message'] = null;
+            $update['error'] = null;
+        }
+
+        if (in_array($status, ['failed', 'undelivered', 'expired', 'rejected'], true)) {
+            $update['failed_at'] = $reportTime;
+            $update['error_message'] = $report['explanation']
+                ?? $report['message']
+                ?? 'SMS was not delivered.';
+            $update['error'] = $update['error_message'];
+        }
+
+        if ($status === 'unknown') {
+            /*
+             * The provider returned a report, so remove old route errors.
+             * Keep provider_status visible for manual/provider review.
+             */
+            $update['error_message'] = null;
+            $update['error'] = null;
+            $update['failed_at'] = null;
+        }
+
+        foreach (['message_logs', 'sms_logs'] as $table) {
+            if (! Schema::hasTable($table)) {
+                continue;
+            }
+
+            $columns = Schema::getColumnListing($table);
+            $safeUpdate = Arr::only($update, $columns);
+
+            if ($safeUpdate === []) {
+                continue;
+            }
+
+            $query = DB::table($table)
+                ->where(function ($query) use ($columns, $shootId) {
+                    if (in_array('provider_message_id', $columns, true)) {
+                        $query->orWhere('provider_message_id', $shootId);
+                    }
+
+                    if (in_array('message_id', $columns, true)) {
+                        $query->orWhere('message_id', $shootId);
+                    }
+
+                    if (in_array('shoot_id', $columns, true)) {
+                        $query->orWhere('shoot_id', $shootId);
+                    }
+                });
+
+            $mobile = $report['mobile'] ?? $report['phone'] ?? $report['recipient'] ?? null;
+
+            if (filled($mobile)) {
+                $query->where(function ($query) use ($columns, $mobile) {
+                    if (in_array('phone', $columns, true)) {
+                        $query->orWhere('phone', $mobile);
+                    }
+
+                    if (in_array('recipient', $columns, true)) {
+                        $query->orWhere('recipient', $mobile);
+                    }
+
+                    if (in_array('to', $columns, true)) {
+                        $query->orWhere('to', $mobile);
+                    }
+                });
+            }
+
+            $query->update($safeUpdate);
+        }
+    }
+
+    protected function normalizeProviderDeliveryStatus(?string $providerStatus, ?string $providerStatusCode = null): string
+    {
+        $status = Str::of((string) $providerStatus)
+            ->lower()
+            ->trim()
+            ->replace(['-', ' '], '_')
+            ->toString();
+
+        $statusCode = Str::of((string) $providerStatusCode)
+            ->lower()
+            ->trim()
+            ->replace(['-', ' '], '_')
+            ->toString();
+
+        return match (true) {
+            in_array($status, [
+                'delivered',
+                'delivery_success',
+                'success',
+                'delivrd',
+            ], true) => 'delivered',
+
+            in_array($status, [
+                'operator_submitted',
+                'operator_submit',
+                'submitted',
+                'sent',
+                'senderid',
+                'accepted',
+                'message_submit',
+                'submitted_successfully',
+                'submit_sm',
+            ], true),
+            in_array($statusCode, [
+                'ack',
+                'sent',
+                'submitted',
+                'accepted',
+                'submit_sm',
+            ], true) => 'sent',
+
+            in_array($status, [
+                'delivery_report_unavailable',
+                'report_unavailable',
+            ], true) => 'sent',
+
+            in_array($status, [
+                'queued',
+                'queue',
+            ], true) => 'queued',
+
+            in_array($status, [
+                'sending',
+                'processing',
+            ], true) => 'sending',
+
+            in_array($status, [
+                'failed',
+                'failure',
+                'nack',
+            ], true),
+            in_array($statusCode, [
+                'nack',
+                'failed',
+            ], true) => 'failed',
+
+            in_array($status, [
+                'undelivered',
+                'undeliv',
+                'not_delivered',
+            ], true) => 'undelivered',
+
+            in_array($status, [
+                'expired',
+                'expd',
+            ], true) => 'expired',
+
+            in_array($status, [
+                'rejected',
+                'reject',
+                'rejectd',
+            ], true) => 'rejected',
+
+            $status === 'read' => 'read',
+
+            default => 'unknown',
+        };
+    }
+
+    protected function providerReportTime(array $report): ?Carbon
+    {
+        $time = $report['deliveryTime']
+            ?? $report['sentAt']
+            ?? $report['deliveredAt']
+            ?? $report['deliveryAt']
+            ?? $report['updatedAt']
+            ?? null;
+
+        if (blank($time)) {
+            return null;
+        }
+
+        foreach (['d-m-Y H:i:s', 'd-m-Y H:i', 'Y-m-d H:i:s', 'Y-m-d H:i'] as $format) {
+            try {
+                return Carbon::createFromFormat($format, (string) $time);
+            } catch (Throwable) {
+                // Try next format.
+            }
+        }
+
+        try {
+            return Carbon::parse($time);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    protected function deliveryReportUrl(string $shootId): string
+    {
+        /*
+         * Correct eLive provider endpoint:
+         * GET /api/v1/vendor/message/deliver/{shootId}
+         *
+         * Keep it configurable in .env:
+         * ELIVE_SMS_DELIVERY_REPORT_PATH=/deliver/{shootId}
+         */
+        $path = (string) (
+            config('services.elive_sms.delivery_report_path')
+            ?: env('ELIVE_SMS_DELIVERY_REPORT_PATH', '/deliver/{shootId}')
+        );
+
+        $path = '/' . ltrim($path, '/');
+        $path = str_replace('{shootId}', rawurlencode($shootId), $path);
+
+        if (! str_contains($path, rawurlencode($shootId))) {
+            $path = rtrim($path, '/') . '/' . rawurlencode($shootId);
+        }
+
+        return rtrim($this->smsMessageBaseUrl(), '/') . $path;
+    }
+
+    protected function balanceUrl(): string
+    {
+        return rtrim($this->smsMessageBaseUrl(), '/') . '/balance';
+    }
+
+    /**
+     * Returns the provider message API base URL ending with /api/v1/vendor/message.
+     */
+    protected function smsMessageBaseUrl(): string
+    {
+        $baseUrl = config('services.sms.base_url')
+            ?: config('services.elive_sms.base_url')
+            ?: env('SMS_BASE_URL')
+            ?: env('ELIVE_SMS_BASE_URL')
+            ?: 'https://message.elive.co.tz';
+
+        $baseUrl = rtrim((string) $baseUrl, '/');
+
+        return Str::endsWith($baseUrl, '/api/v1/vendor/message')
+            ? $baseUrl
+            : $baseUrl . '/api/v1/vendor/message';
+    }
+
+    protected function smsBaseUrl(): string
+    {
+        return Str::before($this->smsMessageBaseUrl(), '/api/v1/vendor/message');
     }
 
     public function buildInvitationMessage(Invitee $invitee): string

@@ -77,7 +77,7 @@ class SendEventMessage extends Page
                 ->modalHeading('Send SMS Invitations')
                 ->modalDescription('This will queue SMS invitations only for invitees with phone number, private link, and generated card. Already queued or sent invitations will be skipped.')
                 ->modalSubmitActionLabel('Queue SMS')
-                ->disabled(fn (): bool => $this->eligibleSmsInviteesCount === 0)
+                ->disabled(fn (): bool => $this->unsentEligibleSmsInviteesCount === 0)
                 ->action(fn () => $this->sendSmsInvitations()),
         ];
     }
@@ -185,6 +185,42 @@ class SendEventMessage extends Page
             ->title('SMS invitations queued')
             ->body($queued . ' SMS invitation(s) queued. ' . $skipped . ' skipped because they were already queued or sent.')
             ->success()
+            ->send();
+    }
+
+    public function sendWhatsappInvitations(): void
+    {
+        Notification::make()
+            ->title('WhatsApp coming next')
+            ->body('This button will send WhatsApp invitation links from the Message Center.')
+            ->info()
+            ->send();
+    }
+
+    public function sendRsvpReminderSms(): void
+    {
+        Notification::make()
+            ->title('RSVP reminder coming next')
+            ->body('This button will send SMS reminders to invitees with pending RSVP.')
+            ->info()
+            ->send();
+    }
+
+    public function sendEventDayReminderSms(): void
+    {
+        Notification::make()
+            ->title('Event day reminder coming next')
+            ->body('This button will send final SMS reminders to confirmed guests on the event day.')
+            ->info()
+            ->send();
+    }
+
+    public function sendThankYouSms(): void
+    {
+        Notification::make()
+            ->title('Thank you SMS coming next')
+            ->body('This button will send thank-you SMS after the event.')
+            ->info()
             ->send();
     }
 

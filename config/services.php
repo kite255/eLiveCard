@@ -41,15 +41,62 @@ return [
     | Use SMS_DRIVER=log while testing locally.
     | Use SMS_DRIVER=http when connecting to the real SMS provider.
     |
+    | This block is used for sending SMS.
+    |
     */
 
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
-        'api_url' => env('SMS_API_URL'),
+
+        'api_url' => env(
+            'SMS_API_URL',
+            'https://message.elive.co.tz/api/v1/vendor/message/send'
+        ),
+
         'api_key' => env('SMS_API_KEY'),
         'api_secret' => env('SMS_API_SECRET'),
+
         'sender_id' => env('SMS_SENDER_ID', 'eLiveCard'),
+
         'timeout' => (int) env('SMS_TIMEOUT', 30),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | eLive SMS Provider API
+    |--------------------------------------------------------------------------
+    |
+    | This block is used for SMS balance checking and delivery reports.
+    | The provider expects api_key and api_secret request headers.
+    |
+    | Delivery report:
+    | GET /delivery/{shootId}
+    |
+    | Balance:
+    | GET /balance
+    |
+    */
+
+    'elive_sms' => [
+        'base_url' => env(
+            'ELIVE_SMS_BASE_URL',
+            'https://message.elive.co.tz/api/v1/vendor/message'
+        ),
+
+        'api_key' => env(
+            'ELIVE_SMS_API_KEY',
+            env('SMS_API_KEY')
+        ),
+
+        'api_secret' => env(
+            'ELIVE_SMS_API_SECRET',
+            env('SMS_API_SECRET')
+        ),
+
+        'timeout' => (int) env(
+            'ELIVE_SMS_TIMEOUT',
+            env('SMS_TIMEOUT', 30)
+        ),
     ],
 
     /*
@@ -67,6 +114,7 @@ return [
     */
 
     'whatsapp' => [
+
         /*
         |--------------------------------------------------------------------------
         | Driver and status

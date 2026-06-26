@@ -575,6 +575,7 @@ class EventResource extends Resource
             'view' => Pages\ViewEvent::route('/{record}'),
             'edit' => Pages\EditEvent::route('/{record}/edit'),
             'send-message' => Pages\SendEventMessage::route('/{record}/send-message'),
+            'invitee-responses' => Pages\InviteeResponseTracker::route('/{record}/invitee-responses'),
         ];
     }
 }

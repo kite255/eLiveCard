@@ -396,7 +396,7 @@ class InviteesRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\Action::make('add_manual_invitee')
-                    ->label('Add Invitee Manually')
+                    ->label('Add Invitee')
                     ->icon('heroicon-o-user-plus')
                     ->color('primary')
                     ->modalHeading('Add Invitee Manually')
@@ -509,32 +509,20 @@ class InviteesRelationManager extends RelationManager
                         $this->queueAutomaticCardGeneration($invitee);
 
                         Notification::make()
-                            ->title('Invitee added manually')
-                            ->body('Serial number, short code, QR code, RSVP token, and card generation have been started automatically.')
-                            ->success()
-                            ->send();
-                    }),
-
-                Tables\Actions\Action::make('refresh_status')
-                    ->label('Refresh Status')
-                    ->icon('heroicon-o-arrow-path')
-                    ->color('gray')
-                    ->action(function (): void {
-                        Notification::make()
-                            ->title('Status refreshed')
-                            ->body('The invitee and card generation statuses have been refreshed.')
+                            ->title('Invitee added')
+                            ->body('Serial number, QR code, private link, and card generation have been started automatically.')
                             ->success()
                             ->send();
                     }),
 
                 Tables\Actions\Action::make('generate_missing_cards')
-                    ->label('Generate Missing Cards')
+                    ->label('Generate Cards')
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
                     ->requiresConfirmation()
                     ->modalHeading('Generate missing invitation cards')
-                    ->modalDescription('This will queue card generation only for invitees whose card is missing, failed, or not yet generated. Already generated, sent, or currently generating cards will be skipped.')
-                    ->modalSubmitActionLabel('Generate Missing Cards')
+                    ->modalDescription('This will queue card generation only for invitees whose card is missing, failed, or not yet generated.')
+                    ->modalSubmitActionLabel('Generate Cards')
                     ->action(function (): void {
                         $event = $this->getOwnerRecord();
 
@@ -556,45 +544,39 @@ class InviteesRelationManager extends RelationManager
 
                                 if ($this->isInviteeCardGenerating($invitee)) {
                                     $skippedGenerating++;
+
                                     continue;
                                 }
 
                                 if ($this->inviteeHasUsableGeneratedCard($invitee)) {
                                     $skippedGenerated++;
+
                                     continue;
                                 }
 
                                 $this->prepareGeneratedCardForQueue($invitee);
                                 GenerateInviteeCardJob::dispatch($invitee->id);
+
                                 $queued++;
                             } catch (Throwable $e) {
                                 $failed++;
                             }
                         }
 
-                        $type = $failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info');
-
                         Notification::make()
-                            ->title($queued > 0 ? 'Missing card generation started' : 'No missing cards to generate')
+                            ->title($queued > 0 ? 'Card generation started' : 'No missing cards')
                             ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
-                            ->color($type)
+                            ->color($failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info'))
                             ->persistent()
                             ->send();
                     }),
-
-                Tables\Actions\Action::make('download_sample_excel')
-                    ->label('Download Sample Excel')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('gray')
-                    ->url(fn () => route('invitees.sample-excel'))
-                    ->openUrlInNewTab(),
 
                 Tables\Actions\Action::make('import_excel')
                     ->label('Import Excel')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('gray')
                     ->modalHeading('Import Invitees from Excel')
-                    ->modalDescription('Upload an Excel file with columns: name, phone, card_type, category, table_number. Guest limit will be taken from the selected card type.')
+                    ->modalDescription('Upload an Excel file with columns: name, phone, card_type, category, table_number.')
                     ->modalSubmitActionLabel('Import Invitees')
                     ->form([
                         Forms\Components\FileUpload::make('excel_file')
@@ -609,17 +591,226 @@ class InviteesRelationManager extends RelationManager
                                 'application/octet-stream',
                             ])
                             ->maxSize(10240)
-                            ->helperText('Required columns: name, phone, card_type. Optional: email, category, table_number. Same phone can be used by different invitees.'),
+                            ->helperText('Required columns: name, phone, card_type. Optional: email, category, table_number.'),
                     ])
                     ->action(function (array $data): void {
                         $this->importInviteesFromExcel($data['excel_file']);
                     }),
 
-                Tables\Actions\Action::make('send_message')
-                    ->label('Send Message')
-                    ->icon('heroicon-o-paper-airplane')
-                    ->color('success')
-                    ->url(fn () => url('/admin/events/' . $this->getOwnerRecord()->id . '/send-message')),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('send_message')
+                        ->label('Send Message')
+                        ->icon('heroicon-o-paper-airplane')
+                        ->color('success')
+                        ->modalHeading('Send SMS Message')
+                        ->modalDescription('Choose the SMS message option and recipients.')
+                        ->modalSubmitActionLabel('Send SMS')
+                        ->form([
+                            Forms\Components\Select::make('template_type')
+                                ->label('Message Option')
+                                ->options([
+                                    'invitation' => 'Invitation SMS',
+                                    'card_link' => 'Card Link SMS',
+                                    'custom' => 'Custom SMS',
+                                ])
+                                ->default('invitation')
+                                ->required(),
+
+                            Forms\Components\Select::make('recipient_scope')
+                                ->label('Send To')
+                                ->options([
+                                    'not_sent' => 'Invitees Not Yet Sent',
+                                    'all_active' => 'All Active Invitees',
+                                    'pending_rsvp' => 'Pending RSVP Invitees',
+                                    'attending' => 'Attending Invitees',
+                                    'failed_sms' => 'Failed SMS Invitees',
+                                ])
+                                ->default('not_sent')
+                                ->required(),
+
+                            Forms\Components\Placeholder::make('note')
+                                ->label('Template Source')
+                                ->content('The system will use the active SMS template from the Message Templates tab.'),
+                        ])
+                        ->requiresConfirmation()
+                        ->action(function (array $data): void {
+                            $templateType = match ($data['template_type']) {
+                                'card_link' => 'invitation',
+                                default => $data['template_type'],
+                            };
+
+                            $this->sendEventMessagesFromToolbar(
+                                channel: 'sms',
+                                templateType: $templateType,
+                                recipientScope: $data['recipient_scope'],
+                                actionTitle: 'SMS messages processed',
+                            );
+                        }),
+
+                    Tables\Actions\Action::make('send_whatsapp')
+                        ->label('Send WhatsApp')
+                        ->icon('heroicon-o-chat-bubble-left-right')
+                        ->color('primary')
+                        ->modalHeading('Send WhatsApp Message')
+                        ->modalDescription('Choose the WhatsApp message option and recipients.')
+                        ->modalSubmitActionLabel('Send WhatsApp')
+                        ->form([
+                            Forms\Components\Select::make('template_type')
+                                ->label('WhatsApp Option')
+                                ->options([
+                                    'invitation' => 'Invitation WhatsApp',
+                                    'card_link' => 'Card Link WhatsApp',
+                                    'rsvp_pending_reminder' => 'RSVP WhatsApp',
+                                    'custom' => 'Location / Custom WhatsApp',
+                                ])
+                                ->default('invitation')
+                                ->required(),
+
+                            Forms\Components\Select::make('recipient_scope')
+                                ->label('Send To')
+                                ->options([
+                                    'not_sent' => 'Invitees Not Yet Sent',
+                                    'all_active' => 'All Active Invitees',
+                                    'pending_rsvp' => 'Pending RSVP Invitees',
+                                    'attending' => 'Attending Invitees',
+                                ])
+                                ->default('not_sent')
+                                ->required(),
+
+                            Forms\Components\Placeholder::make('note')
+                                ->label('Note')
+                                ->content('For now, WhatsApp will be recorded in Message Logs until the real WhatsApp API is connected.'),
+                        ])
+                        ->requiresConfirmation()
+                        ->action(function (array $data): void {
+                            $templateType = match ($data['template_type']) {
+                                'card_link' => 'invitation',
+                                default => $data['template_type'],
+                            };
+
+                            $this->sendEventMessagesFromToolbar(
+                                channel: 'whatsapp',
+                                templateType: $templateType,
+                                recipientScope: $data['recipient_scope'],
+                                actionTitle: 'WhatsApp messages processed',
+                            );
+                        }),
+
+                    Tables\Actions\Action::make('send_reminder')
+                        ->label('Reminder')
+                        ->icon('heroicon-o-bell')
+                        ->color('warning')
+                        ->modalHeading('Send Reminder')
+                        ->modalDescription('Choose reminder type, channel, and recipients.')
+                        ->modalSubmitActionLabel('Send Reminder')
+                        ->form([
+                            Forms\Components\Select::make('channel')
+                                ->label('Channel')
+                                ->options([
+                                    'sms' => 'SMS',
+                                    'whatsapp' => 'WhatsApp',
+                                ])
+                                ->default('sms')
+                                ->required(),
+
+                            Forms\Components\Select::make('template_type')
+                                ->label('Reminder Option')
+                                ->options([
+                                    'rsvp_pending_reminder' => 'RSVP Pending Reminder',
+                                    'attending_reminder' => 'One Day Before Reminder',
+                                    'event_day_reminder' => 'Event Day Reminder',
+                                ])
+                                ->default('rsvp_pending_reminder')
+                                ->required(),
+
+                            Forms\Components\Select::make('recipient_scope')
+                                ->label('Send To')
+                                ->options([
+                                    'pending_rsvp' => 'Pending RSVP Invitees',
+                                    'attending' => 'Attending Invitees',
+                                    'all_active' => 'All Active Invitees',
+                                ])
+                                ->default('pending_rsvp')
+                                ->required(),
+                        ])
+                        ->requiresConfirmation()
+                        ->action(function (array $data): void {
+                            $this->sendEventMessagesFromToolbar(
+                                channel: $data['channel'],
+                                templateType: $data['template_type'],
+                                recipientScope: $data['recipient_scope'],
+                                actionTitle: 'Reminder messages processed',
+                            );
+                        }),
+
+                    Tables\Actions\Action::make('thank_you_message')
+                        ->label('Thank You Message')
+                        ->icon('heroicon-o-heart')
+                        ->color('gray')
+                        ->modalHeading('Send Thank You Message')
+                        ->modalDescription('Choose thank-you message channel and recipients.')
+                        ->modalSubmitActionLabel('Send Thank You')
+                        ->form([
+                            Forms\Components\Select::make('channel')
+                                ->label('Channel')
+                                ->options([
+                                    'sms' => 'SMS',
+                                    'whatsapp' => 'WhatsApp',
+                                ])
+                                ->default('sms')
+                                ->required(),
+
+                            Forms\Components\Select::make('recipient_scope')
+                                ->label('Send To')
+                                ->options([
+                                    'attending' => 'Thank You to Attending Guests',
+                                    'checked_in' => 'Thank You to Checked-in Guests',
+                                    'all_active' => 'Thank You to All Active Invitees',
+                                ])
+                                ->default('attending')
+                                ->required(),
+
+                            Forms\Components\Placeholder::make('note')
+                                ->label('Template Source')
+                                ->content('The system will use the active thank_you template for the selected channel.'),
+                        ])
+                        ->requiresConfirmation()
+                        ->action(function (array $data): void {
+                            $this->sendEventMessagesFromToolbar(
+                                channel: $data['channel'],
+                                templateType: 'thank_you',
+                                recipientScope: $data['recipient_scope'],
+                                actionTitle: 'Thank you messages processed',
+                            );
+                        }),
+                ])
+                    ->label('Communications')
+                    ->icon('heroicon-o-envelope')
+                    ->button()
+                    ->color('success'),
+
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('refresh_status')
+                        ->label('Refresh Status')
+                        ->icon('heroicon-o-arrow-path')
+                        ->action(function (): void {
+                            Notification::make()
+                                ->title('Status refreshed')
+                                ->body('The invitee and card generation statuses have been refreshed.')
+                                ->success()
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('download_sample_excel')
+                        ->label('Download Sample Excel')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn () => route('invitees.sample-excel'))
+                        ->openUrlInNewTab(),
+                ])
+                    ->label('More')
+                    ->icon('heroicon-o-ellipsis-horizontal')
+                    ->button()
+                    ->color('gray'),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -1438,6 +1629,115 @@ class InviteesRelationManager extends RelationManager
     }
 
 
+
+    protected function sendEventMessagesFromToolbar(
+        string $channel,
+        string $templateType,
+        string $recipientScope,
+        string $actionTitle,
+    ): void {
+        $event = $this->getOwnerRecord();
+
+        $query = Invitee::query()
+            ->where('event_id', $event->id)
+            ->whereNotNull('phone')
+            ->where('phone', '!=', '')
+            ->whereNotNull('short_code')
+            ->where('short_code', '!=', '');
+
+        match ($recipientScope) {
+            'not_sent' => $query->where(function ($query): void {
+                $query
+                    ->whereNull('message_status')
+                    ->orWhere('message_status', '')
+                    ->orWhere('message_status', 'not_sent')
+                    ->orWhere('sms_status', Invitee::SMS_STATUS_NOT_SENT);
+            }),
+
+            'all_active' => $query->where('card_status', Invitee::CARD_STATUS_ACTIVE),
+
+            'pending_rsvp' => $query->where(function ($query): void {
+                $query
+                    ->whereNull('rsvp_status')
+                    ->orWhere('rsvp_status', '')
+                    ->orWhere('rsvp_status', Invitee::RSVP_PENDING)
+                    ->orWhere('rsvp_status', Invitee::RSVP_MAYBE);
+            }),
+
+            'attending' => $query->where('rsvp_status', Invitee::RSVP_ATTENDING),
+
+            'checked_in' => $query->where('checked_in_count', '>', 0),
+
+            'failed_sms' => $query->where('sms_status', Invitee::SMS_STATUS_FAILED),
+
+            default => null,
+        };
+
+        $invitees = $query->get();
+
+        if ($invitees->isEmpty()) {
+            Notification::make()
+                ->title('No invitees found')
+                ->body('No invitees matched the selected option.')
+                ->warning()
+                ->send();
+
+            return;
+        }
+
+        $template = $this->activeMessageTemplate($channel, $templateType);
+
+        if (! $template) {
+            Notification::make()
+                ->title('Message template not found')
+                ->body("No active {$channel} template found for type: {$templateType}. Please create or activate it in the Message Templates tab.")
+                ->danger()
+                ->persistent()
+                ->send();
+
+            return;
+        }
+
+        $sent = 0;
+        $skipped = 0;
+        $failed = 0;
+
+        foreach ($invitees as $invitee) {
+            if (! $invitee instanceof Invitee) {
+                $skipped++;
+
+                continue;
+            }
+
+            $result = $this->sendInviteeMessageUsingTemplate(
+                invitee: $invitee,
+                channel: $channel,
+                templateType: $templateType,
+                notifySkipped: false,
+            );
+
+            if (in_array($result['status'] ?? null, ['sent', 'logged'], true)) {
+                $sent++;
+
+                continue;
+            }
+
+            if (($result['status'] ?? null) === 'skipped') {
+                $skipped++;
+
+                continue;
+            }
+
+            $failed++;
+        }
+
+        Notification::make()
+            ->title($actionTitle)
+            ->body("Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
+            ->color($failed > 0 ? 'warning' : 'success')
+            ->persistent()
+            ->send();
+    }
 
     protected function activeMessageTemplate(string $channel, string $type): ?MessageTemplate
     {

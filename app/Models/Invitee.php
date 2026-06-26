@@ -68,6 +68,23 @@ class Invitee extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | Communication Tracking Constants
+    |--------------------------------------------------------------------------
+    */
+
+    public const CHANNEL_SMS = 'sms';
+    public const CHANNEL_WHATSAPP = 'whatsapp';
+
+    public const MESSAGE_STATUS_NOT_SENT = 'not_sent';
+    public const MESSAGE_STATUS_QUEUED = 'queued';
+    public const MESSAGE_STATUS_SENT = 'sent';
+    public const MESSAGE_STATUS_DELIVERED = 'delivered';
+    public const MESSAGE_STATUS_READ = 'read';
+    public const MESSAGE_STATUS_FAILED = 'failed';
+    public const MESSAGE_STATUS_REPLIED = 'replied';
+
+    /*
+    |--------------------------------------------------------------------------
     | QR Settings
     |--------------------------------------------------------------------------
     */
@@ -122,6 +139,13 @@ class Invitee extends Model
         'final_sms_status',
         'final_sms_sent_at',
         'last_sms_error',
+
+        'last_sms_sent_at',
+        'last_whatsapp_sent_at',
+        'last_message_channel',
+        'last_message_status',
+        'last_reply_message',
+        'last_reply_at',
     ];
 
     protected $casts = [
@@ -135,6 +159,9 @@ class Invitee extends Model
         'invitation_sms_sent_at' => 'datetime',
         'reminder_sms_sent_at' => 'datetime',
         'final_sms_sent_at' => 'datetime',
+        'last_sms_sent_at' => 'datetime',
+        'last_whatsapp_sent_at' => 'datetime',
+        'last_reply_at' => 'datetime',
     ];
 
     protected $appends = [
@@ -146,6 +173,8 @@ class Invitee extends Model
         'rsvp_url',
         'is_checked_in',
         'check_in_status_label',
+        'last_message_status_label',
+        'last_message_channel_label',
     ];
 
     protected static function booted(): void
@@ -200,6 +229,13 @@ class Invitee extends Model
 
             if (blank($invitee->final_sms_status)) {
                 $invitee->final_sms_status = self::SMS_STATUS_PENDING;
+            }
+
+            if (
+                Schema::hasColumn('invitees', 'last_message_status')
+                && blank($invitee->last_message_status)
+            ) {
+                $invitee->last_message_status = self::MESSAGE_STATUS_NOT_SENT;
             }
 
             if ($invitee->allowed_guests === null) {
@@ -268,6 +304,11 @@ class Invitee extends Model
         return $this->hasMany(MessageLog::class);
     }
 
+    public function conversations(): HasMany
+    {
+        return $this->hasMany(InviteeConversation::class);
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Options
@@ -311,6 +352,27 @@ class Invitee extends Model
             self::SMS_STATUS_SENT => 'Sent',
             self::SMS_STATUS_DELIVERED => 'Delivered',
             self::SMS_STATUS_FAILED => 'Failed',
+        ];
+    }
+
+    public static function communicationStatuses(): array
+    {
+        return [
+            self::MESSAGE_STATUS_NOT_SENT => 'Not Sent',
+            self::MESSAGE_STATUS_QUEUED => 'Queued',
+            self::MESSAGE_STATUS_SENT => 'Sent',
+            self::MESSAGE_STATUS_DELIVERED => 'Delivered',
+            self::MESSAGE_STATUS_READ => 'Read',
+            self::MESSAGE_STATUS_FAILED => 'Failed',
+            self::MESSAGE_STATUS_REPLIED => 'Replied',
+        ];
+    }
+
+    public static function communicationChannels(): array
+    {
+        return [
+            self::CHANNEL_SMS => 'SMS',
+            self::CHANNEL_WHATSAPP => 'WhatsApp',
         ];
     }
 
@@ -702,6 +764,84 @@ class Invitee extends Model
         }
 
         $this->forceFill($data)->saveQuietly();
+
+        $this->markLastSmsCommunication($status, $messageId, $error);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Communication Tracking Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function markLastSmsCommunication(
+        string $status = self::MESSAGE_STATUS_SENT,
+        ?string $messageId = null,
+        ?string $error = null
+    ): void {
+        $data = [
+            'last_message_channel' => self::CHANNEL_SMS,
+            'last_message_status' => $status,
+        ];
+
+        if (in_array($status, [self::MESSAGE_STATUS_SENT, self::MESSAGE_STATUS_DELIVERED, self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true)) {
+            $data['last_sms_sent_at'] = now();
+        }
+
+        if (Schema::hasColumn('invitees', 'sms_message_id')) {
+            $data['sms_message_id'] = $messageId;
+        }
+
+        if (Schema::hasColumn('invitees', 'sms_error')) {
+            $data['sms_error'] = $status === self::MESSAGE_STATUS_FAILED ? $error : null;
+        }
+
+        $this->forceFill($data)->saveQuietly();
+    }
+
+    public function markLastWhatsAppCommunication(
+        string $status = self::MESSAGE_STATUS_SENT,
+        ?string $providerMessageId = null,
+        ?array $providerResponse = null
+    ): void {
+        $data = [
+            'last_message_channel' => self::CHANNEL_WHATSAPP,
+            'last_message_status' => $status,
+        ];
+
+        if (in_array($status, [self::MESSAGE_STATUS_SENT, self::MESSAGE_STATUS_DELIVERED, self::MESSAGE_STATUS_READ], true)) {
+            $data['last_whatsapp_sent_at'] = now();
+        }
+
+        $this->forceFill($data)->saveQuietly();
+    }
+
+    public function saveIncomingWhatsAppReply(string $message, ?string $fromPhone = null): void
+    {
+        $this->forceFill([
+            'last_message_channel' => self::CHANNEL_WHATSAPP,
+            'last_message_status' => self::MESSAGE_STATUS_REPLIED,
+            'last_reply_message' => $message,
+            'last_reply_at' => now(),
+        ])->saveQuietly();
+    }
+
+    public function hasReplied(): bool
+    {
+        return filled($this->last_reply_message) || filled($this->last_reply_at);
+    }
+
+    public function hasWhatsappBeenSent(): bool
+    {
+        return filled($this->last_whatsapp_sent_at)
+            || $this->last_message_channel === self::CHANNEL_WHATSAPP;
+    }
+
+    public function hasSmsBeenSent(): bool
+    {
+        return filled($this->last_sms_sent_at)
+            || filled($this->sms_sent_at)
+            || in_array($this->sms_status, [self::SMS_STATUS_SENT, self::SMS_STATUS_DELIVERED], true);
     }
 
     /*
@@ -822,6 +962,22 @@ class Invitee extends Model
     {
         return self::smsStatuses()[$this->sms_status]
             ?? ucfirst(str_replace('_', ' ', (string) $this->sms_status));
+    }
+
+    public function getLastMessageStatusLabelAttribute(): string
+    {
+        return self::communicationStatuses()[$this->last_message_status]
+            ?? ucfirst(str_replace('_', ' ', (string) $this->last_message_status));
+    }
+
+    public function getLastMessageChannelLabelAttribute(): string
+    {
+        if (blank($this->last_message_channel)) {
+            return 'None';
+        }
+
+        return self::communicationChannels()[$this->last_message_channel]
+            ?? ucfirst((string) $this->last_message_channel);
     }
 
     /*
