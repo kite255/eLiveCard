@@ -39,7 +39,8 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 COPY . .
 
-RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+RUN composer config --global github-protocols https \
+    && composer install --no-dev --no-interaction --prefer-source --optimize-autoloader
 
 RUN if [ -f package.json ]; then \
         if [ -f package-lock.json ]; then npm ci; else npm install; fi; \
