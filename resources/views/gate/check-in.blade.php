@@ -574,7 +574,7 @@
             color: var(--dark);
             font-size: 18px;
             font-weight: 900;
-            box-shadow: 0 10px 24px rgba(253, 150, 24, 0.35);
+           
         }
 
         .sticky-confirm-button:active {
@@ -1017,8 +1017,10 @@
         document.getElementById('popupGuestsNow').innerText =
             success.guests_checked_in_now ?? '-';
 
+        const checkedInTime = success.checked_in_time || invitee.checked_in_at || invitee.last_check_in || null;
+
         document.getElementById('popupTime').innerText =
-            success.checked_in_time ? 'Checked in at ' + success.checked_in_time : '';
+            checkedInTime ? 'Checked in at ' + checkedInTime : '';
 
         popup.classList.add('active');
     }
@@ -1080,6 +1082,15 @@
                 data.message || '',
                 data.invitee || null
             );
+
+            if (data.status === 'warning' && data.invitee) {
+                showCheckInPopup({
+                    ...data,
+                    title: data.title || 'Card Already Used',
+                    message: data.message || 'This invitation card has already been used.',
+                    status: 'warning'
+                });
+            }
         } catch (error) {
             showResult('error', 'Connection Error', 'Could not verify this card. Please try again.');
         }
@@ -1130,6 +1141,17 @@
             if (data.status === 'success') {
                 hideStickyCheckInBar();
                 showCheckInPopup(data);
+                return;
+            }
+
+            if (data.status === 'warning' && data.invitee) {
+                hideStickyCheckInBar();
+                showCheckInPopup({
+                    ...data,
+                    title: data.title || 'Card Already Used',
+                    message: data.message || 'This invitation card has already been used.',
+                    status: 'warning'
+                });
                 return;
             }
 
