@@ -300,9 +300,9 @@ class EventResource extends Resource
                     ])
                     ->collapsible(),
 
-                Infolists\Components\Section::make('Communication Center')
-                    ->description('SMS and WhatsApp configuration/status for this event.')
-                    ->icon('heroicon-o-chat-bubble-left-right')
+                Infolists\Components\Section::make('Message Center')
+                    ->description('SMS, WhatsApp, templates, reminders, and delivery status for this event.')
+                    ->icon('heroicon-o-envelope')
                     ->schema([
                         Infolists\Components\Grid::make([
                             'default' => 1,
@@ -317,6 +317,18 @@ class EventResource extends Resource
 
                                 Infolists\Components\TextEntry::make('sms_failed_count')
                                     ->label('SMS Failed')
+                                    ->badge()
+                                    ->color(fn ($state): string => (int) $state > 0 ? 'danger' : 'gray')
+                                    ->icon('heroicon-o-exclamation-triangle'),
+
+                                Infolists\Components\TextEntry::make('whatsapp_sent_count')
+                                    ->label('WhatsApp Sent')
+                                    ->badge()
+                                    ->color('success')
+                                    ->icon('heroicon-o-paper-airplane'),
+
+                                Infolists\Components\TextEntry::make('whatsapp_failed_count')
+                                    ->label('WhatsApp Failed')
                                     ->badge()
                                     ->color(fn ($state): string => (int) $state > 0 ? 'danger' : 'gray')
                                     ->icon('heroicon-o-exclamation-triangle'),
@@ -341,7 +353,7 @@ class EventResource extends Resource
                                     ->icon('heroicon-o-x-circle'),
 
                                 Infolists\Components\TextEntry::make('auto_sms_reminders_enabled')
-                                    ->label('Automatic Reminders')
+                                    ->label('Automatic SMS Reminders')
                                     ->formatStateUsing(fn ($state): string => $state ? 'Enabled' : 'Disabled')
                                     ->badge()
                                     ->color(fn ($state): string => $state ? 'success' : 'gray')
@@ -371,28 +383,24 @@ class EventResource extends Resource
                                         && (bool) $record->auto_event_day_reminder_enabled
                                     ),
 
-                                Infolists\Components\TextEntry::make('whatsapp_sent_count')
-                                    ->label('WhatsApp Sent')
-                                    ->badge()
-                                    ->color('success')
-                                    ->icon('heroicon-o-paper-airplane'),
-
-                                Infolists\Components\TextEntry::make('whatsapp_failed_count')
-                                    ->label('WhatsApp Failed')
-                                    ->badge()
-                                    ->color(fn ($state): string => (int) $state > 0 ? 'danger' : 'gray')
-                                    ->icon('heroicon-o-exclamation-triangle'),
-
                                 Infolists\Components\TextEntry::make('whatsapp_status')
                                     ->label('WhatsApp Mode')
-                                    ->state(fn () => config('services.whatsapp.access_token') ? 'Cloud API' : 'Log Mode')
+                                    ->state(fn (): string =>
+                                        config('services.whatsapp.token') || config('services.whatsapp.access_token')
+                                            ? 'Cloud API'
+                                            : 'Log Mode'
+                                    )
                                     ->badge()
-                                    ->color(fn () => config('services.whatsapp.access_token') ? 'success' : 'gray')
+                                    ->color(fn (): string =>
+                                        config('services.whatsapp.token') || config('services.whatsapp.access_token')
+                                            ? 'success'
+                                            : 'gray'
+                                    )
                                     ->icon('heroicon-o-device-phone-mobile'),
 
                                 Infolists\Components\TextEntry::make('whatsapp_provider')
                                     ->label('Provider')
-                                    ->state(fn () => config('services.whatsapp.provider') ?: 'Not set')
+                                    ->state(fn (): string => config('services.whatsapp.provider') ?: 'Meta WhatsApp Cloud API')
                                     ->badge()
                                     ->color('primary')
                                     ->icon('heroicon-o-cloud'),
@@ -474,6 +482,11 @@ class EventResource extends Resource
                     ->alignCenter()
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('whatsapp_sent_count')
+                    ->label('WhatsApp')
+                    ->alignCenter()
+                    ->sortable(),
+
                 Tables\Columns\TextColumn::make('welcome_sms_sent_count')
                     ->label('Welcome SMS')
                     ->alignCenter()
@@ -485,11 +498,6 @@ class EventResource extends Resource
                     ->boolean()
                     ->alignCenter()
                     ->toggleable(),
-
-                Tables\Columns\TextColumn::make('whatsapp_sent_count')
-                    ->label('WhatsApp')
-                    ->alignCenter()
-                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -527,11 +535,13 @@ class EventResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->label('Edit'),
 
-                Tables\Actions\Action::make('send_message')
-                    ->label('Send Message')
-                    ->icon('heroicon-o-paper-airplane')
+                Tables\Actions\Action::make('message_center')
+                    ->label('Message Center')
+                    ->icon('heroicon-o-envelope')
                     ->color('primary')
-                    ->url(fn (Event $record): string => static::getUrl('send-message', ['record' => $record])),
+                    ->url(fn (Event $record): string => static::getUrl('send-message', [
+                        'record' => $record,
+                    ])),
 
                 Tables\Actions\DeleteAction::make()
                     ->label('Delete'),

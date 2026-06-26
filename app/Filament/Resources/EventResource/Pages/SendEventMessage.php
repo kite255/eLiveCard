@@ -26,7 +26,17 @@ class SendEventMessage extends Page
 
     public function getTitle(): string
     {
-        return 'Send Message';
+        return 'Message Center';
+    }
+
+    public function getHeading(): string
+    {
+        return 'Message Center';
+    }
+
+    public function getSubheading(): ?string
+    {
+        return 'Send invitations, generate missing cards, monitor SMS delivery, and prepare WhatsApp communication for this event.';
     }
 
     protected function getHeaderActions(): array
@@ -55,7 +65,8 @@ class SendEventMessage extends Page
                 ->requiresConfirmation()
                 ->modalHeading('Generate Missing Cards')
                 ->modalDescription('This will queue card generation only for invitees who do not already have generated cards.')
-                ->modalSubmitActionLabel('Generate')
+                ->modalSubmitActionLabel('Generate Cards')
+                ->disabled(fn (): bool => $this->missingCardsCount === 0)
                 ->action(fn () => $this->generateMissingCards()),
 
             Action::make('sendSmsInvitations')
@@ -64,8 +75,9 @@ class SendEventMessage extends Page
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Send SMS Invitations')
-                ->modalDescription('This will send SMS invitations only to invitees with phone number, private link, and generated card.')
-                ->modalSubmitActionLabel('Send SMS')
+                ->modalDescription('This will queue SMS invitations only for invitees with phone number, private link, and generated card. Already queued or sent invitations will be skipped.')
+                ->modalSubmitActionLabel('Queue SMS')
+                ->disabled(fn (): bool => $this->eligibleSmsInviteesCount === 0)
                 ->action(fn () => $this->sendSmsInvitations()),
         ];
     }
@@ -128,18 +140,23 @@ class SendEventMessage extends Page
 
         DB::transaction(function () use ($invitees, &$queued, &$skipped): void {
             foreach ($invitees as $invitee) {
-                $alreadySent = false;
+                $alreadySentOrQueued = false;
 
                 if (method_exists($invitee, 'smsLogs')) {
-                    $alreadySent = $invitee
+                    $alreadySentOrQueued = $invitee
                         ->smsLogs()
                         ->where('event_id', $this->record->id)
                         ->where('sms_type', 'invitation')
-                        ->whereIn('status', ['queued', 'pending', 'sent'])
+                        ->whereIn('status', [
+                            'queued',
+                            'pending',
+                            'sending',
+                            'sent',
+                        ])
                         ->exists();
                 }
 
-                if ($alreadySent) {
+                if ($alreadySentOrQueued) {
                     $skipped++;
 
                     continue;
@@ -153,6 +170,16 @@ class SendEventMessage extends Page
                 $queued++;
             }
         });
+
+        if ($queued === 0) {
+            Notification::make()
+                ->title('No new SMS queued')
+                ->body($skipped . ' invitee(s) were skipped because invitation SMS was already queued or sent.')
+                ->warning()
+                ->send();
+
+            return;
+        }
 
         Notification::make()
             ->title('SMS invitations queued')
@@ -174,6 +201,16 @@ class SendEventMessage extends Page
             ->count();
     }
 
+    public function getMissingCardsCountProperty(): int
+    {
+        return $this->record
+            ->invitees()
+            ->whereDoesntHave('generatedCards', function ($query): void {
+                $query->where('status', 'generated');
+            })
+            ->count();
+    }
+
     public function getEligibleSmsInviteesCountProperty(): int
     {
         return $this->record
@@ -188,12 +225,27 @@ class SendEventMessage extends Page
             ->count();
     }
 
-    public function getMissingCardsCountProperty(): int
+    public function getUnsentEligibleSmsInviteesCountProperty(): int
     {
         return $this->record
             ->invitees()
-            ->whereDoesntHave('generatedCards', function ($query): void {
+            ->whereNotNull('phone')
+            ->where('phone', '!=', '')
+            ->whereNotNull('short_code')
+            ->where('short_code', '!=', '')
+            ->whereHas('generatedCards', function ($query): void {
                 $query->where('status', 'generated');
+            })
+            ->whereDoesntHave('smsLogs', function ($query): void {
+                $query
+                    ->where('event_id', $this->record->id)
+                    ->where('sms_type', 'invitation')
+                    ->whereIn('status', [
+                        'queued',
+                        'pending',
+                        'sending',
+                        'sent',
+                    ]);
             })
             ->count();
     }
@@ -210,7 +262,20 @@ class SendEventMessage extends Page
     {
         return $this->record
             ->invitees()
-            ->where('rsvp_status', 'pending')
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('rsvp_status')
+                    ->orWhere('rsvp_status', '')
+                    ->orWhere('rsvp_status', 'pending');
+            })
+            ->count();
+    }
+
+    public function getNotAttendingCountProperty(): int
+    {
+        return $this->record
+            ->invitees()
+            ->where('rsvp_status', 'not_attending')
             ->count();
     }
 
@@ -223,6 +288,22 @@ class SendEventMessage extends Page
         return $this->record
             ->smsLogs()
             ->where('status', 'sent')
+            ->count();
+    }
+
+    public function getQueuedSmsCountProperty(): int
+    {
+        if (! method_exists($this->record, 'smsLogs')) {
+            return 0;
+        }
+
+        return $this->record
+            ->smsLogs()
+            ->whereIn('status', [
+                'queued',
+                'pending',
+                'sending',
+            ])
             ->count();
     }
 
@@ -246,7 +327,44 @@ class SendEventMessage extends Page
 
         return $this->record
             ->messageLogs()
-            ->whereIn('status', ['sent', 'accepted', 'delivered', 'read'])
+            ->whereIn('status', [
+                'sent',
+                'accepted',
+                'delivered',
+                'read',
+            ])
             ->count();
+    }
+
+    public function getFailedMessagesCountProperty(): int
+    {
+        if (! method_exists($this->record, 'messageLogs')) {
+            return 0;
+        }
+
+        return $this->record
+            ->messageLogs()
+            ->where('status', 'failed')
+            ->count();
+    }
+
+    public function getEventNameProperty(): string
+    {
+        return $this->record->title ?? $this->record->name ?? 'Event';
+    }
+
+    public function getEventDateProperty(): string
+    {
+        return $this->record->event_date
+            ? $this->record->event_date->format('d M Y')
+            : '-';
+    }
+
+    public function getEventVenueProperty(): string
+    {
+        return $this->record->venue_name
+            ?? $this->record->venue
+            ?? $this->record->venue_address
+            ?? '-';
     }
 }

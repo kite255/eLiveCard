@@ -33,26 +33,13 @@ class ViewEvent extends ViewRecord
                 ->url(fn () => route('gate.check-in.show', $this->record))
                 ->openUrlInNewTab(),
 
-            Actions\Action::make('sendSms')
-                ->label('Send SMS')
-                ->icon('heroicon-o-chat-bubble-left-right')
-                ->color('warning')
-                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-sms'))
-                ->openUrlInNewTab(),
-
-            Actions\Action::make('sendWhatsapp')
-                ->label('Send WhatsApp')
-                ->icon('heroicon-o-paper-airplane')
-                ->color('primary')
-                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-whatsapp'))
-                ->openUrlInNewTab(),
-
-            Actions\Action::make('sendMessage')
-                ->label('Send Message')
+            Actions\Action::make('messageCenter')
+                ->label('Message Center')
                 ->icon('heroicon-o-envelope')
-                ->color('info')
-                ->url(fn () => url('/admin/events/' . $this->record->id . '/send-message'))
-                ->openUrlInNewTab(),
+                ->color('primary')
+                ->url(fn () => EventResource::getUrl('send-message', [
+                    'record' => $this->record,
+                ])),
 
             Actions\Action::make('viewReports')
                 ->label('Reports')
@@ -70,7 +57,7 @@ class ViewEvent extends ViewRecord
 
     public function getTitle(): string
     {
-        return 'Event Workspace: ' . ($this->record->title ?? 'Event');
+        return 'Event Workspace: ' . ($this->record->title ?? $this->record->name ?? 'Event');
     }
 
     public function getSubheading(): ?string
