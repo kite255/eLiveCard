@@ -23,7 +23,7 @@ Route::get('/', function () {
 | WhatsApp Cloud API Webhook
 |--------------------------------------------------------------------------
 |
-| These routes must remain public.
+| Public webhook routes for WhatsApp Cloud API.
 |
 | Staging callback:
 | https://staging-digital.elive.co.tz/api/whatsapp/webhook
@@ -41,8 +41,10 @@ Route::post('/api/whatsapp/webhook', [WhatsAppWebhookController::class, 'handle'
 
 /*
 |--------------------------------------------------------------------------
-| Public Invitee Page
+| Public Invitee Digital Page
 |--------------------------------------------------------------------------
+|
+| Main invitee-facing page opened from SMS or WhatsApp.
 |
 | Example:
 | Local: http://127.0.0.1:8002/i/NPTUIN
@@ -57,10 +59,17 @@ Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.rsvp');
 
+Route::post('/i/{shortCode}/wish', [InviteePageController::class, 'storeWish'])
+    ->where('shortCode', '[A-Za-z0-9]+')
+    ->name('invitee.wish');
+
 /*
 |--------------------------------------------------------------------------
 | Standalone RSVP Confirmation Page
 |--------------------------------------------------------------------------
+|
+| Useful when invitee opens direct RSVP link.
+|
 */
 Route::get('/rsvp/{token}', [RsvpController::class, 'show'])
     ->where('token', '[A-Za-z0-9]+')
@@ -97,8 +106,8 @@ Route::get('/card/{serialNumber}/download', [PublicCardController::class, 'downl
 | Card Template Preview
 |--------------------------------------------------------------------------
 |
-| This route serves uploaded card template images through Laravel.
-| It helps when direct /storage access returns 403 Forbidden.
+| Serves uploaded template images through Laravel.
+| Useful when direct /storage access returns 403 Forbidden.
 |
 */
 Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $cardTemplate) {
@@ -124,12 +133,8 @@ Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $card
 | Public Gate Verification Page
 |--------------------------------------------------------------------------
 |
-| This page displays the scanned invitee verification result.
-| It can be public because the QR code itself contains the secure token.
-| The actual check-in submit is protected by auth below.
-|
-| Example:
-| https://digital.elive.co.tz/gate/verify/{token}
+| Displays scanned invitee verification result.
+| The QR token itself is secure. Actual check-in submit is protected by auth.
 |
 */
 Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
@@ -140,9 +145,6 @@ Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
 |--------------------------------------------------------------------------
 | Authenticated Admin/User Routes
 |--------------------------------------------------------------------------
-|
-| These routes require login.
-|
 */
 Route::middleware(['auth'])->group(function () {
     /*
@@ -186,13 +188,6 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     | Professional Gate Check-in Page
     |--------------------------------------------------------------------------
-    |
-    | This is the main mobile-friendly scanner page for gate users.
-    |
-    | Example:
-    | Local: http://127.0.0.1:8002/gate/events/6/check-in
-    | Live:  https://digital.elive.co.tz/gate/events/6/check-in
-    |
     */
     Route::get(
         '/gate/events/{event}/check-in',
@@ -213,9 +208,6 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     | QR Token Check-in Submit
     |--------------------------------------------------------------------------
-    |
-    | This submits check-in from /gate/verify/{token}.
-    |
     */
     Route::post(
         '/gate/verify/{token}/check-in',

@@ -117,6 +117,74 @@ class EventResource extends Resource
                     ])
                     ->columns(2),
 
+                Forms\Components\Section::make('Invitee Digital Page')
+                    ->description('Customize the public private invitee page opened from SMS or WhatsApp.')
+                    ->icon('heroicon-o-device-phone-mobile')
+                    ->schema([
+                        Forms\Components\FileUpload::make('cover_image')
+                            ->label('Cover / Wedding Photo')
+                            ->image()
+                            ->disk('public')
+                            ->directory('events/cover-images')
+                            ->visibility('public')
+                            ->imageEditor()
+                            ->maxSize(4096)
+                            ->columnSpanFull()
+                            ->helperText('Use a wedding, engagement, send-off, graduation, birthday, or event cover photo.'),
+
+                        Forms\Components\Textarea::make('welcome_message')
+                            ->label('Welcome Message')
+                            ->rows(3)
+                            ->maxLength(1000)
+                            ->columnSpanFull()
+                            ->placeholder('With joy in our hearts, we warmly invite you to celebrate with us.'),
+
+                        Forms\Components\Textarea::make('love_story')
+                            ->label('Love Story / Event Story')
+                            ->rows(6)
+                            ->columnSpanFull()
+                            ->placeholder("Our journey began with friendship, grew with love, and now we are excited to celebrate this special day with you."),
+
+                        Forms\Components\TextInput::make('organizer_phone')
+                            ->label('Organizer Phone')
+                            ->tel()
+                            ->maxLength(30)
+                            ->placeholder('255745939140')
+                            ->helperText('Used for Call Organizer and WhatsApp Organizer buttons on the invitee page.'),
+
+                        Forms\Components\Toggle::make('show_cover_image')
+                            ->label('Show Cover Photo')
+                            ->default(true)
+                            ->inline(false),
+
+                        Forms\Components\Toggle::make('show_love_story')
+                            ->label('Show Love Story')
+                            ->default(false)
+                            ->inline(false),
+
+                        Forms\Components\Toggle::make('show_program')
+                            ->label('Show Program')
+                            ->default(true)
+                            ->inline(false),
+
+                        Forms\Components\Toggle::make('show_countdown')
+                            ->label('Show Countdown')
+                            ->default(true)
+                            ->inline(false),
+
+                        Forms\Components\Toggle::make('show_wishes')
+                            ->label('Show Wishes Form')
+                            ->default(true)
+                            ->inline(false),
+
+                        Forms\Components\Toggle::make('show_organizer_contact')
+                            ->label('Show Organizer Contact')
+                            ->default(true)
+                            ->inline(false),
+                    ])
+                    ->columns(2)
+                    ->collapsible(),
+
                 Forms\Components\Section::make('Welcome SMS Settings')
                     ->description('Send an automatic welcome SMS after a successful gate check-in.')
                     ->icon('heroicon-o-chat-bubble-left-ellipsis')
@@ -299,6 +367,85 @@ class EventResource extends Resource
                             ]),
                     ])
                     ->collapsible(),
+
+                Infolists\Components\Section::make('Invitee Digital Page')
+                    ->description('Public page content shown to invitees through /i/{short_code}.')
+                    ->icon('heroicon-o-device-phone-mobile')
+                    ->schema([
+                        Infolists\Components\Grid::make([
+                            'default' => 1,
+                            'md' => 3,
+                        ])
+                            ->schema([
+                                Infolists\Components\ImageEntry::make('cover_image')
+                                    ->label('Cover Photo')
+                                    ->disk('public')
+                                    ->height(140)
+                                    ->visible(fn ($record): bool => filled($record->cover_image)),
+
+                                Infolists\Components\TextEntry::make('welcome_message')
+                                    ->label('Welcome Message')
+                                    ->placeholder('Not set')
+                                    ->columnSpan([
+                                        'default' => 1,
+                                        'md' => 2,
+                                    ]),
+
+                                Infolists\Components\TextEntry::make('love_story')
+                                    ->label('Love Story / Event Story')
+                                    ->placeholder('Not set')
+                                    ->limit(180)
+                                    ->columnSpanFull(),
+
+                                Infolists\Components\TextEntry::make('program')
+                                    ->label('Program')
+                                    ->placeholder('Not set')
+                                    ->limit(180)
+                                    ->columnSpanFull(),
+
+                                Infolists\Components\TextEntry::make('organizer_phone')
+                                    ->label('Organizer Phone')
+                                    ->placeholder('Not set')
+                                    ->icon('heroicon-o-phone'),
+
+                                Infolists\Components\TextEntry::make('show_cover_image')
+                                    ->label('Cover Photo')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+
+                                Infolists\Components\TextEntry::make('show_love_story')
+                                    ->label('Love Story')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+
+                                Infolists\Components\TextEntry::make('show_program')
+                                    ->label('Program')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+
+                                Infolists\Components\TextEntry::make('show_countdown')
+                                    ->label('Countdown')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+
+                                Infolists\Components\TextEntry::make('show_wishes')
+                                    ->label('Wishes')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+
+                                Infolists\Components\TextEntry::make('show_organizer_contact')
+                                    ->label('Organizer Contact')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+                            ]),
+                    ])
+                    ->collapsed(),
 
                 Infolists\Components\Section::make('Message Center')
                     ->description('SMS, WhatsApp, templates, reminders, and delivery status for this event.')

@@ -53,6 +53,33 @@
             };
         };
 
+        $guestCountBadge = function (?string $status) {
+            return match ($status) {
+                'attending' => 'background:#ECFDF5;color:#047857;border-color:#A7F3D0;',
+                'not_attending', 'declined' => 'background:#FEF2F2;color:#B91C1C;border-color:#FECACA;',
+                default => 'background:#F8FAFC;color:#475569;border-color:#E2E8F0;',
+            };
+        };
+
+        $inviteeAllowedGuests = function ($invitee): int {
+            $value = $invitee->final_allowed_guests
+                ?? $invitee->allowed_guests
+                ?? $invitee->cardType?->allowed_guests
+                ?? $invitee->cardType?->allowed_people
+                ?? 1;
+
+            return max(1, (int) $value);
+        };
+
+        $inviteeConfirmedGuests = function ($invitee): int {
+            if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
+                return 0;
+            }
+
+            return max(0, (int) ($invitee->confirmed_guests ?? 0));
+        };
+
+
         $normalizeDeliveryStatus = function (?string $status, ?string $channel = null) {
             $status = $status
                 ? str($status)->lower()->replace([' ', '-'], '_')->toString()
@@ -247,7 +274,7 @@
 
         .elive-summary-grid {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 10px;
             padding: 14px 16px 12px;
             background: #FFFFFF;
@@ -464,7 +491,7 @@
 
         .elive-table {
             width: 100%;
-            min-width: 980px;
+            min-width: 1240px;
             border-collapse: separate;
             border-spacing: 0;
         }
@@ -773,6 +800,283 @@
             padding: 48px 20px;
             text-align: center;
         }
+    
+
+        /* ------------------------------------------------------------------
+         | eLive fix: compact RSVP tracker table
+         | Keeps open tracking columns visible while reducing column distance.
+         | ------------------------------------------------------------------ */
+        .elive-table-wrap {
+            margin: 0 12px 16px !important;
+            overflow-x: auto !important;
+            overflow-y: hidden !important;
+            border: 1px solid #E5E7EB;
+            border-radius: 16px;
+            background: #FFFFFF;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .elive-table {
+            width: 1190px !important;
+            min-width: 1190px !important;
+            table-layout: fixed !important;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .elive-table thead th,
+        .elive-table tbody td {
+            padding: 10px 9px !important;
+            vertical-align: middle !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+        }
+
+        .elive-table thead th {
+            font-size: 11px !important;
+            letter-spacing: 0 !important;
+        }
+
+        .elive-table tbody td {
+            font-size: 12px !important;
+        }
+
+        .elive-table th:nth-child(1),
+        .elive-table td:nth-child(1) {
+            width: 44px !important;
+            text-align: center !important;
+        }
+
+        .elive-table th:nth-child(2),
+        .elive-table td:nth-child(2) {
+            width: 185px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(3),
+        .elive-table td:nth-child(3) {
+            width: 165px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(4),
+        .elive-table td:nth-child(4) {
+            width: 104px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(5),
+        .elive-table td:nth-child(5) {
+            width: 74px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(6),
+        .elive-table td:nth-child(6) {
+            width: 142px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(7),
+        .elive-table td:nth-child(7) {
+            width: 116px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(8),
+        .elive-table td:nth-child(8) {
+            width: 118px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(9),
+        .elive-table td:nth-child(9) {
+            width: 170px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(10),
+        .elive-table td:nth-child(10) {
+            width: 110px !important;
+            text-align: right !important;
+        }
+
+        .elive-guest-name {
+            font-size: 13px !important;
+            line-height: 1.15 !important;
+        }
+
+        .elive-guest-meta,
+        .elive-delivery-time {
+            font-size: 10.5px !important;
+        }
+
+        .elive-badge {
+            padding: 5px 8px !important;
+            font-size: 11px !important;
+        }
+
+        .elive-row-stack {
+            min-height: 34px !important;
+        }
+
+        .elive-status-cell,
+        .elive-date-cell {
+            min-height: 34px !important;
+        }
+
+        .elive-delivery-stack {
+            gap: 4px !important;
+            min-height: 36px !important;
+        }
+
+        .elive-delivery-line {
+            grid-template-columns: 26px minmax(0, 1fr) !important;
+            column-gap: 5px !important;
+        }
+
+        .elive-delivery-text {
+            column-gap: 5px !important;
+        }
+
+        .elive-channel-icon {
+            width: 26px !important;
+            height: 26px !important;
+            flex-basis: 26px !important;
+            border-radius: 8px !important;
+        }
+
+        .elive-channel-icon svg {
+            width: 13px !important;
+            height: 13px !important;
+        }
+
+        .elive-comment-preview {
+            max-width: 150px !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+        }
+
+        .elive-resend-actions {
+            justify-content: flex-end !important;
+            gap: 5px !important;
+            min-width: 70px !important;
+            min-height: 34px !important;
+        }
+
+        .elive-resend-btn {
+            width: 30px !important;
+            height: 30px !important;
+            border-radius: 9px !important;
+        }
+
+        .elive-resend-btn svg {
+            width: 14px !important;
+            height: 14px !important;
+        }
+
+        @media (max-width: 768px) {
+            .elive-table {
+                width: 1190px !important;
+                min-width: 1190px !important;
+            }
+
+            .elive-table-wrap {
+                margin-left: 8px !important;
+                margin-right: 8px !important;
+            }
+        }
+
+
+        /* ------------------------------------------------------------------
+         | eLive fix: confirmed guest count column
+         | Compact 11-column tracker layout.
+         | ------------------------------------------------------------------ */
+        .elive-table {
+            width: 1190px !important;
+            min-width: 1190px !important;
+            table-layout: fixed !important;
+        }
+
+        .elive-table th:nth-child(1),
+        .elive-table td:nth-child(1) {
+            width: 42px !important;
+            text-align: center !important;
+        }
+
+        .elive-table th:nth-child(2),
+        .elive-table td:nth-child(2) {
+            width: 170px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(3),
+        .elive-table td:nth-child(3) {
+            width: 150px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(4),
+        .elive-table td:nth-child(4) {
+            width: 96px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(5),
+        .elive-table td:nth-child(5) {
+            width: 58px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(6),
+        .elive-table td:nth-child(6) {
+            width: 128px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(7),
+        .elive-table td:nth-child(7) {
+            width: 104px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(8),
+        .elive-table td:nth-child(8) {
+            width: 82px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(9),
+        .elive-table td:nth-child(9) {
+            width: 106px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(10),
+        .elive-table td:nth-child(10) {
+            width: 150px !important;
+            text-align: left !important;
+        }
+
+        .elive-table th:nth-child(11),
+        .elive-table td:nth-child(11) {
+            width: 104px !important;
+            text-align: right !important;
+        }
+
+        .elive-guests-badge {
+            min-width: 54px !important;
+        }
+
+        @media (max-width: 768px) {
+            .elive-table {
+                width: 1190px !important;
+                min-width: 1190px !important;
+            }
+        }
+
+
     </style>
 
     <div class="elive-page space-y-3">
@@ -812,6 +1116,21 @@
                                     {{ ($stats['sms_sent'] ?? 0) + ($stats['whatsapp_sent'] ?? 0) }}
                                 </div>
                                 <div class="elive-header-stat-label">Sent</div>
+                            </div>
+                        </div>
+
+                        <div class="elive-header-stat">
+                            <div class="elive-header-icon">
+                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                </svg>
+                            </div>
+                            <div>
+                                <div class="elive-header-stat-number">
+                                    {{ $stats['opened'] ?? 0 }}
+                                </div>
+                                <div class="elive-header-stat-label">Opened</div>
                             </div>
                         </div>
 
@@ -883,6 +1202,38 @@
                 <div class="elive-summary-card">
                     <div class="elive-summary-icon" style="background:#DBEAFE;color:#213B73;">
                         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                            <circle cx="12" cy="12" r="3" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="elive-summary-value" style="color:#213B73;">
+                            {{ $stats['opened'] ?? 0 }}
+                        </div>
+                        <div class="elive-summary-label">Opened</div>
+                    </div>
+                </div>
+
+                <div class="elive-summary-card">
+                    <div class="elive-summary-icon" style="background:#F1F5F9;color:#64748B;">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 3l18 18" />
+                            <path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58" />
+                            <path d="M9.88 4.24A9.9 9.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-2.1 3.19" />
+                            <path d="M6.61 6.61C3.93 8.4 2 12 2 12s3.5 8 10 8a9.8 9.8 0 0 0 5.39-1.61" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="elive-summary-value" style="color:#64748B;">
+                            {{ $stats['not_opened'] ?? 0 }}
+                        </div>
+                        <div class="elive-summary-label">Not Opened</div>
+                    </div>
+                </div>
+
+                <div class="elive-summary-card">
+                    <div class="elive-summary-icon" style="background:#DBEAFE;color:#213B73;">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M7 17 17 7" />
                             <path d="M9 7h8v8" />
                         </svg>
@@ -928,6 +1279,9 @@
                         <option value="attending">Attending</option>
                         <option value="not_attending">Not Attending</option>
                         <option value="maybe">Maybe</option>
+                        <option value="opened">Opened Invitation</option>
+                        <option value="not_opened">Not Opened</option>
+                        <option value="recent_opens">Opened Recently</option>
                     </select>
                 </div>
 
@@ -959,9 +1313,13 @@
                             <th>#</th>
                             <th>Guest Name</th>
                             <th>Delivery</th>
-                            <th>RSVP Status</th>
+                            <th>Opened</th>
+                            <th>Count</th>
+                            <th>Last Opened</th>
+                            <th>RSVP</th>
+                            <th>Guests</th>
                             <th>RSVP Date</th>
-                            <th>Latest Comment</th>
+                            <th>Comment</th>
                             <th class="text-right">Resend</th>
                         </tr>
                     </thead>
@@ -1057,6 +1415,17 @@
 
                                 $smsProviderId = $smsLog ? $providerReference($smsLog) : ($invitee->sms_message_id ?? null);
                                 $whatsappProviderId = $whatsappLog ? $providerReference($whatsappLog) : ($invitee->whatsapp_message_id ?? null);
+
+                                $hasOpenedInvitation = (bool) ($invitee->has_opened_invitation ?? filled($invitee->first_opened_at));
+                                $openStatusLabel = $invitee->open_status_label ?? ($hasOpenedInvitation ? 'Opened' : 'Not Opened');
+                                $lastOpenedHuman = $invitee->last_opened_human
+                                    ?? ($invitee->last_opened_at ? $invitee->last_opened_at->diffForHumans() : '—');
+
+                                $allowedGuestLimit = $inviteeAllowedGuests($invitee);
+                                $confirmedGuestCount = $inviteeConfirmedGuests($invitee);
+                                $guestCountLabel = in_array($invitee->rsvp_status, ['attending', 'not_attending', 'declined'], true)
+                                    ? $confirmedGuestCount . ' / ' . $allowedGuestLimit
+                                    : '— / ' . $allowedGuestLimit;
                             @endphp
 
                             <tr wire:key="invitee-row-{{ $invitee->id }}">
@@ -1168,8 +1537,54 @@
 
                                 <td>
                                     <div class="elive-status-cell">
+                                        @if ($hasOpenedInvitation)
+                                            <span class="elive-badge" style="background:#DBEAFE;color:#213B73;border-color:#BFDBFE;">
+                                                Opened
+                                            </span>
+                                        @else
+                                            <span class="elive-badge" style="background:#F1F5F9;color:#64748B;border-color:#E2E8F0;">
+                                                Not Opened
+                                            </span>
+                                        @endif
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="elive-date-cell">
+                                        {{ (int) ($invitee->open_count ?? 0) }}
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="elive-row-stack">
+                                        <div class="elive-date-cell">
+                                            {{ $lastOpenedHuman }}
+                                        </div>
+
+                                        @if ($invitee->last_opened_at)
+                                            <div class="elive-guest-meta">
+                                                {{ $invitee->last_opened_at?->format('d M H:i') }}
+                                            </div>
+                                        @endif
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="elive-status-cell">
                                         <span class="elive-badge" style="{{ $rsvpBadge($invitee->rsvp_status) }}">
                                             {{ $formatStatus($invitee->rsvp_status ?? 'pending') }}
+                                        </span>
+                                    </div>
+                                </td>
+
+                                <td>
+                                    <div class="elive-status-cell">
+                                        <span
+                                            class="elive-badge elive-guests-badge"
+                                            style="{{ $guestCountBadge($invitee->rsvp_status) }}"
+                                            title="Confirmed guests / allowed guests"
+                                        >
+                                            {{ $guestCountLabel }}
                                         </span>
                                     </div>
                                 </td>
@@ -1243,7 +1658,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="7">
+                                <td colspan="11">
                                     <div class="elive-empty">
                                         <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
                                             <svg class="h-7 w-7" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

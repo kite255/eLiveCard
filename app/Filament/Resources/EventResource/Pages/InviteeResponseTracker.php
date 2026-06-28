@@ -6,10 +6,13 @@ use App\Filament\Resources\EventResource;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Services\InviteeConversationService;
+use App\Services\SmsService;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class InviteeResponseTracker extends Page
 {
@@ -51,7 +54,7 @@ class InviteeResponseTracker extends Page
     {
         return $this->record->name
             ?? $this->record->title
-            ?? 'Track SMS, WhatsApp, RSVP and invitee replies';
+            ?? 'Track delivery, opens, RSVP and invitee replies';
     }
 
     protected function getHeaderActions(): array
@@ -71,6 +74,7 @@ class InviteeResponseTracker extends Page
                 ->color('primary')
                 ->action(function (): void {
                     $this->loadInviteeFormDefaults();
+                    $this->dispatch('$refresh');
 
                     Notification::make()
                         ->title('Tracker refreshed')
@@ -98,57 +102,60 @@ class InviteeResponseTracker extends Page
     {
         return Invitee::query()
             ->with([
+                'event',
                 'cardType',
                 'conversations' => fn ($query) => $query->latest()->limit(5),
             ])
             ->where('event_id', $this->record->id)
-            ->when($this->search !== '', function ($query) {
-                $query->where(function ($query) {
+            ->when($this->search !== '', function ($query): void {
+                $query->where(function ($query): void {
                     $query->where('name', 'like', '%' . $this->search . '%')
                         ->orWhere('phone', 'like', '%' . $this->search . '%')
-                        ->orWhere('serial_number', 'like', '%' . $this->search . '%');
+                        ->orWhere('serial_number', 'like', '%' . $this->search . '%')
+                        ->orWhere('short_code', 'like', '%' . $this->search . '%');
                 });
             })
-            ->when($this->statusFilter !== '', function ($query) {
-                if ($this->statusFilter === 'rsvp_pending') {
-                    $query->where('rsvp_status', 'pending');
-                }
+            ->when($this->statusFilter !== '', function ($query): void {
+                match ($this->statusFilter) {
+                    'rsvp_pending' => $query->where(function ($query): void {
+                        $query->whereNull('rsvp_status')
+                            ->orWhere('rsvp_status', 'pending');
+                    }),
 
-                if ($this->statusFilter === 'attending') {
-                    $query->where('rsvp_status', 'attending');
-                }
+                    'attending' => $query->where('rsvp_status', 'attending'),
 
-                if ($this->statusFilter === 'not_attending') {
-                    $query->where('rsvp_status', 'not_attending');
-                }
+                    'not_attending' => $query->where('rsvp_status', 'not_attending'),
 
-                if ($this->statusFilter === 'maybe') {
-                    $query->where('rsvp_status', 'maybe');
-                }
+                    'maybe' => $query->where('rsvp_status', 'maybe'),
 
-                if ($this->statusFilter === 'replied') {
-                    $query->where(function ($query) {
+                    'replied' => $query->where(function ($query): void {
                         $query->where('last_message_status', 'replied')
                             ->orWhereNotNull('last_reply_message');
-                    });
-                }
+                    }),
 
-                if ($this->statusFilter === 'failed') {
-                    $query->where(function ($query) {
+                    'failed' => $query->where(function ($query): void {
                         $query->where('last_message_status', 'failed')
                             ->orWhere('sms_status', 'failed')
                             ->orWhere('invitation_sms_status', 'failed');
-                    });
-                }
+                    }),
 
-                if ($this->statusFilter === 'not_sent') {
-                    $query->where(function ($query) {
+                    'not_sent' => $query->where(function ($query): void {
                         $query->whereNull('last_message_channel')
                             ->orWhere('last_message_status', 'not_sent');
-                    });
-                }
+                    }),
+
+                    'opened' => $query->whereNotNull('first_opened_at'),
+
+                    'not_opened' => $query->whereNull('first_opened_at'),
+
+                    'recent_opens' => $query
+                        ->whereNotNull('last_opened_at')
+                        ->where('last_opened_at', '>=', now()->subDay()),
+
+                    default => null,
+                };
             })
-            ->when($this->channelFilter !== '', function ($query) {
+            ->when($this->channelFilter !== '', function ($query): void {
                 $query->where('last_message_channel', $this->channelFilter);
             })
             ->latest()
@@ -160,51 +167,98 @@ class InviteeResponseTracker extends Page
         $baseQuery = Invitee::query()
             ->where('event_id', $this->record->id);
 
+        $total = (clone $baseQuery)->count();
+
+        $smsSent = (clone $baseQuery)
+            ->where(function ($query): void {
+                $query->whereNotNull('last_sms_sent_at')
+                    ->orWhereNotNull('sms_sent_at')
+                    ->orWhere('sms_status', 'sent')
+                    ->orWhere('invitation_sms_status', 'sent');
+            })
+            ->count();
+
+        $whatsappSent = (clone $baseQuery)
+            ->where(function ($query): void {
+                $query->whereNotNull('last_whatsapp_sent_at')
+                    ->orWhereNotNull('whatsapp_message_id')
+                    ->orWhere('last_message_channel', 'whatsapp');
+            })
+            ->count();
+
+        $sent = (clone $baseQuery)
+            ->where(function ($query): void {
+                $query->whereNotNull('last_sms_sent_at')
+                    ->orWhereNotNull('sms_sent_at')
+                    ->orWhere('sms_status', 'sent')
+                    ->orWhere('invitation_sms_status', 'sent')
+                    ->orWhereNotNull('last_whatsapp_sent_at')
+                    ->orWhereNotNull('whatsapp_message_id')
+                    ->orWhere('last_message_status', 'sent')
+                    ->orWhere('last_message_status', 'delivered')
+                    ->orWhere('last_message_status', 'read');
+            })
+            ->count();
+
+        $opened = (clone $baseQuery)
+            ->whereNotNull('first_opened_at')
+            ->count();
+
+        $notOpened = max($total - $opened, 0);
+
+        $recentOpens = (clone $baseQuery)
+            ->whereNotNull('last_opened_at')
+            ->where('last_opened_at', '>=', now()->subDay())
+            ->count();
+
+        $attending = (clone $baseQuery)
+            ->where('rsvp_status', 'attending')
+            ->count();
+
+        $notAttending = (clone $baseQuery)
+            ->where('rsvp_status', 'not_attending')
+            ->count();
+
+        $pending = (clone $baseQuery)
+            ->where(function ($query): void {
+                $query->whereNull('rsvp_status')
+                    ->orWhere('rsvp_status', 'pending');
+            })
+            ->count();
+
+        $failed = (clone $baseQuery)
+            ->where(function ($query): void {
+                $query->where('last_message_status', 'failed')
+                    ->orWhere('sms_status', 'failed')
+                    ->orWhere('invitation_sms_status', 'failed');
+            })
+            ->count();
+
+        $replied = (clone $baseQuery)
+            ->where(function ($query): void {
+                $query->where('last_message_status', 'replied')
+                    ->orWhereNotNull('last_reply_message');
+            })
+            ->count();
+
         return [
-            'total' => (clone $baseQuery)->count(),
+            'total' => $total,
 
-            'sms_sent' => (clone $baseQuery)
-                ->where(function ($query) {
-                    $query->whereNotNull('last_sms_sent_at')
-                        ->orWhereNotNull('sms_sent_at')
-                        ->orWhere('sms_status', 'sent')
-                        ->orWhere('invitation_sms_status', 'sent');
-                })
-                ->count(),
+            'sent' => $sent,
+            'sms_sent' => $smsSent,
+            'whatsapp_sent' => $whatsappSent,
 
-            'whatsapp_sent' => (clone $baseQuery)
-                ->where(function ($query) {
-                    $query->whereNotNull('last_whatsapp_sent_at')
-                        ->orWhereNotNull('whatsapp_message_id')
-                        ->orWhere('last_message_channel', 'whatsapp');
-                })
-                ->count(),
+            'opened' => $opened,
+            'not_opened' => $notOpened,
+            'recent_opens' => $recentOpens,
+            'open_rate' => $total > 0 ? round(($opened / $total) * 100) : 0,
 
-            'replied' => (clone $baseQuery)
-                ->where(function ($query) {
-                    $query->where('last_message_status', 'replied')
-                        ->orWhereNotNull('last_reply_message');
-                })
-                ->count(),
-
-            'attending' => (clone $baseQuery)
-                ->where('rsvp_status', 'attending')
-                ->count(),
-
-            'pending' => (clone $baseQuery)
-                ->where(function ($query) {
-                    $query->whereNull('rsvp_status')
-                        ->orWhere('rsvp_status', 'pending');
-                })
-                ->count(),
-
-            'failed' => (clone $baseQuery)
-                ->where(function ($query) {
-                    $query->where('last_message_status', 'failed')
-                        ->orWhere('sms_status', 'failed')
-                        ->orWhere('invitation_sms_status', 'failed');
-                })
-                ->count(),
+            'replied' => $replied,
+            'attending' => $attending,
+            'not_attending' => $notAttending,
+            'pending' => $pending,
+            'failed' => $failed,
+            'response_rate' => $total > 0 ? round((($attending + $notAttending) / $total) * 100) : 0,
         ];
     }
 
@@ -222,9 +276,7 @@ class InviteeResponseTracker extends Page
             return;
         }
 
-        $invitee = Invitee::query()
-            ->where('event_id', $this->record->id)
-            ->findOrFail($inviteeId);
+        $invitee = $this->findInviteeForCurrentEvent($inviteeId);
 
         app(InviteeConversationService::class)
             ->saveOutgoingWhatsAppReply(
@@ -234,6 +286,7 @@ class InviteeResponseTracker extends Page
             );
 
         $this->whatsappMessages[$inviteeId] = '';
+        $this->dispatch('$refresh');
 
         Notification::make()
             ->title('WhatsApp reply saved')
@@ -256,9 +309,7 @@ class InviteeResponseTracker extends Page
             return;
         }
 
-        $invitee = Invitee::query()
-            ->where('event_id', $this->record->id)
-            ->findOrFail($inviteeId);
+        $invitee = $this->findInviteeForCurrentEvent($inviteeId);
 
         app(InviteeConversationService::class)
             ->saveOutgoingSmsReply(
@@ -268,6 +319,7 @@ class InviteeResponseTracker extends Page
             );
 
         $this->smsMessages[$inviteeId] = '';
+        $this->dispatch('$refresh');
 
         Notification::make()
             ->title('SMS reply saved')
@@ -278,72 +330,159 @@ class InviteeResponseTracker extends Page
 
     public function resendSmsInvitation(int $inviteeId): void
     {
-        $invitee = Invitee::query()
-            ->where('event_id', $this->record->id)
-            ->findOrFail($inviteeId);
+        $invitee = $this->findInviteeForCurrentEvent($inviteeId);
+
+        if (blank($invitee->phone)) {
+            Notification::make()
+                ->title('SMS not sent')
+                ->body('This invitee does not have a phone number.')
+                ->danger()
+                ->send();
+
+            return;
+        }
 
         $messageType = $this->resendMessageTypeForSms($invitee);
         $message = $this->buildResendMessage($invitee, $messageType);
+        $reference = $messageType . '_' . $invitee->id . '_' . now()->format('YmdHis');
 
-        app(InviteeConversationService::class)
-            ->saveOutgoingSmsReply(
-                invitee: $invitee,
-                message: $message,
-                status: 'sent'
+        try {
+            $providerResponse = app(SmsService::class)->send(
+                $invitee->phone,
+                $message,
+                $reference
             );
 
-        $invitee->forceFill([
-            'last_sms_sent_at' => now(),
-            'sms_sent_at' => $invitee->sms_sent_at ?? now(),
-            'sms_status' => 'sent',
-            'invitation_sms_status' => $messageType === 'invitation_card'
-                ? 'sent'
-                : ($invitee->invitation_sms_status ?? 'sent'),
-            'invitation_sms_sent_at' => $messageType === 'invitation_card'
-                ? now()
-                : ($invitee->invitation_sms_sent_at ?? null),
-            'last_message_channel' => 'sms',
-            'last_message_status' => 'sent',
-        ])->save();
+            app(InviteeConversationService::class)
+                ->saveOutgoingSmsReply(
+                    invitee: $invitee,
+                    message: $message,
+                    status: 'sent'
+                );
 
-        Notification::make()
-            ->title('SMS sent')
-            ->body($messageType === 'rsvp_reminder'
-                ? 'RSVP reminder SMS has been sent.'
-                : 'Invitation SMS has been sent.')
-            ->success()
-            ->send();
+            $invitee->forceFill([
+                'last_sms_sent_at' => now(),
+                'sms_sent_at' => $invitee->sms_sent_at ?? now(),
+                'sms_status' => 'sent',
+                'sms_error' => null,
+                'last_sms_error' => null,
+                'invitation_sms_status' => $messageType === 'invitation_card'
+                    ? 'sent'
+                    : ($invitee->invitation_sms_status ?? 'sent'),
+                'invitation_sms_sent_at' => $messageType === 'invitation_card'
+                    ? now()
+                    : ($invitee->invitation_sms_sent_at ?? null),
+                'last_message_channel' => 'sms',
+                'last_message_status' => 'sent',
+                'last_message_error' => null,
+            ])->save();
+
+            $this->loadInviteeFormDefaults();
+            $this->dispatch('$refresh');
+
+            Notification::make()
+                ->title($messageType === 'rsvp_reminder' ? 'Reminder SMS sent' : 'Invitation SMS sent')
+                ->body('SMS sent to ' . $invitee->name . '.')
+                ->success()
+                ->send();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $invitee->forceFill([
+                'sms_status' => 'failed',
+                'last_message_channel' => 'sms',
+                'last_message_status' => 'failed',
+                'sms_error' => $exception->getMessage(),
+                'last_sms_error' => $exception->getMessage(),
+                'last_message_error' => $exception->getMessage(),
+            ])->save();
+
+            $this->dispatch('$refresh');
+
+            Notification::make()
+                ->title('SMS failed')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+        }
     }
 
     public function resendWhatsAppInvitation(int $inviteeId): void
     {
-        $invitee = Invitee::query()
-            ->where('event_id', $this->record->id)
-            ->findOrFail($inviteeId);
+        $invitee = $this->findInviteeForCurrentEvent($inviteeId);
+
+        if (blank($invitee->phone)) {
+            Notification::make()
+                ->title('WhatsApp not sent')
+                ->body('This invitee does not have a phone number.')
+                ->danger()
+                ->send();
+
+            return;
+        }
 
         $messageType = $this->resendMessageTypeForWhatsApp($invitee);
         $message = $this->buildResendMessage($invitee, $messageType);
 
-        app(InviteeConversationService::class)
-            ->saveOutgoingWhatsAppReply(
-                invitee: $invitee,
-                message: $message,
-                status: 'sent'
-            );
+        try {
+            /*
+             |--------------------------------------------------------------------------
+             | WhatsApp sending
+             |--------------------------------------------------------------------------
+             |
+             | This tracker safely records the WhatsApp resend action. If you already
+             | have a real WhatsApp sending service/job in the project, connect it here.
+             | The notification still responds immediately, so the button never appears dead.
+             |
+             */
 
-        $invitee->forceFill([
-            'last_whatsapp_sent_at' => now(),
-            'last_message_channel' => 'whatsapp',
-            'last_message_status' => 'sent',
-        ])->save();
+            app(InviteeConversationService::class)
+                ->saveOutgoingWhatsAppReply(
+                    invitee: $invitee,
+                    message: $message,
+                    status: 'sent'
+                );
 
-        Notification::make()
-            ->title('WhatsApp sent')
-            ->body($messageType === 'rsvp_reminder'
-                ? 'RSVP reminder WhatsApp message has been sent.'
-                : 'Invitation WhatsApp message has been sent.')
-            ->success()
-            ->send();
+            $invitee->forceFill([
+                'last_whatsapp_sent_at' => now(),
+                'last_message_channel' => 'whatsapp',
+                'last_message_status' => 'sent',
+                'last_message_error' => null,
+            ])->save();
+
+            $this->loadInviteeFormDefaults();
+            $this->dispatch('$refresh');
+
+            Notification::make()
+                ->title($messageType === 'rsvp_reminder' ? 'WhatsApp reminder recorded' : 'WhatsApp invitation recorded')
+                ->body('The WhatsApp resend action was recorded for ' . $invitee->name . '.')
+                ->success()
+                ->send();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $invitee->forceFill([
+                'last_message_channel' => 'whatsapp',
+                'last_message_status' => 'failed',
+                'last_message_error' => $exception->getMessage(),
+            ])->save();
+
+            $this->dispatch('$refresh');
+
+            Notification::make()
+                ->title('WhatsApp failed')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+        }
+    }
+
+    protected function findInviteeForCurrentEvent(int $inviteeId): Invitee
+    {
+        return Invitee::query()
+            ->with(['event', 'cardType'])
+            ->where('event_id', $this->record->id)
+            ->findOrFail($inviteeId);
     }
 
     protected function resendMessageTypeForSms(Invitee $invitee): string
@@ -382,12 +521,9 @@ class InviteeResponseTracker extends Page
         return trim("Ndugu {$invitee->name}, umealikwa kwenye {$eventName}. Fungua kadi yako hapa: {$privateLink}");
     }
 
-
     public function updateRsvp(int $inviteeId): void
     {
-        $invitee = Invitee::query()
-            ->where('event_id', $this->record->id)
-            ->findOrFail($inviteeId);
+        $invitee = $this->findInviteeForCurrentEvent($inviteeId);
 
         $status = $this->rsvpStatuses[$inviteeId] ?? 'pending';
         $confirmedGuests = (int) ($this->confirmedGuests[$inviteeId] ?? 0);
@@ -416,6 +552,8 @@ class InviteeResponseTracker extends Page
         ]);
 
         $this->confirmedGuests[$inviteeId] = $confirmedGuests;
+        $this->loadInviteeFormDefaults();
+        $this->dispatch('$refresh');
 
         Notification::make()
             ->title('RSVP updated')
@@ -423,10 +561,29 @@ class InviteeResponseTracker extends Page
             ->send();
     }
 
+    public function filterOpened(): void
+    {
+        $this->statusFilter = 'opened';
+        $this->dispatch('$refresh');
+    }
+
+    public function filterNotOpened(): void
+    {
+        $this->statusFilter = 'not_opened';
+        $this->dispatch('$refresh');
+    }
+
+    public function filterRecentOpens(): void
+    {
+        $this->statusFilter = 'recent_opens';
+        $this->dispatch('$refresh');
+    }
+
     public function clearFilters(): void
     {
         $this->search = '';
         $this->statusFilter = '';
         $this->channelFilter = '';
+        $this->dispatch('$refresh');
     }
 }

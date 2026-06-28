@@ -30,13 +30,25 @@ class GateVerifyController extends Controller
         }
 
         $allowedGuests = $this->allowedGuests($invitee);
+        $confirmedGuests = $this->confirmedGuests($invitee);
+        $gateLimit = $this->gateGuestLimit($invitee);
+
         $checkedInCount = (int) ($invitee->checked_in_count ?? 0);
-        $remainingGuests = max(0, $allowedGuests - $checkedInCount);
+        $remainingGuests = max(0, $gateLimit - $checkedInCount);
 
         return view('gate.verify', [
             'invitee' => $invitee,
             'token' => $token,
+
+            // Original invitation/card limit
             'allowedGuests' => $allowedGuests,
+
+            // RSVP confirmed guests
+            'confirmedGuests' => $confirmedGuests,
+
+            // Actual limit gate should use
+            'gateLimit' => $gateLimit,
+
             'checkedInCount' => $checkedInCount,
             'remainingGuests' => $remainingGuests,
         ]);
@@ -71,9 +83,9 @@ class GateVerifyController extends Controller
                     throw new \RuntimeException($validationMessage);
                 }
 
-                $allowedGuests = $this->allowedGuests($invitee);
+                $gateLimit = $this->gateGuestLimit($invitee);
                 $previousCount = (int) ($invitee->checked_in_count ?? 0);
-                $remainingBeforeCheckIn = max(0, $allowedGuests - $previousCount);
+                $remainingBeforeCheckIn = max(0, $gateLimit - $previousCount);
 
                 if ($remainingBeforeCheckIn <= 0) {
                     $this->recordDuplicateAttempt($invitee);
@@ -90,7 +102,7 @@ class GateVerifyController extends Controller
                 }
 
                 $newCount = $previousCount + $guestsToCheckIn;
-                $remainingAfterCheckIn = max(0, $allowedGuests - $newCount);
+                $remainingAfterCheckIn = max(0, $gateLimit - $newCount);
 
                 $invitee->checkIns()->create([
                     'event_id' => $invitee->event_id,
@@ -100,7 +112,7 @@ class GateVerifyController extends Controller
                     'previous_checked_in_count' => $previousCount,
                     'remaining_guests' => $remainingAfterCheckIn,
                     'status' => CheckIn::STATUS_SUCCESS,
-                    'remarks' => 'Checked in by QR code scan.',
+                    'remarks' => $this->successRemarks($invitee),
                     'checked_in_at' => now(),
                 ]);
 
@@ -153,23 +165,73 @@ class GateVerifyController extends Controller
             return 'This invitation card is not valid for check-in.';
         }
 
+        if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
+            return 'This invitee responded that they will not attend. Please contact the event manager before allowing check-in.';
+        }
+
+        if ($this->gateGuestLimit($invitee) <= 0) {
+            return 'No guests are allowed for check-in on this invitation.';
+        }
+
         return null;
     }
 
     private function allowedGuests(Invitee $invitee): int
     {
-        return (int) (
-            $invitee->allowed_guests
-            ?: $invitee->cardType?->allowed_guests
-            ?: 1
-        );
+        if (isset($invitee->final_allowed_guests) && (int) $invitee->final_allowed_guests > 0) {
+            return (int) $invitee->final_allowed_guests;
+        }
+
+        if ((int) ($invitee->allowed_guests ?? 0) > 0) {
+            return (int) $invitee->allowed_guests;
+        }
+
+        if ((int) ($invitee->cardType?->allowed_guests ?? 0) > 0) {
+            return (int) $invitee->cardType->allowed_guests;
+        }
+
+        if ((int) ($invitee->cardType?->allowed_people ?? 0) > 0) {
+            return (int) $invitee->cardType->allowed_people;
+        }
+
+        return 1;
+    }
+
+    private function confirmedGuests(Invitee $invitee): int
+    {
+        return max(0, (int) ($invitee->confirmed_guests ?? 0));
+    }
+
+    private function gateGuestLimit(Invitee $invitee): int
+    {
+        $allowedGuests = $this->allowedGuests($invitee);
+        $confirmedGuests = $this->confirmedGuests($invitee);
+
+        if ($invitee->rsvp_status === 'attending' && $confirmedGuests > 0) {
+            return min($confirmedGuests, $allowedGuests);
+        }
+
+        if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
+            return 0;
+        }
+
+        return $allowedGuests;
+    }
+
+    private function successRemarks(Invitee $invitee): string
+    {
+        if ($invitee->rsvp_status === 'attending' && $this->confirmedGuests($invitee) > 0) {
+            return 'Checked in by QR code scan using RSVP confirmed guest limit.';
+        }
+
+        return 'Checked in by QR code scan using allowed guest limit.';
     }
 
     private function recordFailedAttempt(Invitee $invitee, string $message): void
     {
-        $allowedGuests = $this->allowedGuests($invitee);
+        $gateLimit = $this->gateGuestLimit($invitee);
         $previousCount = (int) ($invitee->checked_in_count ?? 0);
-        $remainingGuests = max(0, $allowedGuests - $previousCount);
+        $remainingGuests = max(0, $gateLimit - $previousCount);
 
         $invitee->checkIns()->create([
             'event_id' => $invitee->event_id,

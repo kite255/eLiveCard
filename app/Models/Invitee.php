@@ -146,6 +146,12 @@ class Invitee extends Model
         'last_message_status',
         'last_reply_message',
         'last_reply_at',
+
+        'first_opened_at',
+        'last_opened_at',
+        'open_count',
+        'last_open_ip',
+        'last_open_user_agent',
     ];
 
     protected $casts = [
@@ -162,6 +168,10 @@ class Invitee extends Model
         'last_sms_sent_at' => 'datetime',
         'last_whatsapp_sent_at' => 'datetime',
         'last_reply_at' => 'datetime',
+
+        'first_opened_at' => 'datetime',
+        'last_opened_at' => 'datetime',
+        'open_count' => 'integer',
     ];
 
     protected $appends = [
@@ -175,6 +185,9 @@ class Invitee extends Model
         'check_in_status_label',
         'last_message_status_label',
         'last_message_channel_label',
+        'has_opened_invitation',
+        'open_status_label',
+        'last_opened_human',
     ];
 
     protected static function booted(): void
@@ -248,6 +261,10 @@ class Invitee extends Model
 
             if ($invitee->checked_in_count === null) {
                 $invitee->checked_in_count = 0;
+            }
+
+            if (Schema::hasColumn('invitees', 'open_count') && $invitee->open_count === null) {
+                $invitee->open_count = 0;
             }
         });
 
@@ -846,6 +863,48 @@ class Invitee extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | Invitee Page Open Tracking Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function recordInvitationOpen(?string $ipAddress = null, ?string $userAgent = null): void
+    {
+        $data = [];
+
+        if (Schema::hasColumn('invitees', 'first_opened_at')) {
+            $data['first_opened_at'] = $this->first_opened_at ?: now();
+        }
+
+        if (Schema::hasColumn('invitees', 'last_opened_at')) {
+            $data['last_opened_at'] = now();
+        }
+
+        if (Schema::hasColumn('invitees', 'open_count')) {
+            $data['open_count'] = ((int) ($this->open_count ?? 0)) + 1;
+        }
+
+        if (Schema::hasColumn('invitees', 'last_open_ip')) {
+            $data['last_open_ip'] = $ipAddress;
+        }
+
+        if (Schema::hasColumn('invitees', 'last_open_user_agent')) {
+            $data['last_open_user_agent'] = $userAgent ? Str::limit($userAgent, 1000, '') : null;
+        }
+
+        if (! empty($data)) {
+            $this->forceFill($data)->saveQuietly();
+        }
+    }
+
+    public function hasOpenedInvitation(): bool
+    {
+        return filled($this->first_opened_at)
+            || filled($this->last_opened_at)
+            || ((int) ($this->open_count ?? 0)) > 0;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Check-in Helpers
     |--------------------------------------------------------------------------
     */
@@ -978,6 +1037,23 @@ class Invitee extends Model
 
         return self::communicationChannels()[$this->last_message_channel]
             ?? ucfirst((string) $this->last_message_channel);
+    }
+
+    public function getHasOpenedInvitationAttribute(): bool
+    {
+        return $this->hasOpenedInvitation();
+    }
+
+    public function getOpenStatusLabelAttribute(): string
+    {
+        return $this->hasOpenedInvitation() ? 'Opened' : 'Not Opened';
+    }
+
+    public function getLastOpenedHumanAttribute(): string
+    {
+        return $this->last_opened_at
+            ? $this->last_opened_at->diffForHumans()
+            : 'Never opened';
     }
 
     /*

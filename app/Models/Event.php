@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Event extends Model
 {
@@ -19,7 +20,20 @@ class Event extends Model
         'venue_address',
         'google_maps_link',
         'dress_code',
+
+        // Invitee digital page content
+        'cover_image',
+        'welcome_message',
+        'love_story',
         'program',
+        'organizer_phone',
+        'show_cover_image',
+        'show_love_story',
+        'show_program',
+        'show_countdown',
+        'show_wishes',
+        'show_organizer_contact',
+
         'contact_person_name',
         'contact_person_phone',
         'status',
@@ -51,6 +65,14 @@ class Event extends Model
         'auto_event_day_reminder_enabled' => 'boolean',
         'event_day_reminder_time' => 'datetime:H:i',
         'welcome_sms_enabled' => 'boolean',
+
+        // Invitee digital page toggles
+        'show_cover_image' => 'boolean',
+        'show_love_story' => 'boolean',
+        'show_program' => 'boolean',
+        'show_countdown' => 'boolean',
+        'show_wishes' => 'boolean',
+        'show_organizer_contact' => 'boolean',
     ];
 
     public const STATUS_DRAFT = 'draft';
@@ -345,6 +367,92 @@ class Event extends Model
             '{private_link}' => (string) $invitee->private_invitation_url,
             '{rsvp_url}' => (string) $invitee->rsvp_url,
         ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Invitee Digital Page Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function shouldShowCoverImage(): bool
+    {
+        return (bool) ($this->show_cover_image ?? true);
+    }
+
+    public function shouldShowLoveStory(): bool
+    {
+        return (bool) ($this->show_love_story ?? false);
+    }
+
+    public function shouldShowProgram(): bool
+    {
+        return (bool) ($this->show_program ?? true);
+    }
+
+    public function shouldShowCountdown(): bool
+    {
+        return (bool) ($this->show_countdown ?? true);
+    }
+
+    public function shouldShowWishes(): bool
+    {
+        return (bool) ($this->show_wishes ?? true);
+    }
+
+    public function shouldShowOrganizerContact(): bool
+    {
+        return (bool) ($this->show_organizer_contact ?? true);
+    }
+
+    public function getCoverImageUrlAttribute(): ?string
+    {
+        if (! filled($this->cover_image)) {
+            return null;
+        }
+
+        if (filter_var($this->cover_image, FILTER_VALIDATE_URL)) {
+            return $this->cover_image;
+        }
+
+        return Storage::disk('public')->exists($this->cover_image)
+            ? Storage::disk('public')->url($this->cover_image)
+            : null;
+    }
+
+    public function getEffectiveWelcomeMessageAttribute(): ?string
+    {
+        return filled($this->welcome_message)
+            ? (string) $this->welcome_message
+            : null;
+    }
+
+    public function getEffectiveOrganizerPhoneAttribute(): ?string
+    {
+        return $this->organizer_phone
+            ?: $this->contact_person_phone
+            ?: config('app.organizer_phone')
+            ?: config('services.elive.contact_phone');
+    }
+
+    public function getProgramItemsAttribute(): array
+    {
+        if (! filled($this->program)) {
+            return [
+                'Guest Arrival',
+                'Opening Prayer',
+                'Welcome Remarks',
+                'Main Ceremony',
+                'Photos',
+                'Closing',
+            ];
+        }
+
+        return collect(preg_split('/\r\n|\r|\n/', (string) $this->program))
+            ->map(fn ($item) => trim($item))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /*
