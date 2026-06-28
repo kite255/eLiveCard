@@ -19,6 +19,7 @@
             --yellow: #F59E0B;
             --border: #E5E7EB;
             --muted: #6B7280;
+            --topbar-height: 74px;
         }
 
         * {
@@ -27,19 +28,30 @@
 
         body {
             margin: 0;
+            padding-top: var(--topbar-height);
             font-family: Arial, sans-serif;
             background: var(--bg);
             color: var(--dark);
         }
 
         .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 9980;
+            min-height: var(--topbar-height);
+            display: flex;
+            align-items: center;
             background: var(--blue);
             color: white;
             padding: 16px;
             border-bottom: none;
+            box-shadow: 0 10px 30px rgba(17, 24, 39, 0.18);
         }
 
         .topbar-inner {
+            width: 100%;
             max-width: 1100px;
             margin: 0 auto;
             display: flex;
@@ -629,6 +641,10 @@
         }
 
         @media (max-width: 600px) {
+            :root {
+                --topbar-height: 64px;
+            }
+
             .topbar {
                 padding: 14px;
             }
@@ -716,7 +732,7 @@
                     type="text"
                     id="manualInput"
                     name="search"
-                    placeholder="Serial, phone, name, short code..."
+                    placeholder="Serial, last 6 code, phone, name, or short code..."
                     autocomplete="off"
                 >
                 <button type="submit" class="btn-orange">Search</button>
