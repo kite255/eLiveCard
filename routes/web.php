@@ -188,6 +188,20 @@ Route::middleware(['auth'])->group(function () {
     |--------------------------------------------------------------------------
     | Professional Gate Check-in Page
     |--------------------------------------------------------------------------
+    |
+    | Scanner page:
+    | GET /gate/events/{event}/check-in
+    |
+    | QR/manual verification:
+    | POST /gate/events/{event}/verify
+    |
+    | Manual search alias:
+    | POST /gate/events/{event}/manual-search
+    |
+    | Both verify and manual-search can accept:
+    | scanned_value, search, serial number, phone, name, or short code,
+    | depending on GateCheckInController::verify().
+    |
     */
     Route::get(
         '/gate/events/{event}/check-in',
@@ -198,6 +212,21 @@ Route::middleware(['auth'])->group(function () {
         '/gate/events/{event}/verify',
         [GateCheckInController::class, 'verify']
     )->name('gate.check-in.verify');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Manual Search Route Alias
+    |--------------------------------------------------------------------------
+    |
+    | This fixes manual search forms that submit to gate.manual-search.
+    | It uses the same verify() method so you do not need a separate
+    | manualSearch() method unless you want one later.
+    |
+    */
+    Route::post(
+        '/gate/events/{event}/manual-search',
+        [GateCheckInController::class, 'verify']
+    )->name('gate.manual-search');
 
     Route::post(
         '/gate/events/{event}/confirm',

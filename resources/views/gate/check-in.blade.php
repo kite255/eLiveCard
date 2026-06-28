@@ -711,15 +711,16 @@
         <div class="panel">
             <h2 class="panel-title">Manual Search</h2>
 
-            <div class="search-box">
+            <form id="manualSearchForm" class="search-box" onsubmit="manualVerify(event)">
                 <input
                     type="text"
                     id="manualInput"
-                    placeholder="Serial number, phone, name..."
+                    name="search"
+                    placeholder="Serial, phone, name, short code..."
                     autocomplete="off"
                 >
-                <button type="button" class="btn-orange" onclick="manualVerify()">Search</button>
-            </div>
+                <button type="submit" class="btn-orange">Search</button>
+            </form>
 
             <div id="resultBox" class="result">
                 <div class="result-title" id="resultTitle"></div>
@@ -899,10 +900,10 @@
 
         const remaining = Math.max(Number(invitee.remaining_guests || 0), 0);
         const checkedIn = Number(invitee.checked_in_count || 0);
-        const allowed = Number(invitee.allowed_guests || 1);
+        const gateLimit = Number(invitee.gate_limit || invitee.allowed_guests || 1);
 
         nameEl.innerText = invitee.name || 'Selected invitee';
-        summaryEl.innerText = `Remaining: ${remaining} • Checked in: ${checkedIn}/${allowed}`;
+        summaryEl.innerText = `Remaining: ${remaining} • Checked in: ${checkedIn}/${gateLimit}`;
 
         selectEl.innerHTML = '';
 
@@ -951,7 +952,10 @@
                 <div class="info-row"><span>Phone</span><span>${escapeHtml(invitee.phone)}</span></div>
                 <div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>
                 <div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>
+                <div class="info-row"><span>RSVP</span><span>${escapeHtml(invitee.rsvp_status || 'pending')}</span></div>
                 <div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>
+                <div class="info-row"><span>Confirmed Guests</span><span>${escapeHtml(invitee.confirmed_guests ?? '-')}</span></div>
+                <div class="info-row"><span>Gate Limit</span><span>${escapeHtml(invitee.gate_limit || invitee.allowed_guests)}</span></div>
                 <div class="info-row"><span>Checked In</span><span>${escapeHtml(invitee.checked_in_count)}</span></div>
                 <div class="info-row"><span>Remaining</span><span>${escapeHtml(invitee.remaining_guests)}</span></div>
                 <div class="info-row"><span>Table</span><span>${escapeHtml(invitee.table_number)}</span></div>
@@ -1053,28 +1057,78 @@
         startScanner();
     }
 
-    async function verifyValue(value) {
+    function normalizeSearchValue(value) {
         value = String(value || '').trim();
 
         if (!value) {
-            showResult('error', 'Missing Input', 'Please scan or enter a value.');
+            return '';
+        }
+
+        // QR scanners may return a full URL such as /gate/verify/{token} or /i/{shortCode}.
+        // Keep manual serial/phone/name unchanged, but extract the useful last URL segment when needed.
+        try {
+            if (value.startsWith('http://') || value.startsWith('https://')) {
+                const url = new URL(value);
+                const parts = url.pathname.split('/').filter(Boolean);
+
+                if (parts.length > 0) {
+                    return parts[parts.length - 1];
+                }
+            }
+        } catch (error) {
+            // Ignore URL parsing errors and use the original value.
+        }
+
+        return value;
+    }
+
+    async function readJsonResponse(response) {
+        const contentType = response.headers.get('content-type') || '';
+
+        if (contentType.includes('application/json')) {
+            return await response.json();
+        }
+
+        const text = await response.text();
+
+        return {
+            status: 'error',
+            title: response.ok ? 'Invalid Response' : 'Request Failed',
+            message: response.ok
+                ? 'The server did not return JSON. Please check the gate verify route.'
+                : `Server returned HTTP ${response.status}. Please check route, login session, or controller response.`,
+            debug: text,
+        };
+    }
+
+    async function verifyValue(value, source = 'manual') {
+        value = normalizeSearchValue(value);
+
+        if (!value) {
+            showResult('error', 'Missing Input', 'Please scan or enter a serial number, phone, name, or short code.');
             return;
         }
+
+        showResult('warning', 'Searching...', 'Please wait while we verify this invitee.');
 
         try {
             const response = await fetch(verifyUrl, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
                 body: JSON.stringify({
-                    scanned_value: value
+                    scanned_value: value,
+                    search: value,
+                    source: source,
                 })
             });
 
-            const data = await response.json();
+            const data = await readJsonResponse(response);
 
             showResult(
                 data.status || 'error',
@@ -1092,13 +1146,19 @@
                 });
             }
         } catch (error) {
-            showResult('error', 'Connection Error', 'Could not verify this card. Please try again.');
+            showResult('error', 'Connection Error', 'Could not verify this invitee. Please check your internet connection and try again.');
         }
     }
 
-    function manualVerify() {
-        const value = document.getElementById('manualInput').value.trim();
-        verifyValue(value);
+    function manualVerify(event = null) {
+        if (event) {
+            event.preventDefault();
+        }
+
+        const input = document.getElementById('manualInput');
+        const value = input ? input.value : '';
+
+        verifyValue(value, 'manual');
     }
 
     async function confirmCheckIn() {
@@ -1203,7 +1263,7 @@
                     lastScannedValue = decodedText;
 
                     await stopScanner();
-                    await verifyValue(decodedText);
+                    await verifyValue(decodedText, 'scanner');
                 }
             );
 
@@ -1220,11 +1280,20 @@
         }
     }
 
-    document.getElementById('manualInput').addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') {
-            manualVerify();
-        }
-    });
+    const manualSearchForm = document.getElementById('manualSearchForm');
+    const manualInput = document.getElementById('manualInput');
+
+    if (manualSearchForm) {
+        manualSearchForm.addEventListener('submit', manualVerify);
+    }
+
+    if (manualInput) {
+        manualInput.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+                manualVerify(event);
+            }
+        });
+    }
 </script>
 
 </body>
