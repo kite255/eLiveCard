@@ -272,29 +272,102 @@ class GateCheckInController extends Controller
     private function findInvitee(Event $event, string $searchValue): ?Invitee
     {
         $searchValue = trim($searchValue);
+        $lowerSearchValue = mb_strtolower($searchValue);
         $tokenHash = hash('sha256', $searchValue);
         $normalizedPhone = preg_replace('/\D+/', '', $searchValue);
+
+        $serialLike = '%' . $lowerSearchValue . '%';
+        $nameLike = '%' . $lowerSearchValue . '%';
+        $phoneLike = $normalizedPhone !== ''
+            ? '%' . $normalizedPhone . '%'
+            : '__NO_PHONE_MATCH__';
 
         return Invitee::query()
             ->with('cardType')
             ->where('event_id', $event->id)
-            ->where(function ($query) use ($searchValue, $tokenHash, $normalizedPhone) {
+            ->where(function ($query) use (
+                $searchValue,
+                $tokenHash,
+                $normalizedPhone,
+                $serialLike,
+                $nameLike,
+                $phoneLike
+            ) {
                 $query
+                    /*
+                     |--------------------------------------------------------------------------
+                     | Exact matches
+                     |--------------------------------------------------------------------------
+                     | Best and safest matches. These should always win.
+                     */
                     ->where('serial_number', $searchValue)
                     ->orWhere('short_code', $searchValue)
                     ->orWhere('qr_token', $searchValue)
                     ->orWhere('qr_token_hash', $tokenHash)
                     ->orWhere('phone', $searchValue)
-                    ->orWhere('name', 'like', '%' . $searchValue . '%');
+
+                    /*
+                     |--------------------------------------------------------------------------
+                     | Partial serial search
+                     |--------------------------------------------------------------------------
+                     | Allows gate users to type only the last serial code.
+                     | Example:
+                     | GL2WFB finds ELV-2026-GL2WFB
+                     */
+                    ->orWhereRaw('LOWER(serial_number) LIKE ?', [$serialLike])
+
+                    /*
+                     |--------------------------------------------------------------------------
+                     | Short code fallback
+                     |--------------------------------------------------------------------------
+                     | Allows partial short-code search when the invitee gives only part
+                     | of the private invitee code.
+                     */
+                    ->orWhereRaw('LOWER(short_code) LIKE ?', [$serialLike])
+
+                    /*
+                     |--------------------------------------------------------------------------
+                     | Name fallback
+                     |--------------------------------------------------------------------------
+                     | Name search should be last because names can be duplicated.
+                     */
+                    ->orWhereRaw('LOWER(name) LIKE ?', [$nameLike]);
 
                 if ($normalizedPhone !== '' && $normalizedPhone !== $searchValue) {
                     $query->orWhere('phone', $normalizedPhone);
                 }
 
                 if ($normalizedPhone !== '') {
-                    $query->orWhere('phone', 'like', '%' . $normalizedPhone . '%');
+                    $query->orWhere('phone', 'like', $phoneLike);
                 }
             })
+            ->orderByRaw(
+                "
+                CASE
+                    WHEN serial_number = ? THEN 1
+                    WHEN short_code = ? THEN 2
+                    WHEN qr_token = ? THEN 3
+                    WHEN qr_token_hash = ? THEN 4
+                    WHEN phone = ? THEN 5
+                    WHEN LOWER(serial_number) LIKE ? THEN 6
+                    WHEN LOWER(short_code) LIKE ? THEN 7
+                    WHEN phone LIKE ? THEN 8
+                    WHEN LOWER(name) LIKE ? THEN 9
+                    ELSE 99
+                END
+                ",
+                [
+                    $searchValue,
+                    $searchValue,
+                    $searchValue,
+                    $tokenHash,
+                    $searchValue,
+                    $serialLike,
+                    $serialLike,
+                    $phoneLike,
+                    $nameLike,
+                ]
+            )
             ->first();
     }
 
