@@ -1824,13 +1824,16 @@ class InviteesRelationManager extends RelationManager
             ->where('channel', $channel)
             ->where('type', $type)
             ->where('status', 'active')
+            ->latest('id')
             ->first();
     }
 
     protected function renderMessageTemplate(MessageTemplate $template, Invitee $invitee): string
     {
-        return app(MessageTemplateRenderer::class)
+        $message = app(MessageTemplateRenderer::class)
             ->render($template->content, $invitee);
+
+        return $this->replaceMessagePlaceholders($message, $invitee);
     }
 
     protected function sendInviteeMessageUsingTemplate(
@@ -2069,20 +2072,28 @@ class InviteesRelationManager extends RelationManager
             [
                 '#NAME#',
                 '#EVENT_NAME#',
+                '#EVENT_DATE#',
+                '#EVENT_TIME#',
+                '#EVENT_VENUE#',
                 '#INVITATION_LINK#',
+                '#RSVP_LINK#',
                 '#SERIAL_NUMBER#',
                 '#CARD_TYPE#',
                 '#GUEST_COUNT#',
                 '#TABLE_NUMBER#',
             ],
             [
-                $invitee->name,
-                $event?->name ?? $event?->title ?? 'our event',
+                (string) ($invitee->name ?? 'Mgeni'),
+                (string) ($event?->name ?? $event?->title ?? 'our event'),
+                $this->formatWhatsappEventDate($event),
+                $this->formatWhatsappEventTime($event),
+                (string) ($event?->venue_name ?? $event?->venue ?? '-'),
                 $this->privateInvitationUrl($invitee),
-                $invitee->serial_number ?? '-',
-                $invitee->cardType?->name ?? '-',
+                filled($invitee->rsvp_token) ? route('invitee.rsvp', $invitee->rsvp_token) : '-',
+                (string) ($invitee->serial_number ?? '-'),
+                (string) ($invitee->cardType?->name ?? '-'),
                 (string) ($invitee->allowed_guests ?? 1),
-                $invitee->table_number ?? '-',
+                (string) ($invitee->table_number ?? '-'),
             ],
             $message
         );
@@ -2329,6 +2340,36 @@ class InviteesRelationManager extends RelationManager
         $providerTemplateName = trim((string) ($template?->whatsapp_template_name ?? ''));
 
         if ($providerTemplateName !== '') {
+            $components = [];
+
+            /*
+             * The Meta template `event_invitation` has an image header.
+             * WhatsApp Cloud API requires the header image parameter to be sent
+             * together with the body parameters.
+             */
+            if ($providerTemplateName === 'event_invitation') {
+                $headerImageUrl = $this->whatsappHeaderImageUrl($invitee);
+
+                if (filled($headerImageUrl)) {
+                    $components[] = [
+                        'type' => 'header',
+                        'parameters' => [
+                            [
+                                'type' => 'image',
+                                'image' => [
+                                    'link' => $headerImageUrl,
+                                ],
+                            ],
+                        ],
+                    ];
+                }
+            }
+
+            $components[] = [
+                'type' => 'body',
+                'parameters' => $this->buildWhatsappTemplateBodyParameters($invitee),
+            ];
+
             return [
                 'messaging_product' => 'whatsapp',
                 'recipient_type' => 'individual',
@@ -2337,14 +2378,9 @@ class InviteesRelationManager extends RelationManager
                 'template' => [
                     'name' => $providerTemplateName,
                     'language' => [
-                        'code' => config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'sw')),
+                        'code' => config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'en')),
                     ],
-                    'components' => [
-                        [
-                            'type' => 'body',
-                            'parameters' => $this->buildWhatsappTemplateBodyParameters($invitee),
-                        ],
-                    ],
+                    'components' => $components,
                 ],
             ];
         }
@@ -2365,12 +2401,53 @@ class InviteesRelationManager extends RelationManager
         ];
     }
 
+    protected function whatsappHeaderImageUrl(Invitee $invitee): ?string
+    {
+        $invitee->loadMissing(['latestGeneratedCard', 'event']);
+
+        $cardUrl = $invitee->generated_card_url ?? null;
+
+        if (filled($cardUrl)) {
+            return $cardUrl;
+        }
+
+        $cardPath = $this->generatedCardStoragePath($invitee);
+
+        if (filled($cardPath) && Storage::disk('public')->exists($cardPath)) {
+            return Storage::disk('public')->url($cardPath);
+        }
+
+        $qrPath = $this->normalizePublicStoragePath($invitee->qr_code_path ?: $invitee->qr_code);
+
+        if (filled($qrPath) && Storage::disk('public')->exists($qrPath)) {
+            return Storage::disk('public')->url($qrPath);
+        }
+
+        /*
+         * Fallback image for the Meta template header.
+         * Put a public image here so Meta can fetch it:
+         * public/images/whatsapp-template-header.jpg
+         */
+        return asset('images/whatsapp-template-header.jpg');
+    }
+
     protected function buildWhatsappTemplateBodyParameters(Invitee $invitee): array
     {
         $invitee->loadMissing(['event', 'cardType']);
 
         $event = $invitee->event ?? $this->getOwnerRecord();
 
+        /*
+         * Meta template: event_invitation • English
+         * Body variable order:
+         * {{1}} Invitee name
+         * {{2}} Event name
+         * {{3}} Card type
+         * {{4}} Venue
+         * {{5}} Time
+         *
+         * Keep this list at exactly 5 parameters unless the Meta template is changed.
+         */
         return [
             [
                 'type' => 'text',
@@ -2382,11 +2459,7 @@ class InviteesRelationManager extends RelationManager
             ],
             [
                 'type' => 'text',
-                'text' => $this->formatWhatsappEventDate($event),
-            ],
-            [
-                'type' => 'text',
-                'text' => $this->formatWhatsappEventTime($event),
+                'text' => (string) ($invitee->cardType?->name ?? '-'),
             ],
             [
                 'type' => 'text',
@@ -2394,7 +2467,7 @@ class InviteesRelationManager extends RelationManager
             ],
             [
                 'type' => 'text',
-                'text' => $this->privateInvitationUrl($invitee),
+                'text' => $this->formatWhatsappEventTime($event),
             ],
         ];
     }
