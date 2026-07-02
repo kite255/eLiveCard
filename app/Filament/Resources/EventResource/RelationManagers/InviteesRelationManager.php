@@ -1703,7 +1703,17 @@ class InviteesRelationManager extends RelationManager
             ->where('short_code', '!=', '');
 
         match ($recipientScope) {
-            'not_sent' => $query->where(function ($query): void {
+            'not_sent' => $query->where(function ($query) use ($channel): void {
+                if ($channel === 'whatsapp') {
+                    $query
+                        ->whereNull('whatsapp_status')
+                        ->orWhere('whatsapp_status', '')
+                        ->orWhere('whatsapp_status', 'not_sent')
+                        ->orWhereNull('whatsapp_sent_at');
+
+                    return;
+                }
+
                 $query
                     ->whereNull('message_status')
                     ->orWhere('message_status', '')
@@ -1758,6 +1768,7 @@ class InviteesRelationManager extends RelationManager
         $sent = 0;
         $skipped = 0;
         $failed = 0;
+        $failedExamples = [];
 
         foreach ($invitees as $invitee) {
             if (! $invitee instanceof Invitee) {
@@ -1786,11 +1797,21 @@ class InviteesRelationManager extends RelationManager
             }
 
             $failed++;
+
+            if (count($failedExamples) < 3) {
+                $failedExamples[] = ($invitee->name ?: 'Invitee #' . $invitee->id) . ': ' . ($result['body'] ?? 'Failed');
+            }
+        }
+
+        $body = "Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.";
+
+        if (! empty($failedExamples)) {
+            $body .= "\n\nFirst errors:\n" . implode("\n", $failedExamples);
         }
 
         Notification::make()
             ->title($actionTitle)
-            ->body("Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
+            ->body($body)
             ->color($failed > 0 ? 'warning' : 'success')
             ->persistent()
             ->send();
@@ -1846,7 +1867,12 @@ class InviteesRelationManager extends RelationManager
             return $this->sendSmsUsingTemplate($invitee, $templateType, $message);
         }
 
-        return $this->recordWhatsappUsingTemplate($invitee, $template, $message);
+        return $this->recordWhatsappUsingTemplate(
+            invitee: $invitee,
+            template: $template,
+            message: $message,
+            templateType: $templateType,
+        );
     }
 
     protected function sendSmsUsingTemplate(Invitee $invitee, string $templateType, string $message): array
@@ -1874,8 +1900,12 @@ class InviteesRelationManager extends RelationManager
         }
     }
 
-    protected function recordWhatsappUsingTemplate(Invitee $invitee, MessageTemplate $template, string $message): array
-    {
+    protected function recordWhatsappUsingTemplate(
+        Invitee $invitee,
+        MessageTemplate $template,
+        string $message,
+        string $templateType = 'invitation',
+    ): array {
         $invitee->loadMissing(['latestGeneratedCard', 'cardType', 'event']);
 
         if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
@@ -1905,7 +1935,12 @@ class InviteesRelationManager extends RelationManager
             ];
         }
 
-        return $this->sendWhatsappCloudMessage($invitee, $message, $template);
+        return $this->sendWhatsappCloudMessage(
+            invitee: $invitee,
+            message: $message,
+            template: $template,
+            templateType: $templateType,
+        );
     }
 
 
@@ -2053,8 +2088,12 @@ class InviteesRelationManager extends RelationManager
         );
     }
 
-    protected function recordCardMessageAsSent(Invitee $invitee, string $channel, string $message, bool $notifySkipped = true): array
-    {
+    protected function recordCardMessageAsSent(
+        Invitee $invitee,
+        string $channel,
+        string $message,
+        bool $notifySkipped = true,
+    ): array {
         $invitee->loadMissing(['latestGeneratedCard', 'cardType', 'event']);
 
         if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
@@ -2088,13 +2127,19 @@ class InviteesRelationManager extends RelationManager
             return $this->sendCardLinkBySms($invitee, $message);
         }
 
-        return $this->sendWhatsappCloudMessage($invitee, $message);
+        return $this->sendWhatsappCloudMessage(
+            invitee: $invitee,
+            message: $message,
+            template: null,
+            templateType: 'invitation',
+        );
     }
 
     protected function sendWhatsappCloudMessage(
         Invitee $invitee,
         string $message,
         ?MessageTemplate $template = null,
+        string $templateType = 'invitation',
     ): array {
         $accessToken = config('services.whatsapp.access_token') ?: env('WHATSAPP_ACCESS_TOKEN');
         $phoneNumberId = config('services.whatsapp.phone_number_id') ?: env('WHATSAPP_PHONE_NUMBER_ID');
@@ -2119,11 +2164,31 @@ class InviteesRelationManager extends RelationManager
             ];
         }
 
+        $providerTemplateName = trim((string) ($template?->whatsapp_template_name ?? ''));
+
+        /*
+         * For real WhatsApp invitations, approved Meta templates are recommended.
+         * If this message came from a saved WhatsApp template and no provider
+         * template name is configured, stop instead of silently sending text.
+         */
+        if (blank($providerTemplateName) && $template instanceof MessageTemplate) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'WhatsApp template missing',
+                'body' => 'This WhatsApp message template has no approved provider template name. Add the exact Meta template name in the Message Templates tab.',
+            ];
+        }
+
+        $messageType = $this->messageLogTypeFromTemplateType($templateType);
+
         $logId = $this->createMessageLog(
             invitee: $invitee,
             channel: 'whatsapp',
             message: $message,
             status: 'sending',
+            errorMessage: null,
+            messageType: $messageType,
         );
 
         $this->safeUpdateInvitee($invitee, [
@@ -2134,41 +2199,50 @@ class InviteesRelationManager extends RelationManager
         ]);
 
         try {
+            $payload = $this->buildWhatsappCloudPayload(
+                invitee: $invitee,
+                phone: $phone,
+                message: $message,
+                template: $template,
+            );
+
             $response = Http::withToken($accessToken)
                 ->acceptJson()
+                ->asJson()
                 ->timeout(30)
-                ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", [
-                    'messaging_product' => 'whatsapp',
-                    'to' => $phone,
-                    'type' => 'text',
-                    'text' => [
-                        'preview_url' => true,
-                        'body' => $message,
-                    ],
-                ]);
+                ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", $payload);
 
             $responseData = $response->json();
-            $providerMessageId = $responseData['messages'][0]['id'] ?? null;
+
+            if (! is_array($responseData)) {
+                $responseData = [
+                    'body' => $response->body(),
+                ];
+            }
+
+            $providerMessageId = data_get($responseData, 'messages.0.id');
 
             if (! $response->successful() || blank($providerMessageId)) {
-                $errorMessage = $responseData['error']['message']
-                    ?? $response->body()
-                    ?? 'WhatsApp API request failed.';
+                $errorMessage = data_get($responseData, 'error.message')
+                    ?: $response->body()
+                    ?: 'WhatsApp API request failed.';
 
                 $this->updateMessageLogAfterWhatsappSend(
                     logId: $logId,
                     status: 'failed',
                     providerMessageId: null,
-                    responseData: $responseData ?: ['body' => $response->body()],
+                    responseData: [
+                        'request_payload' => $payload,
+                        'response' => $responseData,
+                        'http_status' => $response->status(),
+                    ],
                     errorMessage: $errorMessage,
                 );
 
                 $this->safeUpdateInvitee($invitee, [
                     'message_status' => 'failed',
-
                     'whatsapp_status' => 'failed',
                     'whatsapp_failed_at' => now(),
-
                     'last_message_channel' => 'whatsapp',
                     'last_message_body' => $message,
                 ]);
@@ -2183,7 +2257,7 @@ class InviteesRelationManager extends RelationManager
 
             $now = now();
 
-            DB::transaction(function () use ($invitee, $message, $now, $logId, $providerMessageId, $responseData): void {
+            DB::transaction(function () use ($invitee, $message, $now, $logId, $providerMessageId, $responseData, $payload): void {
                 $this->safeUpdateInvitee($invitee, [
                     'message_status' => 'sent',
                     'sent_at' => $now,
@@ -2203,7 +2277,11 @@ class InviteesRelationManager extends RelationManager
                     logId: $logId,
                     status: 'sent',
                     providerMessageId: $providerMessageId,
-                    responseData: $responseData,
+                    responseData: [
+                        'request_payload' => $payload,
+                        'response' => $responseData,
+                        'http_status' => $response->status(),
+                    ],
                     errorMessage: null,
                 );
             });
@@ -2219,12 +2297,16 @@ class InviteesRelationManager extends RelationManager
                 logId: $logId,
                 status: 'failed',
                 providerMessageId: null,
-                responseData: ['exception' => $e->getMessage()],
+                responseData: [
+                    'exception' => $e->getMessage(),
+                ],
                 errorMessage: $e->getMessage(),
             );
 
             $this->safeUpdateInvitee($invitee, [
                 'message_status' => 'failed',
+                'whatsapp_status' => 'failed',
+                'whatsapp_failed_at' => now(),
                 'last_message_channel' => 'whatsapp',
                 'last_message_body' => $message,
             ]);
@@ -2237,6 +2319,135 @@ class InviteesRelationManager extends RelationManager
             ];
         }
     }
+
+    protected function buildWhatsappCloudPayload(
+        Invitee $invitee,
+        string $phone,
+        string $message,
+        ?MessageTemplate $template = null,
+    ): array {
+        $providerTemplateName = trim((string) ($template?->whatsapp_template_name ?? ''));
+
+        if ($providerTemplateName !== '') {
+            return [
+                'messaging_product' => 'whatsapp',
+                'recipient_type' => 'individual',
+                'to' => $phone,
+                'type' => 'template',
+                'template' => [
+                    'name' => $providerTemplateName,
+                    'language' => [
+                        'code' => config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'sw')),
+                    ],
+                    'components' => [
+                        [
+                            'type' => 'body',
+                            'parameters' => $this->buildWhatsappTemplateBodyParameters($invitee),
+                        ],
+                    ],
+                ],
+            ];
+        }
+
+        /*
+         * Fallback for manual WhatsApp text messages only.
+         * Invitation/reminder templates should normally have whatsapp_template_name.
+         */
+        return [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $phone,
+            'type' => 'text',
+            'text' => [
+                'preview_url' => true,
+                'body' => $message,
+            ],
+        ];
+    }
+
+    protected function buildWhatsappTemplateBodyParameters(Invitee $invitee): array
+    {
+        $invitee->loadMissing(['event', 'cardType']);
+
+        $event = $invitee->event ?? $this->getOwnerRecord();
+
+        return [
+            [
+                'type' => 'text',
+                'text' => (string) ($invitee->name ?? 'Mgeni'),
+            ],
+            [
+                'type' => 'text',
+                'text' => (string) ($event?->name ?? $event?->title ?? 'Tukio'),
+            ],
+            [
+                'type' => 'text',
+                'text' => $this->formatWhatsappEventDate($event),
+            ],
+            [
+                'type' => 'text',
+                'text' => $this->formatWhatsappEventTime($event),
+            ],
+            [
+                'type' => 'text',
+                'text' => (string) ($event?->venue_name ?? $event?->venue ?? '-'),
+            ],
+            [
+                'type' => 'text',
+                'text' => $this->privateInvitationUrl($invitee),
+            ],
+        ];
+    }
+
+    protected function formatWhatsappEventDate($event): string
+    {
+        $date = $event?->event_date
+            ?? $event?->date
+            ?? $event?->starts_at
+            ?? null;
+
+        if (blank($date)) {
+            return '-';
+        }
+
+        try {
+            return \Carbon\Carbon::parse($date)->format('d M Y');
+        } catch (Throwable) {
+            return (string) $date;
+        }
+    }
+
+    protected function formatWhatsappEventTime($event): string
+    {
+        $time = $event?->start_time
+            ?? $event?->time
+            ?? $event?->starts_at
+            ?? null;
+
+        if (blank($time)) {
+            return '-';
+        }
+
+        try {
+            return \Carbon\Carbon::parse($time)->format('h:i A');
+        } catch (Throwable) {
+            return (string) $time;
+        }
+    }
+
+    protected function messageLogTypeFromTemplateType(string $templateType): string
+    {
+        return match ($templateType) {
+            'rsvp_pending_reminder' => 'rsvp_pending_reminder',
+            'attending_reminder' => 'attending_reminder',
+            'event_day_reminder' => 'event_day_reminder',
+            'welcome_checkin' => 'welcome_checkin',
+            'thank_you' => 'thank_you',
+            'custom' => 'custom',
+            default => 'invitation_card',
+        };
+    }
+
 
     protected function updateMessageLogAfterWhatsappSend(
         ?int $logId,
@@ -2360,6 +2571,7 @@ class InviteesRelationManager extends RelationManager
         string $message,
         string $status,
         ?string $errorMessage = null,
+        string $messageType = 'invitation_card',
     ): ?int {
         if (! Schema::hasTable('message_logs')) {
             return null;
@@ -2375,13 +2587,14 @@ class InviteesRelationManager extends RelationManager
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
             'channel' => $channel,
-            'type' => 'invitation_card',
+            'type' => $messageType,
             'recipient' => $this->normalizePhone($invitee->phone) ?: $invitee->phone,
             'phone' => $this->normalizePhone($invitee->phone) ?: $invitee->phone,
             'message' => $message,
             'body' => $message,
             'status' => $status,
             'provider_message_id' => null,
+            'provider' => $channel === 'whatsapp' ? 'WhatsApp Cloud API' : null,
             'error_message' => $errorMessage,
             'error' => $errorMessage,
             'sent_by' => Auth::id(),
@@ -2396,7 +2609,7 @@ class InviteesRelationManager extends RelationManager
             ->toArray();
 
         if (Schema::hasColumn('message_logs', 'type') && blank($insertable['type'] ?? null)) {
-            $insertable['type'] = 'invitation_card';
+            $insertable['type'] = $messageType;
         }
 
         if (Schema::hasColumn('message_logs', 'channel') && blank($insertable['channel'] ?? null)) {

@@ -1025,8 +1025,36 @@ class Invitee extends Model
 
     public function getLastMessageStatusLabelAttribute(): string
     {
-        return self::communicationStatuses()[$this->last_message_status]
-            ?? ucfirst(str_replace('_', ' ', (string) $this->last_message_status));
+        $status = match ($this->last_message_channel) {
+            self::CHANNEL_WHATSAPP, 'whatsapp' => $this->whatsapp_status
+                ?: $this->last_message_status
+                ?: $this->message_status,
+            self::CHANNEL_SMS, 'sms' => $this->sms_status
+                ?: $this->last_message_status
+                ?: $this->message_status,
+            default => $this->last_message_status
+                ?: $this->message_status
+                ?: $this->whatsapp_status
+                ?: $this->sms_status,
+        };
+
+        if (blank($status)) {
+            return 'Not Sent';
+        }
+
+        return match ($status) {
+            self::MESSAGE_STATUS_NOT_SENT, self::SMS_STATUS_NOT_SENT, 'not_sent' => 'Not Sent',
+            self::MESSAGE_STATUS_QUEUED, 'queued' => 'Queued',
+            self::MESSAGE_STATUS_SENT, self::SMS_STATUS_SENT, 'sent' => 'Sent',
+            self::MESSAGE_STATUS_DELIVERED, self::SMS_STATUS_DELIVERED, 'delivered' => 'Delivered',
+            self::MESSAGE_STATUS_READ, 'read' => 'Read',
+            self::MESSAGE_STATUS_FAILED, self::SMS_STATUS_FAILED, 'failed' => 'Failed',
+            self::MESSAGE_STATUS_REPLIED, 'replied' => 'Replied',
+            'sending' => 'Sending',
+            'pending' => 'Pending',
+            'opened' => 'Opened',
+            default => ucfirst(str_replace('_', ' ', (string) $status)),
+        };
     }
 
     public function getLastMessageChannelLabelAttribute(): string
