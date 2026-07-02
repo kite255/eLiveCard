@@ -321,6 +321,51 @@ class InviteesRelationManager extends RelationManager
                     })
                     ->toggleable(),
 
+                Tables\Columns\TextColumn::make('whatsapp_status')
+                    ->label('WhatsApp')
+                    ->badge()
+                    ->default('not_sent')
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'not_sent', null, '' => 'Not Sent',
+                        'sending' => 'Sending',
+                        'sent' => 'Sent',
+                        'delivered' => 'Delivered',
+                        'read' => 'Read',
+                        'failed' => 'Failed',
+                        default => ucfirst(str_replace('_', ' ', (string) $state)),
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'sent', 'delivered', 'read' => 'success',
+                        'sending' => 'warning',
+                        'failed' => 'danger',
+                        default => 'gray',
+                    })
+                    ->sortable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('last_message_channel')
+                    ->label('Last Channel')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'sms' => 'SMS',
+                        'whatsapp' => 'WhatsApp',
+                        null, '' => '-',
+                        default => ucfirst((string) $state),
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'sms' => 'info',
+                        'whatsapp' => 'success',
+                        default => 'gray',
+                    })
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('whatsapp_sent_at')
+                    ->label('WhatsApp Sent At')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('sent_at')
                     ->label('Sent At')
                     ->dateTime('d M Y H:i')
@@ -383,6 +428,17 @@ class InviteesRelationManager extends RelationManager
 
                         return $query->whereHas('latestGeneratedCard', fn ($query) => $query->where('status', $value));
                     }),
+
+                Tables\Filters\SelectFilter::make('whatsapp_status')
+                    ->label('WhatsApp Status')
+                    ->options([
+                        'not_sent' => 'Not Sent',
+                        'sending' => 'Sending',
+                        'sent' => 'Sent',
+                        'delivered' => 'Delivered',
+                        'read' => 'Read',
+                        'failed' => 'Failed',
+                    ]),
 
                 Tables\Filters\Filter::make('checked_in')
                     ->label('Checked In')
@@ -2070,6 +2126,13 @@ class InviteesRelationManager extends RelationManager
             status: 'sending',
         );
 
+        $this->safeUpdateInvitee($invitee, [
+            'message_status' => 'sending',
+            'whatsapp_status' => 'sending',
+            'last_message_channel' => 'whatsapp',
+            'last_message_body' => $message,
+        ]);
+
         try {
             $response = Http::withToken($accessToken)
                 ->acceptJson()
@@ -2102,6 +2165,10 @@ class InviteesRelationManager extends RelationManager
 
                 $this->safeUpdateInvitee($invitee, [
                     'message_status' => 'failed',
+
+                    'whatsapp_status' => 'failed',
+                    'whatsapp_failed_at' => now(),
+
                     'last_message_channel' => 'whatsapp',
                     'last_message_body' => $message,
                 ]);
@@ -2120,6 +2187,12 @@ class InviteesRelationManager extends RelationManager
                 $this->safeUpdateInvitee($invitee, [
                     'message_status' => 'sent',
                     'sent_at' => $now,
+
+                    'whatsapp_status' => 'sent',
+                    'whatsapp_message_id' => $providerMessageId,
+                    'whatsapp_sent_at' => $now,
+                    'whatsapp_failed_at' => null,
+
                     'last_message_channel' => 'whatsapp',
                     'last_message_body' => $message,
                 ]);

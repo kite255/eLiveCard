@@ -199,8 +199,24 @@
                 || $invitee->last_message_channel === 'whatsapp';
         };
 
+        /*
+            RSVP summary rule:
+            - Attending: invitees who confirmed attendance.
+            - Not Attending: invitees who declined / will not attend.
+            - Pending: invitees without final RSVP response.
+            - Response Rate: final responses / total invitees.
+        */
+        $totalInvitees = $stats['total']
+            ?? $invitees->count();
+
+        $notAttendingCount = $stats['not_attending']
+            ?? $stats['declined']
+            ?? $invitees->whereIn('rsvp_status', ['not_attending', 'declined'])->count();
+
+        $finalResponses = ($stats['attending'] ?? 0) + $notAttendingCount;
+
         $responseRate = ($stats['total'] ?? 0) > 0
-            ? round((($stats['attending'] ?? 0) + ($stats['replied'] ?? 0)) / max(($stats['total'] ?? 1), 1) * 100)
+            ? round($finalResponses / max(($stats['total'] ?? 1), 1) * 100)
             : 0;
     @endphp
 
@@ -274,13 +290,19 @@
 
         .elive-summary-grid {
             display: grid;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
+            grid-template-columns: repeat(8, minmax(0, 1fr));
             gap: 10px;
             padding: 14px 16px 12px;
             background: #FFFFFF;
         }
 
-        @media (max-width: 1024px) {
+        @media (max-width: 1180px) {
+            .elive-summary-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 900px) {
             .elive-summary-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -1155,15 +1177,28 @@
             {{-- Summary --}}
             <div class="elive-summary-grid">
                 <div class="elive-summary-card">
+                    <div class="elive-summary-icon" style="background:#EEF2FF;color:#213B73;">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                            <circle cx="9" cy="7" r="4" />
+                            <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="elive-summary-value" style="color:#213B73;">{{ $totalInvitees }}</div>
+                        <div class="elive-summary-label">Total Invitees</div>
+                    </div>
+                </div>
+
+                <div class="elive-summary-card">
                     <div class="elive-summary-icon" style="background:#DCFCE7;color:#15803D;">
                         <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M20 6 9 17l-5-5" />
                         </svg>
                     </div>
                     <div>
-                        <div class="elive-summary-value" style="color:#15803D;">
-                            {{ $stats['attending'] ?? 0 }}
-                        </div>
+                        <div class="elive-summary-value" style="color:#15803D;">{{ $stats['attending'] ?? 0 }}</div>
                         <div class="elive-summary-label">Attending</div>
                     </div>
                 </div>
@@ -1176,10 +1211,8 @@
                         </svg>
                     </div>
                     <div>
-                        <div class="elive-summary-value" style="color:#B91C1C;">
-                            {{ $stats['failed'] ?? 0 }}
-                        </div>
-                        <div class="elive-summary-label">Failed / Declined</div>
+                        <div class="elive-summary-value" style="color:#B91C1C;">{{ $notAttendingCount }}</div>
+                        <div class="elive-summary-label">Not Attending</div>
                     </div>
                 </div>
 
@@ -1192,10 +1225,8 @@
                         </svg>
                     </div>
                     <div>
-                        <div class="elive-summary-value" style="color:#FD9618;">
-                            {{ $stats['pending'] ?? 0 }}
-                        </div>
-                        <div class="elive-summary-label">Pending</div>
+                        <div class="elive-summary-value" style="color:#FD9618;">{{ $stats['pending'] ?? 0 }}</div>
+                        <div class="elive-summary-label">Pending RSVP</div>
                     </div>
                 </div>
 
@@ -1207,10 +1238,8 @@
                         </svg>
                     </div>
                     <div>
-                        <div class="elive-summary-value" style="color:#213B73;">
-                            {{ $stats['opened'] ?? 0 }}
-                        </div>
-                        <div class="elive-summary-label">Opened</div>
+                        <div class="elive-summary-value" style="color:#213B73;">{{ $stats['opened'] ?? 0 }}</div>
+                        <div class="elive-summary-label">Opened Invitation</div>
                     </div>
                 </div>
 
@@ -1224,10 +1253,22 @@
                         </svg>
                     </div>
                     <div>
-                        <div class="elive-summary-value" style="color:#64748B;">
-                            {{ $stats['not_opened'] ?? 0 }}
-                        </div>
+                        <div class="elive-summary-value" style="color:#64748B;">{{ $stats['not_opened'] ?? 0 }}</div>
                         <div class="elive-summary-label">Not Opened</div>
+                    </div>
+                </div>
+
+                <div class="elive-summary-card">
+                    <div class="elive-summary-icon" style="background:#FFE4E6;color:#BE123C;">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 9v4" />
+                            <path d="M12 17h.01" />
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="elive-summary-value" style="color:#BE123C;">{{ $stats['failed'] ?? 0 }}</div>
+                        <div class="elive-summary-label">Failed Delivery</div>
                     </div>
                 </div>
 
@@ -1239,9 +1280,7 @@
                         </svg>
                     </div>
                     <div>
-                        <div class="elive-summary-value" style="color:#213B73;">
-                            {{ $responseRate }}%
-                        </div>
+                        <div class="elive-summary-value" style="color:#213B73;">{{ $responseRate }}%</div>
                         <div class="elive-summary-label">Response Rate</div>
                     </div>
                 </div>
@@ -1255,7 +1294,7 @@
                         type="text"
                         wire:model.live.debounce.500ms="search"
                         class="elive-input"
-                        placeholder="Search by name, phone, or serial number..."
+                        placeholder="Search by name, phone, serial number, or short code..."
                     >
                 </div>
 
@@ -1270,7 +1309,7 @@
                         <option value="delivered">Delivered</option>
                         <option value="read">Read / WhatsApp</option>
                         <option value="replied">Replied / WhatsApp</option>
-                        <option value="failed">Failed</option>
+                        <option value="failed">Failed Delivery</option>
                         <option value="undelivered">Undelivered / SMS</option>
                         <option value="expired">Expired / SMS</option>
                         <option value="rejected">Rejected / SMS</option>
