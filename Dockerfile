@@ -14,8 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
-    imagemagick \
-    libmagickwand-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j1 \
         pdo \
@@ -25,8 +23,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gd \
         exif \
         bcmath \
-    && pecl install imagick \
-    && docker-php-ext-enable imagick \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
@@ -41,7 +37,7 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY . .
 
 RUN composer config --global github-protocols https \
-    && composer install --no-dev --no-interaction --prefer-source --optimize-autoloader \
+    && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader \
     && composer clear-cache
 
 RUN if [ -f package.json ]; then \
