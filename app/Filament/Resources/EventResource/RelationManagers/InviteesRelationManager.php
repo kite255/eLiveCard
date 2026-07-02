@@ -2268,7 +2268,7 @@ class InviteesRelationManager extends RelationManager
 
             $now = now();
 
-            DB::transaction(function () use ($invitee, $message, $now, $logId, $providerMessageId, $responseData, $payload): void {
+            DB::transaction(function () use ($invitee, $message, $now, $logId, $providerMessageId, $responseData, $payload, $response): void {
                 $this->safeUpdateInvitee($invitee, [
                     'message_status' => 'sent',
                     'sent_at' => $now,
