@@ -11226,7 +11226,6 @@
     "platform": {
         "php": "^8.2",
         "ext-gd": "*",
-        "ext-imagick": "*",
         "ext-pdo": "*",
         "ext-zip": "*"
     },
