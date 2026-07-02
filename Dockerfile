@@ -2,11 +2,12 @@
 
 WORKDIR /var/www/html
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
     curl \
     zip \
+    ca-certificates \
     libpq-dev \
     libzip-dev \
     libicu-dev \
@@ -16,7 +17,7 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     libmagickwand-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) \
+    && docker-php-ext-install -j1 \
         pdo \
         pdo_pgsql \
         zip \
@@ -27,9 +28,9 @@ RUN apt-get update && apt-get install -y \
     && pecl install imagick \
     && docker-php-ext-enable imagick \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
+    && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/pear ~/.pearrc
 
 RUN a2enmod rewrite headers \
     && sed -ri -e 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/*.conf \
@@ -40,11 +41,13 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY . .
 
 RUN composer config --global github-protocols https \
-    && composer install --no-dev --no-interaction --prefer-source --optimize-autoloader
+    && composer install --no-dev --no-interaction --prefer-source --optimize-autoloader \
+    && composer clear-cache
 
 RUN if [ -f package.json ]; then \
         if [ -f package-lock.json ]; then npm ci; else npm install; fi; \
         npm run build; \
+        npm cache clean --force; \
     fi
 
 RUN mkdir -p \
