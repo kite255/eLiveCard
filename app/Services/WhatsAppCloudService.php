@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invitee;
+use App\Models\SmsLog;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -36,6 +37,8 @@ class WhatsAppCloudService
             urlButtonParameters: $urlButtonParameters,
             quickReplyButtonPayloads: $quickReplyButtonPayloads,
             header: $header,
+            invitee: $invitee,
+            smsType: 'whatsapp_invitation_card',
         );
     }
 
@@ -47,6 +50,8 @@ class WhatsAppCloudService
         array $urlButtonParameters = [],
         array $quickReplyButtonPayloads = [],
         ?array $header = null,
+        ?Invitee $invitee = null,
+        string $smsType = 'whatsapp_template',
     ): array {
         $this->ensureEnabled();
 
@@ -84,13 +89,23 @@ class WhatsAppCloudService
             $payload['template']['components'] = $components;
         }
 
-        return $this->sendPayload($payload);
+        return $this->sendPayload(
+            payload: $payload,
+            invitee: $invitee,
+            smsType: $smsType,
+            message: $this->buildTemplateLogMessage(
+                templateName: $templateName,
+                bodyParameters: $bodyParameters,
+            ),
+        );
     }
 
     public function sendText(
         string $phone,
         string $message,
         bool $previewUrl = false,
+        ?Invitee $invitee = null,
+        string $smsType = 'whatsapp_text',
     ): array {
         $this->ensureEnabled();
 
@@ -104,16 +119,21 @@ class WhatsAppCloudService
             throw new RuntimeException('WhatsApp message cannot be empty.');
         }
 
-        return $this->sendPayload([
-            'messaging_product' => 'whatsapp',
-            'recipient_type' => 'individual',
-            'to' => $normalizedPhone,
-            'type' => 'text',
-            'text' => [
-                'preview_url' => $previewUrl,
-                'body' => $message,
+        return $this->sendPayload(
+            payload: [
+                'messaging_product' => 'whatsapp',
+                'recipient_type' => 'individual',
+                'to' => $normalizedPhone,
+                'type' => 'text',
+                'text' => [
+                    'preview_url' => $previewUrl,
+                    'body' => $message,
+                ],
             ],
-        ]);
+            invitee: $invitee,
+            smsType: $smsType,
+            message: $message,
+        );
     }
 
     protected function buildTemplateComponents(
@@ -221,8 +241,12 @@ class WhatsAppCloudService
         return $value;
     }
 
-    protected function sendPayload(array $payload): array
-    {
+    protected function sendPayload(
+        array $payload,
+        ?Invitee $invitee = null,
+        string $smsType = 'whatsapp_message',
+        ?string $message = null,
+    ): array {
         $driver = (string) config('services.whatsapp.driver', 'log');
 
         if ($driver === 'log') {
@@ -230,7 +254,7 @@ class WhatsAppCloudService
                 'payload' => $payload,
             ]);
 
-            return [
+            $result = [
                 'successful' => true,
                 'driver' => 'log',
                 'status' => 200,
@@ -240,6 +264,26 @@ class WhatsAppCloudService
                 ],
                 'payload' => $payload,
             ];
+
+            $this->storeSmsLog(
+                invitee: $invitee,
+                phone: (string) ($payload['to'] ?? ''),
+                smsType: $smsType,
+                message: $message,
+                status: 'sent',
+                providerMessageId: $result['message_id'],
+                providerStatus: 'sent',
+                providerResponse: [
+                    'success' => true,
+                    'driver' => 'log',
+                    'provider' => 'WhatsApp Cloud API',
+                    'message' => 'WhatsApp logged only. Set WHATSAPP_DRIVER=cloud_api to send real WhatsApp.',
+                    'payload' => $payload,
+                    'response' => $result['response'],
+                ],
+            );
+
+            return $result;
         }
 
         if ($driver !== 'cloud_api') {
@@ -282,6 +326,24 @@ class WhatsAppCloudService
                     'response' => $responseData,
                 ]);
 
+                $this->storeSmsLog(
+                    invitee: $invitee,
+                    phone: (string) ($payload['to'] ?? ''),
+                    smsType: $smsType,
+                    message: $message,
+                    status: 'failed',
+                    providerMessageId: null,
+                    providerStatus: 'failed',
+                    providerResponse: [
+                        'success' => false,
+                        'driver' => 'cloud_api',
+                        'provider' => 'WhatsApp Cloud API',
+                        'http_status' => $response->status(),
+                        'payload' => $payload,
+                        'response' => $responseData,
+                    ],
+                );
+
                 throw new RuntimeException(
                     $this->extractErrorMessage(
                         response: $responseData,
@@ -301,6 +363,25 @@ class WhatsAppCloudService
                 'template' => data_get($payload, 'template.name'),
             ]);
 
+            $this->storeSmsLog(
+                invitee: $invitee,
+                phone: (string) ($payload['to'] ?? ''),
+                smsType: $smsType,
+                message: $message,
+                status: $messageId ? 'sent' : 'failed',
+                providerMessageId: $messageId,
+                providerStatus: $messageId ? 'sent' : 'failed',
+                providerResponse: [
+                    'success' => (bool) $messageId,
+                    'driver' => 'cloud_api',
+                    'provider' => 'WhatsApp Cloud API',
+                    'http_status' => $response->status(),
+                    'message_id' => $messageId,
+                    'payload' => $payload,
+                    'response' => $responseData,
+                ],
+            );
+
             return [
                 'successful' => true,
                 'driver' => 'cloud_api',
@@ -314,6 +395,23 @@ class WhatsAppCloudService
                 'message' => $exception->getMessage(),
             ]);
 
+            $this->storeSmsLog(
+                invitee: $invitee,
+                phone: (string) ($payload['to'] ?? ''),
+                smsType: $smsType,
+                message: $message,
+                status: 'failed',
+                providerMessageId: null,
+                providerStatus: 'connection_failed',
+                providerResponse: [
+                    'success' => false,
+                    'driver' => 'cloud_api',
+                    'provider' => 'WhatsApp Cloud API',
+                    'error' => $exception->getMessage(),
+                    'payload' => $payload,
+                ],
+            );
+
             throw new RuntimeException(
                 'Could not connect to WhatsApp Cloud API.',
                 previous: $exception
@@ -322,6 +420,23 @@ class WhatsAppCloudService
             Log::error('WhatsApp Cloud API HTTP request failed.', [
                 'message' => $exception->getMessage(),
             ]);
+
+            $this->storeSmsLog(
+                invitee: $invitee,
+                phone: (string) ($payload['to'] ?? ''),
+                smsType: $smsType,
+                message: $message,
+                status: 'failed',
+                providerMessageId: null,
+                providerStatus: 'request_failed',
+                providerResponse: [
+                    'success' => false,
+                    'driver' => 'cloud_api',
+                    'provider' => 'WhatsApp Cloud API',
+                    'error' => $exception->getMessage(),
+                    'payload' => $payload,
+                ],
+            );
 
             throw new RuntimeException(
                 'WhatsApp Cloud API request failed.',
@@ -336,11 +451,71 @@ class WhatsAppCloudService
                 'message' => $exception->getMessage(),
             ]);
 
+            $this->storeSmsLog(
+                invitee: $invitee,
+                phone: (string) ($payload['to'] ?? ''),
+                smsType: $smsType,
+                message: $message,
+                status: 'failed',
+                providerMessageId: null,
+                providerStatus: 'unexpected_error',
+                providerResponse: [
+                    'success' => false,
+                    'driver' => 'cloud_api',
+                    'provider' => 'WhatsApp Cloud API',
+                    'error' => $exception->getMessage(),
+                    'payload' => $payload,
+                ],
+            );
+
             throw new RuntimeException(
                 'Unexpected WhatsApp Cloud API error.',
                 previous: $exception
             );
         }
+    }
+
+    protected function storeSmsLog(
+        ?Invitee $invitee,
+        string $phone,
+        string $smsType,
+        ?string $message,
+        string $status,
+        ?string $providerMessageId,
+        ?string $providerStatus,
+        array $providerResponse,
+    ): void {
+        try {
+            SmsLog::create([
+                'event_id' => $invitee?->event_id,
+                'invitee_id' => $invitee?->id,
+                'phone' => $phone,
+                'sms_type' => $smsType,
+                'message' => $message,
+                'status' => $status,
+                'provider_message_id' => $providerMessageId,
+                'provider_status' => $providerStatus,
+                'provider_response' => json_encode($providerResponse),
+            ]);
+        } catch (Throwable $exception) {
+            Log::error('Failed to store WhatsApp message in sms_logs.', [
+                'message' => $exception->getMessage(),
+                'phone' => $phone,
+                'sms_type' => $smsType,
+                'provider_message_id' => $providerMessageId,
+            ]);
+        }
+    }
+
+    protected function buildTemplateLogMessage(
+        string $templateName,
+        array $bodyParameters,
+    ): string {
+        return trim(sprintf(
+            'WhatsApp template: %s | Parameters: %s',
+            $templateName,
+            json_encode(array_values($bodyParameters))
+        ));
     }
 
     protected function httpClient(): PendingRequest
