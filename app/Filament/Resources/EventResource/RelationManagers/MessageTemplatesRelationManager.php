@@ -26,6 +26,8 @@ class MessageTemplatesRelationManager extends RelationManager
     private const TYPE_WELCOME_CHECKIN = 'welcome_checkin';
     private const TYPE_THANK_YOU = 'thank_you';
 
+    private const WHATSAPP_LANGUAGE_CODE = 'en';
+
     private const PLACEHOLDERS = [
         '#NAME#',
         '#PHONE#',
@@ -242,7 +244,7 @@ class MessageTemplatesRelationManager extends RelationManager
                             ->placeholder('Example: elive_event_invitation_rsvp')
                             ->required(fn (Forms\Get $get): bool => $get('channel') === MessageTemplate::CHANNEL_WHATSAPP)
                             ->maxLength(255)
-                            ->helperText('Use the exact approved WhatsApp template name from Meta or your WhatsApp provider.')
+                            ->helperText('Use the exact approved Meta template name. For the current templates, use language code: en.')
                             ->columnSpanFull(),
 
                         Forms\Components\KeyValue::make('whatsapp_buttons')
@@ -257,7 +259,7 @@ class MessageTemplatesRelationManager extends RelationManager
                         Forms\Components\Placeholder::make('whatsapp_warning')
                             ->label('Note')
                             ->content(new HtmlString(
-                                '<div style="background:#F8FAFC;border-left:4px solid #FD9618;border-radius:12px;padding:12px;color:#111827;">WhatsApp sending requires approved provider templates. These settings help your system match saved templates to the provider template.</div>'
+                                '<div style="background:#F8FAFC;border-left:4px solid #FD9618;border-radius:12px;padding:12px;color:#111827;">WhatsApp sending requires approved Meta templates. Current Meta templates use language code <strong>en</strong>. The provider template name must match exactly, for example <strong>elive_event_invitation_rsvp</strong>.</div>'
                             ))
                             ->columnSpanFull(),
                     ]),
@@ -400,6 +402,16 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalHeading('Create Default Message Templates')
                     ->modalDescription('This will create missing SMS and WhatsApp templates. Existing templates will not be overwritten.')
                     ->action(fn () => $this->createDefaultsAndNotify()),
+
+                Tables\Actions\Action::make('sync_whatsapp_provider_templates')
+                    ->label('Sync WhatsApp Providers')
+                    ->icon('heroicon-o-arrow-path-rounded-square')
+                    ->button()
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Sync WhatsApp provider template names')
+                    ->modalDescription('This updates this event\'s WhatsApp templates to the approved Meta provider names: elive_event_invitation_rsvp, elive_event_rsvp_reminder, elive_event_attending_reminder, and elive_event_day_reminder. Use WHATSAPP_TEMPLATE_LANGUAGE=en in .env.')
+                    ->action(fn () => $this->syncWhatsAppProviderTemplatesAndNotify()),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
@@ -570,7 +582,7 @@ class MessageTemplatesRelationManager extends RelationManager
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
                 'type' => MessageTemplate::TYPE_INVITATION,
                 'name' => 'WhatsApp Invitation',
-                'content' => "Habari #NAME#,\n\nUnakaribishwa kwenye #EVENT_NAME#.\n\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #EVENT_VENUE#\n\nTafadhali thibitisha kama utahudhuria kwa kutumia button.",
+                'content' => "Habari #NAME#,\n\nUnakaribishwa kwenye #EVENT_NAME#.\nKadi yako ni #CARD_TYPE#.\nUkumbi ni #EVENT_VENUE#.\nMuda: #EVENT_TIME#\n\nPia tusaidie kujua ushiriki wako kwa kubonyeza mojawapo ya vitufe vilivyo hapa chini.",
                 'whatsapp_template_name' => 'elive_event_invitation_rsvp',
                 'whatsapp_buttons' => [
                     'Asante, Nitafika' => 'rsvp_attending',
@@ -584,7 +596,7 @@ class MessageTemplatesRelationManager extends RelationManager
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
                 'type' => MessageTemplate::TYPE_RSVP_PENDING_REMINDER,
                 'name' => 'WhatsApp RSVP Pending Reminder',
-                'content' => "Habari #NAME#,\n\nTunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\n\nTafadhali tumia button kuthibitisha.",
+                'content' => "Habari #NAME#,\n\nTunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\n\nTafadhali tumia button kuthibitisha.",
                 'whatsapp_template_name' => 'elive_event_rsvp_reminder',
                 'whatsapp_buttons' => [
                     'Asante, Nitafika' => 'rsvp_attending',
@@ -597,7 +609,7 @@ class MessageTemplatesRelationManager extends RelationManager
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
                 'type' => MessageTemplate::TYPE_ATTENDING_REMINDER,
                 'name' => 'WhatsApp One Day Before Reminder',
-                'content' => "Habari #NAME#,\n\nTunakukumbusha kuhusu #EVENT_NAME#.\n\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #EVENT_VENUE#\n\nFungua kadi yako kwa maelezo zaidi.",
+                'content' => "Habari #NAME#,\n\nTunakukumbusha kuhusu #EVENT_NAME#.\nKadi yako ni #CARD_TYPE#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\n\nFungua kadi yako kwa maelezo zaidi.",
                 'whatsapp_template_name' => 'elive_event_attending_reminder',
                 'whatsapp_buttons' => [
                     'View Invitation' => '#INVITATION_LINK#',
@@ -609,7 +621,7 @@ class MessageTemplatesRelationManager extends RelationManager
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
                 'type' => MessageTemplate::TYPE_EVENT_DAY_REMINDER,
                 'name' => 'WhatsApp Event Day Reminder',
-                'content' => "Habari #NAME#,\n\nLeo ni siku ya #EVENT_NAME#.\n\nTafadhali njoo na kadi yako kwa ajili ya check-in.\n\nUkumbi: #EVENT_VENUE#",
+                'content' => "Habari #NAME#,\n\nLeo ni siku ya #EVENT_NAME#.\nKadi yako ni #CARD_TYPE#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\n\nTafadhali njoo na kadi yako kwa ajili ya check-in.",
                 'whatsapp_template_name' => 'elive_event_day_reminder',
                 'whatsapp_buttons' => [
                     'View Invitation' => '#INVITATION_LINK#',
@@ -707,6 +719,51 @@ class MessageTemplatesRelationManager extends RelationManager
         }
 
         return $created;
+    }
+
+    private function syncWhatsAppProviderTemplatesAndNotify(): void
+    {
+        $updated = $this->syncWhatsAppProviderTemplates();
+
+        Notification::make()
+            ->title('WhatsApp provider templates synced')
+            ->body("Updated/created: {$updated}. Make sure WHATSAPP_TEMPLATE_LANGUAGE=en is set in .env, then run php artisan optimize:clear.")
+            ->success()
+            ->persistent()
+            ->send();
+    }
+
+    private function syncWhatsAppProviderTemplates(): int
+    {
+        /** @var Model $event */
+        $event = $this->getOwnerRecord();
+        $updated = 0;
+
+        $whatsappTemplates = collect(self::starterTemplates())
+            ->filter(fn (array $template): bool => $template['channel'] === MessageTemplate::CHANNEL_WHATSAPP);
+
+        foreach ($whatsappTemplates as $template) {
+            $record = MessageTemplate::updateOrCreate(
+                [
+                    'event_id' => $event->getKey(),
+                    'channel' => $template['channel'],
+                    'type' => $template['type'],
+                ],
+                [
+                    'name' => $template['name'],
+                    'content' => $template['content'],
+                    'whatsapp_template_name' => $template['whatsapp_template_name'] ?? null,
+                    'whatsapp_buttons' => $template['whatsapp_buttons'] ?? null,
+                    'status' => MessageTemplate::STATUS_ACTIVE,
+                ],
+            );
+
+            $this->deactivateOtherActiveTemplates($record);
+
+            $updated++;
+        }
+
+        return $updated;
     }
 
     private function afterTemplateSaved(MessageTemplate $record): null
