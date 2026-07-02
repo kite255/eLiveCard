@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -679,7 +680,7 @@ class InviteesRelationManager extends RelationManager
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Note')
-                                ->content('For now, WhatsApp will be recorded in Message Logs until the real WhatsApp API is connected.'),
+                                ->content('This will send the message using the real WhatsApp Cloud API and save the response in Message Logs.'),
                         ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
@@ -1819,32 +1820,36 @@ class InviteesRelationManager extends RelationManager
 
     protected function recordWhatsappUsingTemplate(Invitee $invitee, MessageTemplate $template, string $message): array
     {
-        /*
-         * MVP behavior:
-         * This records WhatsApp sending until real WhatsApp template sending is connected.
-         * Later this method should call WhatsAppCloudService using $template->whatsapp_template_name.
-         */
-        DB::transaction(function () use ($invitee, $message): void {
-            $now = now();
+        $invitee->loadMissing(['latestGeneratedCard', 'cardType', 'event']);
 
-            $this->safeUpdateInvitee($invitee, [
-                'message_status' => 'sent',
-                'sent_at' => $now,
-                'last_message_channel' => 'whatsapp',
-                'last_message_body' => $message,
-            ]);
+        if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+            return [
+                'status' => 'skipped',
+                'type' => 'warning',
+                'title' => 'Invitee not active',
+                'body' => 'This invitee card is not active, so the WhatsApp message was not sent.',
+            ];
+        }
 
-            $this->markLatestGeneratedCardAsSent($invitee, $now);
+        if (blank($invitee->short_code)) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'Missing private link',
+                'body' => 'This invitee has no short code/private invitation link.',
+            ];
+        }
 
-            $this->createMessageLog($invitee, 'whatsapp', $message, 'sent');
-        });
+        if (blank($this->normalizePhone($invitee->phone))) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'Invalid phone number',
+                'body' => 'This invitee has an invalid Tanzania phone number.',
+            ];
+        }
 
-        return [
-            'status' => 'sent',
-            'type' => 'success',
-            'title' => 'WhatsApp message recorded',
-            'body' => 'WhatsApp template "' . ($template->whatsapp_template_name ?: $template->name) . '" recorded. Real WhatsApp API sending will be connected next.',
-        ];
+        return $this->sendWhatsappCloudMessage($invitee, $message, $template);
     }
 
 
@@ -2027,31 +2032,172 @@ class InviteesRelationManager extends RelationManager
             return $this->sendCardLinkBySms($invitee, $message);
         }
 
-        /*
-         * WhatsApp MVP behavior:
-         * WhatsApp is recorded only until WhatsApp Cloud API/provider is connected.
-         */
-        DB::transaction(function () use ($invitee, $channel, $message): void {
+        return $this->sendWhatsappCloudMessage($invitee, $message);
+    }
+
+    protected function sendWhatsappCloudMessage(
+        Invitee $invitee,
+        string $message,
+        ?MessageTemplate $template = null,
+    ): array {
+        $accessToken = config('services.whatsapp.access_token') ?: env('WHATSAPP_ACCESS_TOKEN');
+        $phoneNumberId = config('services.whatsapp.phone_number_id') ?: env('WHATSAPP_PHONE_NUMBER_ID');
+
+        if (blank($accessToken) || blank($phoneNumberId)) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'WhatsApp not configured',
+                'body' => 'Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in your production environment.',
+            ];
+        }
+
+        $phone = $this->normalizePhone($invitee->phone);
+
+        if (blank($phone)) {
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'Invalid phone number',
+                'body' => 'This invitee phone number is invalid.',
+            ];
+        }
+
+        $logId = $this->createMessageLog(
+            invitee: $invitee,
+            channel: 'whatsapp',
+            message: $message,
+            status: 'sending',
+        );
+
+        try {
+            $response = Http::withToken($accessToken)
+                ->acceptJson()
+                ->timeout(30)
+                ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'to' => $phone,
+                    'type' => 'text',
+                    'text' => [
+                        'preview_url' => true,
+                        'body' => $message,
+                    ],
+                ]);
+
+            $responseData = $response->json();
+            $providerMessageId = $responseData['messages'][0]['id'] ?? null;
+
+            if (! $response->successful() || blank($providerMessageId)) {
+                $errorMessage = $responseData['error']['message']
+                    ?? $response->body()
+                    ?? 'WhatsApp API request failed.';
+
+                $this->updateMessageLogAfterWhatsappSend(
+                    logId: $logId,
+                    status: 'failed',
+                    providerMessageId: null,
+                    responseData: $responseData ?: ['body' => $response->body()],
+                    errorMessage: $errorMessage,
+                );
+
+                $this->safeUpdateInvitee($invitee, [
+                    'message_status' => 'failed',
+                    'last_message_channel' => 'whatsapp',
+                    'last_message_body' => $message,
+                ]);
+
+                return [
+                    'status' => 'failed',
+                    'type' => 'danger',
+                    'title' => 'WhatsApp failed',
+                    'body' => $errorMessage,
+                ];
+            }
+
             $now = now();
 
+            DB::transaction(function () use ($invitee, $message, $now, $logId, $providerMessageId, $responseData): void {
+                $this->safeUpdateInvitee($invitee, [
+                    'message_status' => 'sent',
+                    'sent_at' => $now,
+                    'last_message_channel' => 'whatsapp',
+                    'last_message_body' => $message,
+                ]);
+
+                $this->markLatestGeneratedCardAsSent($invitee, $now);
+
+                $this->updateMessageLogAfterWhatsappSend(
+                    logId: $logId,
+                    status: 'sent',
+                    providerMessageId: $providerMessageId,
+                    responseData: $responseData,
+                    errorMessage: null,
+                );
+            });
+
+            return [
+                'status' => 'sent',
+                'type' => 'success',
+                'title' => 'WhatsApp sent successfully',
+                'body' => 'WhatsApp message sent to ' . $phone . '. Message ID: ' . $providerMessageId,
+            ];
+        } catch (Throwable $e) {
+            $this->updateMessageLogAfterWhatsappSend(
+                logId: $logId,
+                status: 'failed',
+                providerMessageId: null,
+                responseData: ['exception' => $e->getMessage()],
+                errorMessage: $e->getMessage(),
+            );
+
             $this->safeUpdateInvitee($invitee, [
-                'message_status' => 'sent',
-                'sent_at' => $now,
-                'last_message_channel' => $channel,
+                'message_status' => 'failed',
+                'last_message_channel' => 'whatsapp',
                 'last_message_body' => $message,
             ]);
 
-            $this->markLatestGeneratedCardAsSent($invitee, $now);
+            return [
+                'status' => 'failed',
+                'type' => 'danger',
+                'title' => 'WhatsApp failed',
+                'body' => $e->getMessage(),
+            ];
+        }
+    }
 
-            $this->createMessageLog($invitee, $channel, $message, 'sent');
-        });
+    protected function updateMessageLogAfterWhatsappSend(
+        ?int $logId,
+        string $status,
+        ?string $providerMessageId,
+        array|string|null $responseData,
+        ?string $errorMessage = null,
+    ): void {
+        if (! $logId || ! Schema::hasTable('message_logs')) {
+            return;
+        }
 
-        return [
-            'status' => 'sent',
-            'type' => 'success',
-            'title' => 'WhatsApp invitation recorded',
-            'body' => "WhatsApp message recorded. Connect WhatsApp API later for real sending. Link: {$this->privateInvitationUrl($invitee)}",
+        $now = now();
+
+        $data = [
+            'status' => $status,
+            'provider_message_id' => $providerMessageId,
+            'provider_response' => is_array($responseData) ? json_encode($responseData) : $responseData,
+            'response' => is_array($responseData) ? json_encode($responseData) : $responseData,
+            'error_message' => $errorMessage,
+            'error' => $errorMessage,
+            'sent_at' => $status === 'sent' ? $now : null,
+            'updated_at' => $now,
         ];
+
+        $updateable = collect($data)
+            ->filter(fn ($value, $key) => Schema::hasColumn('message_logs', $key))
+            ->toArray();
+
+        if (! empty($updateable)) {
+            DB::table('message_logs')
+                ->where('id', $logId)
+                ->update($updateable);
+        }
     }
 
     protected function sendCardLinkBySms(Invitee $invitee, string $message): array
@@ -2135,10 +2281,15 @@ class InviteesRelationManager extends RelationManager
         }
     }
 
-    protected function createMessageLog(Invitee $invitee, string $channel, string $message, string $status, ?string $errorMessage = null): void
-    {
+    protected function createMessageLog(
+        Invitee $invitee,
+        string $channel,
+        string $message,
+        string $status,
+        ?string $errorMessage = null,
+    ): ?int {
         if (! Schema::hasTable('message_logs')) {
-            return;
+            return null;
         }
 
         $now = now();
@@ -2152,8 +2303,8 @@ class InviteesRelationManager extends RelationManager
             'invitee_id' => $invitee->id,
             'channel' => $channel,
             'type' => 'invitation_card',
-            'recipient' => $invitee->phone,
-            'phone' => $invitee->phone,
+            'recipient' => $this->normalizePhone($invitee->phone) ?: $invitee->phone,
+            'phone' => $this->normalizePhone($invitee->phone) ?: $invitee->phone,
             'message' => $message,
             'body' => $message,
             'status' => $status,
@@ -2183,7 +2334,7 @@ class InviteesRelationManager extends RelationManager
             $insertable['status'] = $status;
         }
 
-        DB::table('message_logs')->insert($insertable);
+        return DB::table('message_logs')->insertGetId($insertable);
     }
 
     protected function safeUpdateInvitee(Invitee $invitee, array $data): void
