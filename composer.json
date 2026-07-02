@@ -11,7 +11,6 @@
     "require": {
         "php": "^8.2",
         "ext-gd": "*",
-        "ext-imagick": "*",
         "ext-pdo": "*",
         "ext-zip": "*",
         "chillerlan/php-qrcode": "^6.0",
