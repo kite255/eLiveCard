@@ -26,15 +26,6 @@
 
     $cardTypeName = $invitee->cardType->name ?? $invitee->card_type ?? $invitee->card_type_name ?? 'Invitation';
 
-    /*
-    |--------------------------------------------------------------------------
-    | RSVP Guest Count
-    |--------------------------------------------------------------------------
-    |
-    | The controller may pass $allowedGuests. If not, we safely resolve it from
-    | the invitee/card type. This controls how many guests the invitee can confirm.
-    |
-    */
     $allowedGuests = (int) (
         $allowedGuests
         ?? $invitee->final_allowed_guests
@@ -69,6 +60,7 @@
     $serialNumber = $invitee->serial_number ?? null;
 
     $rsvpStatus = $invitee->rsvp_status ?? 'pending';
+
     $rsvpLabel = match ($rsvpStatus) {
         'attending', 'confirmed' => 'Attending',
         'not_attending', 'declined' => 'Not Attending',
@@ -82,9 +74,11 @@
     };
 
     $eventDateTime = null;
+
     if ($eventDate) {
         try {
             $eventDateTime = Carbon::parse($eventDate);
+
             if ($eventTime) {
                 $time = Carbon::parse($eventTime);
                 $eventDateTime->setTime($time->hour, $time->minute, 0);
@@ -96,20 +90,6 @@
 
     $countdownTarget = $eventDateTime ? $eventDateTime->toIso8601String() : null;
 
-    /*
-    |--------------------------------------------------------------------------
-    | Invitation Card Links
-    |--------------------------------------------------------------------------
-    |
-    | These URLs power the "View Card" and "Download Card" buttons.
-    | Priority:
-    | 1. Controller-passed generated card URL
-    | 2. Invitee accessor generated_card_url
-    | 3. Invitee stored paths
-    | 4. Latest GeneratedCard relation
-    | 5. Public card routes using serial number
-    |
-    */
     $generatedCardUrl = $generatedCardUrl ?? null;
 
     if (! $generatedCardUrl && isset($invitee->generated_card_url) && filled($invitee->generated_card_url)) {
@@ -191,14 +171,16 @@
     $showProgram = (bool) ($event->show_program ?? true);
     $showCountdown = (bool) ($event->show_countdown ?? true);
     $showWishes = (bool) ($event->show_wishes ?? true);
+    $showPhotoUpload = (bool) ($event->show_photo_upload ?? true);
     $showOrganizerContact = (bool) ($event->show_organizer_contact ?? true);
 
     $logoUrl = asset('images/elive-card-logo.png');
     $canSubmitWish = Route::has('invitee.wish');
+    $canSubmitPhoto = Route::has('invitee.photo');
 @endphp
 
 <!DOCTYPE html>
-{{-- eLive professional invitee page v2 loaded --}}
+{{-- eLive professional invitee page v3 loaded --}}
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -435,7 +417,6 @@
 <body>
 <header class="sticky top-0 z-40 border-b border-white/10 bg-[#213B73] shadow-sm">
     <div class="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-3 lg:px-8">
-        {{-- Brand + Page Title --}}
         <div class="flex min-w-0 items-center gap-3 sm:gap-4">
             <a href="{{ route('invitee.page', $invitee->short_code) }}" class="flex shrink-0 items-center">
                 <img
@@ -458,7 +439,6 @@
             </div>
         </div>
 
-        {{-- RSVP Action --}}
         <a href="#rsvp"
            class="inline-flex shrink-0 items-center justify-center rounded-full bg-white/15 px-4 py-2 text-xs font-black text-white ring-1 ring-white/15 transition hover:bg-[#FD9618] active:scale-95 sm:px-5 sm:text-sm">
             RSVP
@@ -466,339 +446,346 @@
     </div>
 </header>
 
-    <main id="top" class="page-shell safe-x pb-8 pt-2 sm:pb-12 sm:pt-3">
-        {{-- Hero --}}
-        <section class="hero-card relative overflow-hidden rounded-[32px] px-5 py-6 text-white shadow-xl sm:py-7">
-            <div class="absolute -right-14 -top-14 h-44 w-44 rounded-full bg-white/[0.08]"></div>
-            <div class="absolute -bottom-20 -left-20 h-56 w-56 rounded-full bg-[#FD9618]/15"></div>
+<main id="top" class="page-shell safe-x pb-8 pt-2 sm:pb-12 sm:pt-3">
+    {{-- Hero --}}
+    <section class="hero-card relative overflow-hidden rounded-[32px] px-5 py-6 text-white shadow-xl sm:py-7">
+        <div class="absolute -right-14 -top-14 h-44 w-44 rounded-full bg-white/[0.08]"></div>
+        <div class="absolute -bottom-20 -left-20 h-56 w-56 rounded-full bg-[#FD9618]/15"></div>
 
-            <div class="relative text-center">
-                <p class="text-xs font-black uppercase tracking-[0.24em] text-[#FD9618]">You are invited</p>
-                <h1 class="mt-3 text-2xl font-black leading-tight sm:text-3xl">{{ $eventName }}</h1>
-                <p class="mt-3 text-sm font-semibold text-white/78">Hello {{ $invitee->name }}</p>
+        <div class="relative text-center">
+            <p class="text-xs font-black uppercase tracking-[0.24em] text-[#FD9618]">You are invited</p>
+            <h1 class="mt-3 text-2xl font-black leading-tight sm:text-3xl">{{ $eventName }}</h1>
+            <p class="mt-3 text-sm font-semibold text-white/78">Hello {{ $invitee->name }}</p>
 
-                <div class="hero-meta-grid mt-5 text-left">
-                    <div class="rounded-3xl bg-white/10 p-3.5 ring-1 ring-white/10">
-                        <p class="text-[11px] font-black uppercase tracking-wide text-white/70">Date</p>
-                        <p class="mt-1 text-sm font-black">{{ $formattedDate }}</p>
-                    </div>
-                    <div class="rounded-3xl bg-white/10 p-3.5 ring-1 ring-white/10">
-                        <p class="text-[11px] font-black uppercase tracking-wide text-white/70">Time</p>
-                        <p class="mt-1 text-sm font-black">{{ $timeDisplay }}</p>
-                    </div>
+            <div class="hero-meta-grid mt-5 text-left">
+                <div class="rounded-3xl bg-white/10 p-3.5 ring-1 ring-white/10">
+                    <p class="text-[11px] font-black uppercase tracking-wide text-white/70">Date</p>
+                    <p class="mt-1 text-sm font-black">{{ $formattedDate }}</p>
                 </div>
 
-                <div class="mt-4 rounded-3xl bg-white/10 p-4 text-left ring-1 ring-white/10">
-                    <p class="text-[11px] font-black uppercase tracking-wide text-white/70">Venue</p>
-                    <p class="mt-1 text-base font-black">{{ $venue }}</p>
-                    @if ($venueAddress)
-                        <p class="mt-1 text-xs font-semibold text-white/65">{{ $venueAddress }}</p>
-                    @endif
+                <div class="rounded-3xl bg-white/10 p-3.5 ring-1 ring-white/10">
+                    <p class="text-[11px] font-black uppercase tracking-wide text-white/70">Time</p>
+                    <p class="mt-1 text-sm font-black">{{ $timeDisplay }}</p>
                 </div>
             </div>
+
+            <div class="mt-4 rounded-3xl bg-white/10 p-4 text-left ring-1 ring-white/10">
+                <p class="text-[11px] font-black uppercase tracking-wide text-white/70">Venue</p>
+                <p class="mt-1 text-base font-black">{{ $venue }}</p>
+
+                @if ($venueAddress)
+                    <p class="mt-1 text-xs font-semibold text-white/65">{{ $venueAddress }}</p>
+                @endif
+            </div>
+        </div>
+    </section>
+
+    {{-- Alerts --}}
+    <div class="mt-4 space-y-3">
+        @if (session('success'))
+            <div class="rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
+                {{ session('success') }}
+            </div>
+        @endif
+
+        @if (session('info'))
+            <div class="rounded-3xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
+                {{ session('info') }}
+            </div>
+        @endif
+
+        @if ($errors->any())
+            <div class="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                <p class="font-black">Please check the form and try again.</p>
+
+                <ul class="mt-2 list-inside list-disc">
+                    @foreach ($errors->all() as $error)
+                        <li>{{ $error }}</li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+    </div>
+
+    {{-- Cover Photo / Welcome Message --}}
+    @if (($showCoverImage && $coverImageUrl) || ($event && filled($event->welcome_message ?? null)))
+        <section class="soft-card mt-4 overflow-hidden rounded-[28px]">
+            @if ($showCoverImage && $coverImageUrl)
+                <img
+                    src="{{ $coverImageUrl }}"
+                    alt="{{ $eventName }}"
+                    class="h-40 w-full object-cover sm:h-56"
+                    loading="lazy"
+                >
+            @endif
+
+            @if ($event && filled($event->welcome_message ?? null))
+                <div class="px-5 py-4">
+                    <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                        Welcome
+                    </p>
+
+                    <h2 class="section-title mt-1">
+                        Welcome Message
+                    </h2>
+
+                    <p class="mt-2 whitespace-pre-line text-sm font-semibold leading-6 text-slate-600">
+                        {{ $event->welcome_message }}
+                    </p>
+                </div>
+            @endif
         </section>
+    @endif
 
-        {{-- Alerts --}}
-        <div class="mt-4 space-y-3">
-            @if (session('success'))
-                <div class="rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">
-                    {{ session('success') }}
+    {{-- RSVP --}}
+    <section id="rsvp" class="soft-card mt-4 rounded-[28px] p-5">
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <h2 class="section-title">Confirm Attendance</h2>
+                <p class="mt-1 text-sm muted">Please confirm if you will attend and the number of guests coming.</p>
+            </div>
+
+            <span class="shrink-0 rounded-full border px-3 py-1 text-[11px] font-black" style="{{ $rsvpColorClass }}">
+                {{ $rsvpLabel }}
+            </span>
+        </div>
+
+        <div class="mt-4 grid grid-cols-1 gap-3 rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-100 sm:grid-cols-2">
+            <div>
+                <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">Allowed Guests</p>
+                <p class="mt-1 text-lg font-black text-[#213B73]">{{ $allowedGuests }}</p>
+            </div>
+
+            <div>
+                <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">Confirmed Guests</p>
+                <p class="mt-1 text-lg font-black text-[#111827]">{{ $guestSummaryLabel }}</p>
+            </div>
+        </div>
+
+        @if ($errors->has('status') || $errors->has('confirmed_guests'))
+            <div class="mt-4 rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                {{ $errors->first('confirmed_guests') ?: $errors->first('status') }}
+            </div>
+        @endif
+
+        <form method="POST" action="{{ route('invitee.rsvp', $invitee->short_code) }}" class="mt-5 space-y-4">
+            @csrf
+
+            <div class="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-black text-slate-900">Yes, I will attend</p>
+                        <p class="mt-1 text-xs font-semibold text-slate-500">
+                            Select how many guests will attend, including you.
+                        </p>
+                    </div>
+
+                    <span class="rounded-full bg-[#213B73]/10 px-3 py-1 text-[11px] font-black text-[#213B73]">
+                        Max {{ $allowedGuests }}
+                    </span>
+                </div>
+
+                @if ($allowedGuests <= 6)
+                    <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        @for ($guestNumber = 1; $guestNumber <= $allowedGuests; $guestNumber++)
+                            <label class="cursor-pointer">
+                                <input
+                                    type="radio"
+                                    name="confirmed_guests"
+                                    value="{{ $guestNumber }}"
+                                    class="peer sr-only"
+                                    @checked((int) old('confirmed_guests', $confirmedGuests ?: 1) === (int) $guestNumber)
+                                >
+
+                                <span class="flex h-12 items-center justify-center rounded-[18px] border border-slate-200 bg-white text-sm font-black text-slate-700 transition peer-checked:border-[#213B73] peer-checked:bg-[#213B73] peer-checked:text-white">
+                                    {{ $guestNumber }}
+                                </span>
+                            </label>
+                        @endfor
+                    </div>
+                @else
+                    <div class="mt-4">
+                        <label for="confirmed_guests" class="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">
+                            Select number of guests
+                        </label>
+
+                        <select
+                            id="confirmed_guests"
+                            name="confirmed_guests"
+                            class="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-4 text-base font-black text-[#111827] outline-none transition focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
+                        >
+                            @for ($guestNumber = 1; $guestNumber <= $allowedGuests; $guestNumber++)
+                                <option
+                                    value="{{ $guestNumber }}"
+                                    @selected((int) old('confirmed_guests', $confirmedGuests ?: 1) === (int) $guestNumber)
+                                >
+                                    {{ $guestNumber }} {{ $guestNumber === 1 ? 'Guest' : 'Guests' }}
+                                </option>
+                            @endfor
+                        </select>
+
+                        <p class="mt-2 text-xs font-semibold text-slate-500">
+                            Choose a number from 1 to {{ $allowedGuests }}. You cannot exceed your invitation limit.
+                        </p>
+                    </div>
+                @endif
+
+                <button
+                    type="submit"
+                    name="status"
+                    value="attending"
+                    class="btn mt-4 w-full bg-[#213B73] text-white shadow-lg shadow-blue-950/10"
+                >
+                    Confirm Attendance
+                </button>
+            </div>
+
+            <div class="rsvp-grid">
+                <button
+                    type="submit"
+                    name="status"
+                    value="not_attending"
+                    formnovalidate
+                    class="btn w-full bg-white text-red-700 ring-1 ring-red-100"
+                >
+                    I will not attend
+                </button>
+
+                <button
+                    type="submit"
+                    name="status"
+                    value="pending"
+                    formnovalidate
+                    class="btn w-full bg-[#FD9618] text-white shadow-lg shadow-orange-500/10"
+                >
+                    Not sure
+                </button>
+            </div>
+        </form>
+    </section>
+
+    {{-- Invitation Card --}}
+    <section class="soft-card mt-4 rounded-[28px] p-5">
+        <div>
+            <h2 class="section-title">Invitation Card</h2>
+            <p class="mt-1 text-sm muted">Your personalized card is ready to view or download.</p>
+        </div>
+
+        @if ($generatedCardUrl)
+            <div class="mt-5 overflow-hidden rounded-[24px] bg-slate-50 ring-1 ring-slate-200">
+                <img src="{{ $generatedCardUrl }}" alt="Invitation Card" class="h-auto w-full object-cover" loading="lazy">
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                @if ($canViewCard)
+                    <a href="{{ $publicCardUrl ?: $generatedCardUrl }}"
+                       target="_blank"
+                       rel="noopener"
+                       class="btn bg-[#213B73] text-white hover:bg-[#1b315f] active:scale-95">
+                        View Card
+                    </a>
+                @else
+                    <button type="button"
+                            disabled
+                            class="btn cursor-not-allowed bg-slate-200 text-slate-500">
+                        View Card
+                    </button>
+                @endif
+
+                @if ($canDownloadCard)
+                    <a href="{{ $downloadCardUrl ?: $generatedCardUrl }}"
+                       class="btn bg-[#FD9618] text-white hover:bg-[#e28412] active:scale-95"
+                       @if (! $serialNumber) download @endif>
+                        Download Card
+                    </a>
+                @else
+                    <button type="button"
+                            disabled
+                            class="btn cursor-not-allowed bg-slate-200 text-slate-500">
+                        Download Card
+                    </button>
+                @endif
+            </div>
+        @else
+            <div class="mt-5 rounded-[24px] bg-slate-50 p-5 text-center ring-1 ring-slate-200">
+                <p class="font-black text-slate-800">Your invitation card is being prepared.</p>
+                <p class="mt-1 text-sm muted">Please check again later or contact the organizer.</p>
+            </div>
+        @endif
+    </section>
+
+    {{-- Event Details --}}
+    <section class="soft-card mt-4 rounded-[28px] p-5">
+        <h2 class="section-title">Event Details</h2>
+
+        <div class="details-grid mt-5">
+            <div class="detail-tile">
+                <p class="detail-label">Date</p>
+                <p class="detail-value">{{ $formattedDate }}</p>
+            </div>
+
+            <div class="detail-tile">
+                <p class="detail-label">Time</p>
+                <p class="detail-value">{{ $timeDisplay }}</p>
+            </div>
+
+            <div class="detail-tile full-span">
+                <p class="detail-label">Venue</p>
+                <p class="detail-value">{{ $venue }}</p>
+
+                @if ($venueAddress)
+                    <p class="mt-1 text-sm muted">{{ $venueAddress }}</p>
+                @endif
+            </div>
+
+            <div class="detail-tile">
+                <p class="detail-label">Card</p>
+                <p class="detail-value">{{ $cardTypeName }}</p>
+            </div>
+
+            <div class="detail-tile">
+                <p class="detail-label">Guests</p>
+                <p class="detail-value">{{ $allowedGuests }}</p>
+            </div>
+
+            @if ($tableNumber)
+                <div class="detail-tile">
+                    <p class="detail-label">Table</p>
+                    <p class="detail-value">{{ $tableNumber }}</p>
                 </div>
             @endif
 
-            @if (session('info'))
-                <div class="rounded-3xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
-                    {{ session('info') }}
+            @if ($dressCode)
+                <div class="detail-tile">
+                    <p class="detail-label">Dress Code</p>
+                    <p class="detail-value">{{ $dressCode }}</p>
                 </div>
             @endif
 
-            @if ($errors->any())
-                <div class="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                    <p class="font-black">Please check the form and try again.</p>
-                    <ul class="mt-2 list-inside list-disc">
-                        @foreach ($errors->all() as $error)
-                            <li>{{ $error }}</li>
-                        @endforeach
-                    </ul>
+            @if ($serialNumber)
+                <div class="detail-tile full-span">
+                    <p class="detail-label">Serial Number</p>
+                    <p class="detail-value">{{ $serialNumber }}</p>
                 </div>
             @endif
         </div>
 
-        {{-- Cover Photo / Welcome Message --}}
-        @if (($showCoverImage && $coverImageUrl) || filled($event->welcome_message ?? null))
-            <section class="soft-card mt-4 overflow-hidden rounded-[28px]">
-                @if ($showCoverImage && $coverImageUrl)
-                    <img src="{{ $coverImageUrl }}"
-                        alt="{{ $eventName }}"
-                        class="h-56 w-full object-cover sm:h-80">
-                @endif
-
-                @if (filled($event->welcome_message ?? null))
-                    <div class="p-5">
-                        <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
-                            Welcome
-                        </p>
-                        <h2 class="section-title mt-1">A Special Invitation</h2>
-                        <p class="mt-3 whitespace-pre-line text-sm font-semibold leading-7 text-slate-600">
-                            {{ $event->welcome_message }}
-                        </p>
-                    </div>
-                @endif
-            </section>
+        @if ($googleMapsLink)
+            <a href="{{ $googleMapsLink }}" target="_blank" class="btn mt-4 w-full bg-[#213B73] text-white">
+                Open Venue Location
+            </a>
         @endif
+    </section>
 
-        {{-- RSVP --}}
-        <section id="rsvp" class="soft-card mt-4 rounded-[28px] p-5">
-            <div class="flex items-start justify-between gap-3">
-                <div>
-                    <h2 class="section-title">Confirm Attendance</h2>
-                    <p class="mt-1 text-sm muted">Please confirm if you will attend and the number of guests coming.</p>
-                </div>
-
-                <span class="shrink-0 rounded-full border px-3 py-1 text-[11px] font-black" style="{{ $rsvpColorClass }}">
-                    {{ $rsvpLabel }}
-                </span>
-            </div>
-
-            <div class="mt-4 grid grid-cols-1 gap-3 rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-100 sm:grid-cols-2">
-                <div>
-                    <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">Allowed Guests</p>
-                    <p class="mt-1 text-lg font-black text-[#213B73]">{{ $allowedGuests }}</p>
-                </div>
-
-                <div>
-                    <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">Confirmed Guests</p>
-                    <p class="mt-1 text-lg font-black text-[#111827]">{{ $guestSummaryLabel }}</p>
-                </div>
-            </div>
-
-            @if ($errors->has('status') || $errors->has('confirmed_guests'))
-                <div class="mt-4 rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-                    {{ $errors->first('confirmed_guests') ?: $errors->first('status') }}
-                </div>
-            @endif
-
-            {{-- 
-                Important:
-                Keep all RSVP actions inside one POST form.
-                Do not use links for RSVP actions because GET /i/{shortCode}/rsvp does not exist.
-            --}}
-            <form method="POST" action="{{ route('invitee.rsvp', $invitee->short_code) }}" class="mt-5 space-y-4">
-                @csrf
-
-                <div class="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-sm font-black text-slate-900">Yes, I will attend</p>
-                            <p class="mt-1 text-xs font-semibold text-slate-500">
-                                Select how many guests will attend, including you.
-                            </p>
-                        </div>
-
-                        <span class="rounded-full bg-[#213B73]/10 px-3 py-1 text-[11px] font-black text-[#213B73]">
-                            Max {{ $allowedGuests }}
-                        </span>
-                    </div>
-
-                    @if ($allowedGuests <= 6)
-                        <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            @for ($guestNumber = 1; $guestNumber <= $allowedGuests; $guestNumber++)
-                                <label class="cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        name="confirmed_guests"
-                                        value="{{ $guestNumber }}"
-                                        class="peer sr-only"
-                                        @checked((int) old('confirmed_guests', $confirmedGuests ?: 1) === (int) $guestNumber)
-                                    >
-
-                                    <span class="flex h-12 items-center justify-center rounded-[18px] border border-slate-200 bg-white text-sm font-black text-slate-700 transition peer-checked:border-[#213B73] peer-checked:bg-[#213B73] peer-checked:text-white">
-                                        {{ $guestNumber }}
-                                    </span>
-                                </label>
-                            @endfor
-                        </div>
-                    @else
-                        <div class="mt-4">
-                            <label for="confirmed_guests" class="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">
-                                Select number of guests
-                            </label>
-
-                            <select
-                                id="confirmed_guests"
-                                name="confirmed_guests"
-                                class="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-4 text-base font-black text-[#111827] outline-none transition focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
-                            >
-                                @for ($guestNumber = 1; $guestNumber <= $allowedGuests; $guestNumber++)
-                                    <option
-                                        value="{{ $guestNumber }}"
-                                        @selected((int) old('confirmed_guests', $confirmedGuests ?: 1) === (int) $guestNumber)
-                                    >
-                                        {{ $guestNumber }} {{ $guestNumber === 1 ? 'Guest' : 'Guests' }}
-                                    </option>
-                                @endfor
-                            </select>
-
-                            <p class="mt-2 text-xs font-semibold text-slate-500">
-                                Choose a number from 1 to {{ $allowedGuests }}. You cannot exceed your invitation limit.
-                            </p>
-                        </div>
-                    @endif
-
-                    <button
-                        type="submit"
-                        name="status"
-                        value="attending"
-                        class="btn mt-4 w-full bg-[#213B73] text-white shadow-lg shadow-blue-950/10"
-                    >
-                        Confirm Attendance
-                    </button>
-                </div>
-
-                <div class="rsvp-grid">
-                    <button
-                        type="submit"
-                        name="status"
-                        value="not_attending"
-                        formnovalidate
-                        class="btn w-full bg-white text-red-700 ring-1 ring-red-100"
-                    >
-                        I will not attend
-                    </button>
-
-                    <button
-                        type="submit"
-                        name="status"
-                        value="pending"
-                        formnovalidate
-                        class="btn w-full bg-[#FD9618] text-white shadow-lg shadow-orange-500/10"
-                    >
-                        Not sure
-                    </button>
-                </div>
-            </form>
-        </section>
-
-        {{-- Invitation Card --}}
-        <section class="soft-card mt-4 rounded-[28px] p-5">
-            <div>
-                <h2 class="section-title">Invitation Card</h2>
-                <p class="mt-1 text-sm muted">Your personalized card is ready to view or download.</p>
-            </div>
-
-            @if ($generatedCardUrl)
-                <div class="mt-5 overflow-hidden rounded-[24px] bg-slate-50 ring-1 ring-slate-200">
-                    <img src="{{ $generatedCardUrl }}" alt="Invitation Card" class="h-auto w-full object-cover" loading="lazy">
-                </div>
-
-                <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    @if ($canViewCard)
-                        <a href="{{ $publicCardUrl ?: $generatedCardUrl }}"
-                           target="_blank"
-                           rel="noopener"
-                           class="btn bg-[#213B73] text-white hover:bg-[#1b315f] active:scale-95">
-                            View Card
-                        </a>
-                    @else
-                        <button type="button"
-                                disabled
-                                class="btn cursor-not-allowed bg-slate-200 text-slate-500">
-                            View Card
-                        </button>
-                    @endif
-
-                    @if ($canDownloadCard)
-                        <a href="{{ $downloadCardUrl ?: $generatedCardUrl }}"
-                           class="btn bg-[#FD9618] text-white hover:bg-[#e28412] active:scale-95"
-                           @if (! $serialNumber) download @endif>
-                            Download Card
-                        </a>
-                    @else
-                        <button type="button"
-                                disabled
-                                class="btn cursor-not-allowed bg-slate-200 text-slate-500">
-                            Download Card
-                        </button>
-                    @endif
-                </div>
-            @else
-                <div class="mt-5 rounded-[24px] bg-slate-50 p-5 text-center ring-1 ring-slate-200">
-                    <p class="font-black text-slate-800">Your invitation card is being prepared.</p>
-                    <p class="mt-1 text-sm muted">Please check again later or contact the organizer.</p>
-                </div>
-            @endif
-        </section>
-
-        {{-- Event Details --}}
-        <section class="soft-card mt-4 rounded-[28px] p-5">
-            <h2 class="section-title">Event Details</h2>
-
-            <div class="details-grid mt-5">
-                <div class="detail-tile">
-                    <p class="detail-label">Date</p>
-                    <p class="detail-value">{{ $formattedDate }}</p>
-                </div>
-
-                <div class="detail-tile">
-                    <p class="detail-label">Time</p>
-                    <p class="detail-value">{{ $timeDisplay }}</p>
-                </div>
-
-                <div class="detail-tile full-span">
-                    <p class="detail-label">Venue</p>
-                    <p class="detail-value">{{ $venue }}</p>
-                    @if ($venueAddress)
-                        <p class="mt-1 text-sm muted">{{ $venueAddress }}</p>
-                    @endif
-                </div>
-
-                <div class="detail-tile">
-                    <p class="detail-label">Card</p>
-                    <p class="detail-value">{{ $cardTypeName }}</p>
-                </div>
-
-                <div class="detail-tile">
-                    <p class="detail-label">Guests</p>
-                    <p class="detail-value">{{ $allowedGuests }}</p>
-                </div>
-
-                @if ($tableNumber)
-                    <div class="detail-tile">
-                        <p class="detail-label">Table</p>
-                        <p class="detail-value">{{ $tableNumber }}</p>
-                    </div>
-                @endif
-
-                @if ($dressCode)
-                    <div class="detail-tile">
-                        <p class="detail-label">Dress Code</p>
-                        <p class="detail-value">{{ $dressCode }}</p>
-                    </div>
-                @endif
-
-                @if ($serialNumber)
-                    <div class="detail-tile full-span">
-                        <p class="detail-label">Serial Number</p>
-                        <p class="detail-value">{{ $serialNumber }}</p>
-                    </div>
-                @endif
-            </div>
-
-            @if ($googleMapsLink)
-                <a href="{{ $googleMapsLink }}" target="_blank" class="btn mt-4 w-full bg-[#213B73] text-white">
-                    Open Venue Location
-                </a>
-            @endif
-        </section>
-
-        {{-- Countdown --}}
-        @if ($showCountdown)
+    {{-- Countdown --}}
+    @if ($showCountdown)
         <section class="mt-4 rounded-[28px] bg-[#213B73] p-5 text-white shadow-xl shadow-blue-950/10">
             <div class="flex items-start justify-between gap-3">
                 <div>
                     <h2 class="text-lg font-black">Countdown</h2>
                     <p class="mt-1 text-sm text-white/65">Event starts in</p>
                 </div>
+
                 <span class="rounded-2xl bg-[#FD9618] px-3 py-2 text-xs font-black text-white">
                     {{ $formattedDate }}
                 </span>
@@ -809,10 +796,12 @@
                     <p id="countdownDays" class="text-2xl font-black">--</p>
                     <p class="mt-1 text-[11px] font-bold text-white/55">Days</p>
                 </div>
+
                 <div class="rounded-3xl bg-white/10 p-4 text-center ring-1 ring-white/10">
                     <p id="countdownHours" class="text-2xl font-black">--</p>
                     <p class="mt-1 text-[11px] font-bold text-white/55">Hours</p>
                 </div>
+
                 <div class="rounded-3xl bg-white/10 p-4 text-center ring-1 ring-white/10">
                     <p id="countdownMinutes" class="text-2xl font-black">--</p>
                     <p class="mt-1 text-[11px] font-bold text-white/55">Minutes</p>
@@ -821,30 +810,31 @@
 
             <p id="countdownMessage" class="mt-4 text-center text-sm font-bold text-white/75"></p>
         </section>
-        @endif
+    @endif
 
-        {{-- Love Story --}}
-        @if ($showLoveStory && filled($event->love_story ?? null))
-            <section class="soft-card mt-4 rounded-[28px] p-5">
-                <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
-                    Our Story
-                </p>
-                <h2 class="section-title mt-1">Love Story</h2>
+    {{-- Love Story --}}
+    @if ($showLoveStory && filled($event->love_story ?? null))
+        <section class="soft-card mt-4 rounded-[28px] p-5">
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                Our Story
+            </p>
 
-                <div class="mt-4 space-y-3">
-                    @foreach (preg_split('/\r\n|\r|\n/', $event->love_story) as $paragraph)
-                        @if (trim($paragraph) !== '')
-                            <p class="text-sm font-semibold leading-7 text-slate-600">
-                                {{ trim($paragraph) }}
-                            </p>
-                        @endif
-                    @endforeach
-                </div>
-            </section>
-        @endif
+            <h2 class="section-title mt-1">Love Story</h2>
 
-        {{-- Program --}}
-        @if ($showProgram)
+            <div class="mt-4 space-y-3">
+                @foreach (preg_split('/\r\n|\r|\n/', $event->love_story) as $paragraph)
+                    @if (trim($paragraph) !== '')
+                        <p class="text-sm font-semibold leading-7 text-slate-600">
+                            {{ trim($paragraph) }}
+                        </p>
+                    @endif
+                @endforeach
+            </div>
+        </section>
+    @endif
+
+    {{-- Program --}}
+    @if ($showProgram)
         <section class="soft-card mt-4 rounded-[28px] p-5">
             <h2 class="section-title">Program</h2>
             <p class="mt-1 text-sm muted">Event flow for the day.</p>
@@ -855,7 +845,10 @@
                         <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#213B73] text-sm font-black text-white">
                             {{ $index + 1 }}
                         </div>
-                        <p class="pt-1 font-bold text-slate-800">{{ $item }}</p>
+
+                        <p class="pt-1 font-bold text-slate-800">
+                            {{ is_array($item) ? ($item['title'] ?? json_encode($item)) : $item }}
+                        </p>
                     </div>
                 @empty
                     <div class="rounded-[22px] bg-slate-50 p-4 text-sm muted ring-1 ring-slate-100">
@@ -864,10 +857,10 @@
                 @endforelse
             </div>
         </section>
-        @endif
+    @endif
 
-        {{-- Wishes --}}
-        @if ($showWishes)
+    {{-- Wishes --}}
+    @if ($showWishes)
         <section class="soft-card mt-4 rounded-[28px] p-5">
             <h2 class="section-title">Send Wishes</h2>
             <p class="mt-1 text-sm muted">Send your message to the organizer. It will be reviewed before public display.</p>
@@ -878,16 +871,24 @@
 
                     <div>
                         <label for="name" class="text-sm font-black text-slate-700">Name</label>
-                        <input id="name" type="text" name="name" value="{{ old('name', $invitee->name) }}"
-                            class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
-                            placeholder="Your name">
+
+                        <input id="name"
+                               type="text"
+                               name="name"
+                               value="{{ old('name', $invitee->name) }}"
+                               class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
+                               placeholder="Your name">
                     </div>
 
                     <div>
                         <label for="message" class="text-sm font-black text-slate-700">Message</label>
-                        <textarea id="message" name="message" rows="4" required
-                            class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
-                            placeholder="Write your wishes here...">{{ old('message') }}</textarea>
+
+                        <textarea id="message"
+                                  name="message"
+                                  rows="4"
+                                  required
+                                  class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
+                                  placeholder="Write your wishes here...">{{ old('message') }}</textarea>
                     </div>
 
                     <button type="submit" class="btn w-full bg-[#FD9618] text-white">
@@ -900,10 +901,74 @@
                 </div>
             @endif
         </section>
-        @endif
+    @endif
 
-        {{-- Organizer Contact --}}
-        @if ($showOrganizerContact)
+    {{-- Photo Upload --}}
+    @if ($showPhotoUpload)
+        <section class="soft-card mt-4 rounded-[28px] p-5">
+            <h2 class="section-title">Upload Photo</h2>
+            <p class="mt-1 text-sm muted">
+                Share a photo with the organizer. It will be reviewed before public display.
+            </p>
+
+            @if ($canSubmitPhoto)
+                <form
+                    method="POST"
+                    action="{{ route('invitee.photo', $invitee->short_code) }}"
+                    enctype="multipart/form-data"
+                    class="mt-5 space-y-4"
+                >
+                    @csrf
+
+                    <div>
+                        <label for="photo" class="text-sm font-black text-slate-700">
+                            Photo
+                        </label>
+
+                        <input
+                            id="photo"
+                            type="file"
+                            name="photo"
+                            accept="image/*"
+                            required
+                            class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
+                        >
+
+                        <p class="mt-2 text-xs font-semibold text-slate-500">
+                            Accepted formats: JPG, JPEG, PNG, WEBP. Maximum size: 5MB.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label for="caption" class="text-sm font-black text-slate-700">
+                            Caption
+                        </label>
+
+                        <input
+                            id="caption"
+                            type="text"
+                            name="caption"
+                            value="{{ old('caption') }}"
+                            maxlength="255"
+                            class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
+                            placeholder="Optional caption"
+                        >
+                    </div>
+
+                    <button type="submit" class="btn w-full bg-[#213B73] text-white">
+                        Upload Photo
+                    </button>
+                </form>
+            @else
+                <div class="mt-5 rounded-[22px] bg-slate-50 p-4 text-sm muted ring-1 ring-slate-100">
+                    Photo upload will be enabled soon.
+                </div>
+            @endif
+        </section>
+    @endif
+
+    {{-- Organizer Contact --}}
+    @if ($showOrganizerContact)
         <section class="soft-card mt-4 rounded-[28px] p-5">
             <h2 class="section-title">Organizer Contact</h2>
             <p class="mt-1 text-sm muted">Need help with this invitation? Contact the organizer.</p>
@@ -926,78 +991,78 @@
                 </div>
             @endif
         </section>
-        @endif
+    @endif
 
-        <footer class="py-6 text-center">
-            <p class="text-xs font-bold text-slate-400">
-                Powered by <span class="brand-blue">eLive</span> <span class="brand-orange">Card</span>
-            </p>
-        </footer>
-    </main>
+    <footer class="py-6 text-center">
+        <p class="text-xs font-bold text-slate-400">
+            Powered by <span class="brand-blue">eLive</span> <span class="brand-orange">Card</span>
+        </p>
+    </footer>
+</main>
 
-    <script>
-        (function () {
-            const countdownBox = document.getElementById('countdownBox');
-            const message = document.getElementById('countdownMessage');
+<script>
+    (function () {
+        const countdownBox = document.getElementById('countdownBox');
+        const message = document.getElementById('countdownMessage');
 
-            if (!countdownBox || !message) {
-                return;
-            }
+        if (!countdownBox || !message) {
+            return;
+        }
 
-            const targetValue = countdownBox.dataset.target;
-            const daysEl = document.getElementById('countdownDays');
-            const hoursEl = document.getElementById('countdownHours');
-            const minutesEl = document.getElementById('countdownMinutes');
+        const targetValue = countdownBox.dataset.target;
+        const daysEl = document.getElementById('countdownDays');
+        const hoursEl = document.getElementById('countdownHours');
+        const minutesEl = document.getElementById('countdownMinutes');
 
-            if (!targetValue) {
+        if (!targetValue) {
+            message.textContent = 'Event date will be shared soon.';
+            return;
+        }
+
+        const target = new Date(targetValue).getTime();
+
+        function twoDigits(value) {
+            return String(value).padStart(2, '0');
+        }
+
+        function updateCountdown() {
+            const now = Date.now();
+            const distance = target - now;
+
+            if (Number.isNaN(target)) {
                 message.textContent = 'Event date will be shared soon.';
                 return;
             }
 
-            const target = new Date(targetValue).getTime();
+            if (distance <= 0) {
+                daysEl.textContent = '00';
+                hoursEl.textContent = '00';
+                minutesEl.textContent = '00';
 
-            function twoDigits(value) {
-                return String(value).padStart(2, '0');
+                const today = new Date();
+                const eventDate = new Date(target);
+
+                const sameDay = today.getFullYear() === eventDate.getFullYear()
+                    && today.getMonth() === eventDate.getMonth()
+                    && today.getDate() === eventDate.getDate();
+
+                message.textContent = sameDay ? 'Today is the event day.' : 'This event has ended.';
+                return;
             }
 
-            function updateCountdown() {
-                const now = Date.now();
-                const distance = target - now;
+            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((distance / (1000 * 60 * 60)) % 24);
+            const minutes = Math.floor((distance / (1000 * 60)) % 60);
 
-                if (Number.isNaN(target)) {
-                    message.textContent = 'Event date will be shared soon.';
-                    return;
-                }
+            daysEl.textContent = twoDigits(days);
+            hoursEl.textContent = twoDigits(hours);
+            minutesEl.textContent = twoDigits(minutes);
+            message.textContent = 'We look forward to seeing you.';
+        }
 
-                if (distance <= 0) {
-                    daysEl.textContent = '00';
-                    hoursEl.textContent = '00';
-                    minutesEl.textContent = '00';
-
-                    const today = new Date();
-                    const eventDate = new Date(target);
-
-                    const sameDay = today.getFullYear() === eventDate.getFullYear()
-                        && today.getMonth() === eventDate.getMonth()
-                        && today.getDate() === eventDate.getDate();
-
-                    message.textContent = sameDay ? 'Today is the event day.' : 'This event has ended.';
-                    return;
-                }
-
-                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((distance / (1000 * 60 * 60)) % 24);
-                const minutes = Math.floor((distance / (1000 * 60)) % 60);
-
-                daysEl.textContent = twoDigits(days);
-                hoursEl.textContent = twoDigits(hours);
-                minutesEl.textContent = twoDigits(minutes);
-                message.textContent = 'We look forward to seeing you.';
-            }
-
-            updateCountdown();
-            setInterval(updateCountdown, 60000);
-        })();
-    </script>
+        updateCountdown();
+        setInterval(updateCountdown, 60000);
+    })();
+</script>
 </body>
 </html>

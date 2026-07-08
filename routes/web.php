@@ -4,6 +4,7 @@ use App\Exports\InviteeSampleExport;
 use App\Http\Controllers\CardTemplateDesignerController;
 use App\Http\Controllers\GateCheckInController;
 use App\Http\Controllers\GateVerifyController;
+use App\Http\Controllers\InviteeLocationController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
 use App\Http\Controllers\RsvpController;
@@ -62,6 +63,30 @@ Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
 Route::post('/i/{shortCode}/wish', [InviteePageController::class, 'storeWish'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.wish');
+
+Route::post('/i/{shortCode}/photo', [InviteePageController::class, 'storePhoto'])
+    ->where('shortCode', '[A-Za-z0-9]+')
+    ->name('invitee.photo');
+
+/*
+|--------------------------------------------------------------------------
+| Public Invitee Location Redirect
+|--------------------------------------------------------------------------
+|
+| Used by the WhatsApp LOCATION button.
+|
+| Example:
+| Local: http://127.0.0.1:8002/l/DI9YD5
+| Live:  https://digital.elive.co.tz/l/DI9YD5
+|
+| The route redirects to the latest Google Maps link saved in the admin
+| event dashboard. This allows you to update the location later without
+| changing old WhatsApp messages.
+|
+*/
+Route::get('/l/{shortCode}', InviteeLocationController::class)
+    ->where('shortCode', '[A-Za-z0-9]+')
+    ->name('invitee.location');
 
 /*
 |--------------------------------------------------------------------------

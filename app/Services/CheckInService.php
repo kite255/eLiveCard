@@ -2,10 +2,12 @@
 
 namespace App\Services;
 
+use App\Jobs\SendWelcomeSmsJob;
 use App\Models\CheckIn;
 use App\Models\Invitee;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class CheckInService
@@ -22,13 +24,14 @@ class CheckInService
             return DB::transaction(function () use ($invitee, $guestsCount, $user, $method) {
                 $lockedInvitee = Invitee::query()
                     ->whereKey($invitee->id)
-                    ->with('cardType')
+                    ->with(['event', 'cardType'])
                     ->lockForUpdate()
                     ->firstOrFail();
 
                 $allowedGuests = (int) (
                     $lockedInvitee->allowed_guests
                     ?: $lockedInvitee->cardType?->allowed_guests
+                    ?: $lockedInvitee->cardType?->allowed_people
                     ?: 1
                 );
 
@@ -114,6 +117,8 @@ class CheckInService
                     remarks: "{$guestsCount} guest(s) checked in successfully."
                 );
 
+                $this->dispatchWelcomeSmsAfterCommit($lockedInvitee);
+
                 return [
                     'success' => true,
                     'title' => 'Check-in Successful',
@@ -129,6 +134,27 @@ class CheckInService
                 'message' => 'Something went wrong while checking in this guest.',
             ];
         }
+    }
+
+    private function dispatchWelcomeSmsAfterCommit(Invitee $invitee): void
+    {
+        $event = $invitee->event;
+
+        if (! $event || ! (bool) ($event->welcome_sms_enabled ?? false)) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($invitee) {
+            try {
+                SendWelcomeSmsJob::dispatch($invitee->id);
+            } catch (Throwable $exception) {
+                Log::warning('Failed to dispatch welcome SMS job after check-in', [
+                    'invitee_id' => $invitee->id,
+                    'event_id' => $invitee->event_id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        });
     }
 
     private function recordAttempt(

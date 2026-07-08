@@ -5,14 +5,19 @@ namespace App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Jobs\SendInvitationSmsJob;
+use App\Services\SmsService;
+use App\Support\EliveMessagePlaceholders;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Throwable;
 
 class SendEventMessage extends Page
 {
@@ -39,7 +44,7 @@ class SendEventMessage extends Page
 
     public function getSubheading(): ?string
     {
-        return 'Send invitations, generate missing cards, monitor SMS delivery, and send real WhatsApp invitations for this event.';
+        return 'Send invitations, reminders, thank-you messages, generate missing cards, and monitor delivery for this event.';
     }
 
     protected function getHeaderActions(): array
@@ -89,6 +94,39 @@ class SendEventMessage extends Page
                 ->modalSubmitActionLabel('Send WhatsApp')
                 ->disabled(fn (): bool => $this->unsentEligibleWhatsappInviteesCount === 0)
                 ->action(fn () => $this->sendWhatsappInvitations()),
+
+            Action::make('sendRsvpReminderSms')
+                ->label('RSVP Reminder')
+                ->icon('heroicon-o-bell-alert')
+                ->color('info')
+                ->requiresConfirmation()
+                ->modalHeading('Send RSVP Reminder SMS')
+                ->modalDescription('This will send reminder SMS to invitees whose RSVP is still pending.')
+                ->modalSubmitActionLabel('Send Reminder')
+                ->disabled(fn (): bool => $this->pendingRsvpCount === 0)
+                ->action(fn () => $this->sendRsvpReminderSms()),
+
+            Action::make('sendEventDayReminderSms')
+                ->label('Event Day Reminder')
+                ->icon('heroicon-o-calendar-days')
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Send Event Day Reminder SMS')
+                ->modalDescription('This will send final reminder SMS to invitees who are attending.')
+                ->modalSubmitActionLabel('Send Final Reminder')
+                ->disabled(fn (): bool => $this->attendingCount === 0)
+                ->action(fn () => $this->sendEventDayReminderSms()),
+
+            Action::make('sendThankYouSms')
+                ->label('Thank You SMS')
+                ->icon('heroicon-o-heart')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->modalHeading('Send Thank You SMS')
+                ->modalDescription('This will send thank-you SMS to checked-in invitees only.')
+                ->modalSubmitActionLabel('Send Thank You')
+                ->disabled(fn (): bool => $this->checkedInInviteesCount === 0)
+                ->action(fn () => $this->sendThankYouSms()),
         ];
     }
 
@@ -100,7 +138,12 @@ class SendEventMessage extends Page
             ->get();
 
         if ($invitees->isEmpty()) {
-            Notification::make()->title('No missing cards')->body('All invitees already have generated cards.')->warning()->send();
+            Notification::make()
+                ->title('No missing cards')
+                ->body('All invitees already have generated cards.')
+                ->warning()
+                ->send();
+
             return;
         }
 
@@ -108,7 +151,11 @@ class SendEventMessage extends Page
             GenerateInviteeCardJob::dispatch($invitee->id);
         }
 
-        Notification::make()->title('Card generation queued')->body($invitees->count() . ' invitee card(s) queued.')->success()->send();
+        Notification::make()
+            ->title('Card generation queued')
+            ->body($invitees->count() . ' invitee card(s) queued.')
+            ->success()
+            ->send();
     }
 
     public function sendSmsInvitations(): void
@@ -116,7 +163,12 @@ class SendEventMessage extends Page
         $invitees = $this->eligibleInviteesQuery()->get();
 
         if ($invitees->isEmpty()) {
-            Notification::make()->title('No eligible invitees')->body('No invitees have phone number, private link, and generated card.')->danger()->send();
+            Notification::make()
+                ->title('No eligible invitees')
+                ->body('No invitees have phone number, private link, and generated card.')
+                ->danger()
+                ->send();
+
             return;
         }
 
@@ -128,8 +180,8 @@ class SendEventMessage extends Page
                 $alreadySentOrQueued = method_exists($invitee, 'smsLogs')
                     ? $invitee->smsLogs()
                         ->where('event_id', $this->record->id)
-                        ->where('sms_type', 'invitation')
-                        ->whereIn('status', ['queued', 'pending', 'sending', 'sent'])
+                        ->whereIn('sms_type', ['invitation', 'invitation_card'])
+                        ->whereIn('status', ['queued', 'pending', 'sending', 'sent', 'logged', 'accepted', 'delivered'])
                         ->exists()
                     : false;
 
@@ -190,40 +242,53 @@ class SendEventMessage extends Page
 
         foreach ($invitees as $invitee) {
             $phone = $this->normalizePhone($invitee->phone);
-            $link = url('/i/' . $invitee->short_code);
-
-            $message = $this->buildWhatsappMessage($invitee, $link);
-
+            $message = $this->buildWhatsappMessage($invitee);
             $logId = $this->createMessageLog($invitee, $phone, $message);
 
-            $response = Http::withToken($accessToken)
-                ->acceptJson()
-                ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", [
-                    'messaging_product' => 'whatsapp',
-                    'to' => $phone,
-                    'type' => 'text',
-                    'text' => [
-                        'preview_url' => true,
-                        'body' => $message,
-                    ],
-                ]);
+            try {
+                $response = Http::withToken($accessToken)
+                    ->acceptJson()
+                    ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", [
+                        'messaging_product' => 'whatsapp',
+                        'to' => $phone,
+                        'type' => 'text',
+                        'text' => [
+                            'preview_url' => true,
+                            'body' => $message,
+                        ],
+                    ]);
 
-            $json = $response->json();
+                $json = $response->json();
 
-            if ($response->successful() && isset($json['messages'][0]['id'])) {
-                $this->updateMessageLog($logId, [
-                    'status' => 'sent',
-                    'provider_message_id' => $json['messages'][0]['id'],
-                    'response' => $json,
-                    'sent_at' => now(),
-                ]);
+                if ($response->successful() && isset($json['messages'][0]['id'])) {
+                    $this->updateMessageLog($logId, [
+                        'status' => 'sent',
+                        'provider_message_id' => $json['messages'][0]['id'],
+                        'response' => $json,
+                        'sent_at' => now(),
+                    ]);
 
-                $sent++;
-            } else {
+                    $sent++;
+                } else {
+                    $this->updateMessageLog($logId, [
+                        'status' => 'failed',
+                        'response' => $json ?: $response->body(),
+                        'failed_at' => now(),
+                    ]);
+
+                    $failed++;
+                }
+            } catch (Throwable $exception) {
                 $this->updateMessageLog($logId, [
                     'status' => 'failed',
-                    'response' => $json ?: $response->body(),
+                    'response' => $exception->getMessage(),
                     'failed_at' => now(),
+                ]);
+
+                Log::error('WhatsApp invitation failed from Message Center', [
+                    'event_id' => $this->record->id,
+                    'invitee_id' => $invitee->id,
+                    'error' => $exception->getMessage(),
                 ]);
 
                 $failed++;
@@ -237,10 +302,155 @@ class SendEventMessage extends Page
             ->send();
     }
 
-    protected function eligibleInviteesQuery()
+    public function sendRsvpReminderSms(): void
+    {
+        $template = 'Habari #NAME#, tunakukumbusha kuthibitisha mahudhurio yako kwenye #EVENT_NAME#. Tarehe: #EVENT_DATE#, muda: #EVENT_TIME#, ukumbi #VENUE#. Thibitisha hapa: #RSVP_URL#';
+
+        $invitees = $this->basicSmsInviteesQuery()
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('rsvp_status')
+                    ->orWhere('rsvp_status', '')
+                    ->orWhere('rsvp_status', 'pending');
+            })
+            ->get();
+
+        $result = $this->sendBulkSms(
+            invitees: $invitees,
+            template: $template,
+            smsType: 'rsvp_pending_reminder',
+            duplicateTypes: ['rsvp_pending_reminder'],
+        );
+
+        $this->notifyBulkSmsResult('RSVP reminder SMS completed', $result);
+    }
+
+    public function sendEventDayReminderSms(): void
+    {
+        $template = 'Habari #NAME#, leo ni #EVENT_NAME#. Muda: #EVENT_TIME#. Ukumbi: #VENUE#. Ramani: #LOCATION_LINK#. Tafadhali fika na kadi yako: #PRIVATE_INVITATION_URL#';
+
+        $invitees = $this->basicSmsInviteesQuery()
+            ->where('rsvp_status', 'attending')
+            ->get();
+
+        $result = $this->sendBulkSms(
+            invitees: $invitees,
+            template: $template,
+            smsType: 'event_day_reminder',
+            duplicateTypes: ['event_day_reminder'],
+        );
+
+        $this->notifyBulkSmsResult('Event day reminder SMS completed', $result);
+    }
+
+    public function sendThankYouSms(): void
+    {
+        $template = 'Asante #NAME# kwa kuhudhuria #EVENT_NAME#. Uwepo wako umefanya tukio hili kuwa la kipekee. eLive Card';
+
+        $invitees = $this->basicSmsInviteesQuery()
+            ->where(function ($query): void {
+                $query
+                    ->whereNotNull('checked_in_at')
+                    ->orWhere('checked_in_count', '>', 0);
+            })
+            ->get();
+
+        $result = $this->sendBulkSms(
+            invitees: $invitees,
+            template: $template,
+            smsType: 'thank_you_sms',
+            duplicateTypes: ['thank_you_sms'],
+        );
+
+        $this->notifyBulkSmsResult('Thank you SMS completed', $result);
+    }
+
+    protected function sendBulkSms($invitees, string $template, string $smsType, array $duplicateTypes = []): array
+    {
+        if ($invitees->isEmpty()) {
+            return [
+                'sent' => 0,
+                'failed' => 0,
+                'skipped' => 0,
+                'message' => 'No eligible invitees found.',
+            ];
+        }
+
+        $smsService = app(SmsService::class);
+        $sent = 0;
+        $failed = 0;
+        $skipped = 0;
+
+        foreach ($invitees as $invitee) {
+            if ($this->hasAlreadyReceivedSms($invitee, $duplicateTypes)) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                $message = EliveMessagePlaceholders::render($template, $invitee);
+
+                $result = $smsService->sendCustomMessage(
+                    invitee: $invitee,
+                    message: $message,
+                    type: $smsType,
+                );
+
+                if ((bool) ($result['success'] ?? false)) {
+                    $sent++;
+                } else {
+                    $failed++;
+                }
+            } catch (Throwable $exception) {
+                Log::error('Bulk SMS failed from Message Center', [
+                    'event_id' => $this->record->id,
+                    'invitee_id' => $invitee->id,
+                    'sms_type' => $smsType,
+                    'error' => $exception->getMessage(),
+                ]);
+
+                $failed++;
+            }
+        }
+
+        return [
+            'sent' => $sent,
+            'failed' => $failed,
+            'skipped' => $skipped,
+            'message' => null,
+        ];
+    }
+
+    protected function notifyBulkSmsResult(string $title, array $result): void
+    {
+        $message = $result['message']
+            ?: ($result['sent'] . ' sent/logged. ' . $result['failed'] . ' failed. ' . $result['skipped'] . ' skipped.');
+
+        Notification::make()
+            ->title($title)
+            ->body($message)
+            ->color(($result['failed'] ?? 0) > 0 ? 'warning' : 'success')
+            ->send();
+    }
+
+    protected function hasAlreadyReceivedSms($invitee, array $types): bool
+    {
+        if ($types === [] || ! method_exists($invitee, 'smsLogs')) {
+            return false;
+        }
+
+        return $invitee->smsLogs()
+            ->where('event_id', $this->record->id)
+            ->whereIn('sms_type', $types)
+            ->whereIn('status', ['logged', 'accepted', 'sent', 'delivered'])
+            ->exists();
+    }
+
+    protected function eligibleInviteesQuery(): Builder
     {
         return $this->record
             ->invitees()
+            ->with(['event', 'cardType'])
             ->whereNotNull('phone')
             ->where('phone', '!=', '')
             ->whereNotNull('short_code')
@@ -248,9 +458,26 @@ class SendEventMessage extends Page
             ->whereHas('generatedCards', fn ($query) => $query->where('status', 'generated'));
     }
 
+    protected function basicSmsInviteesQuery(): Builder
+    {
+        return $this->record
+            ->invitees()
+            ->with(['event', 'cardType'])
+            ->whereNotNull('phone')
+            ->where('phone', '!=', '');
+    }
+
     protected function normalizePhone(?string $phone): string
     {
         $phone = preg_replace('/\D+/', '', (string) $phone);
+
+        if (Str::startsWith($phone, '00255')) {
+            return '255' . substr($phone, 5);
+        }
+
+        if (Str::startsWith($phone, '2550')) {
+            return '255' . substr($phone, 4);
+        }
 
         if (Str::startsWith($phone, '0')) {
             return '255' . substr($phone, 1);
@@ -263,19 +490,18 @@ class SendEventMessage extends Page
         return $phone;
     }
 
-    protected function buildWhatsappMessage($invitee, string $link): string
+    protected function buildWhatsappMessage($invitee): string
     {
-        $eventName = $this->eventName;
-        $eventDate = $this->eventDate;
-        $venue = $this->eventVenue;
-
-        return "Habari {$invitee->name},\n\n"
-            . "Umealikwa kwenye {$eventName}.\n\n"
-            . "Tarehe: {$eventDate}\n"
-            . "Ukumbi: {$venue}\n\n"
-            . "Fungua kadi yako hapa:\n{$link}\n\n"
+        $template = "Habari #NAME#,\n\n"
+            . "Umealikwa kwenye #EVENT_NAME#.\n\n"
+            . "Tarehe: #EVENT_DATE#\n"
+            . "Muda: #EVENT_TIME#\n"
+            . "Ukumbi: #VENUE#\n\n"
+            . "Fungua kadi yako hapa:\n#PRIVATE_INVITATION_URL#\n\n"
             . "Tafadhali thibitisha mahudhurio yako kupitia link hiyo.\n\n"
             . "eLive Card";
+
+        return EliveMessagePlaceholders::render($template, $invitee);
     }
 
     protected function createMessageLog($invitee, string $phone, string $message): ?int
@@ -291,12 +517,19 @@ class SendEventMessage extends Page
             'type' => 'invitation',
             'phone' => $phone,
             'recipient' => $phone,
+            'to' => $phone,
             'message' => $message,
+            'body' => $message,
             'status' => 'sending',
             'payload' => json_encode(['message' => $message]),
+            'provider_request' => json_encode(['message' => $message]),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+
+        if ($data === []) {
+            return null;
+        }
 
         return DB::table('message_logs')->insertGetId($data);
     }
@@ -307,8 +540,14 @@ class SendEventMessage extends Page
             return;
         }
 
-        if (isset($data['response']) && is_array($data['response'])) {
-            $data['response'] = json_encode($data['response']);
+        foreach (['response', 'provider_response', 'meta'] as $key) {
+            if (isset($data[$key]) && is_array($data[$key])) {
+                $data[$key] = json_encode($data[$key]);
+            }
+        }
+
+        if (isset($data['response']) && ! isset($data['provider_response'])) {
+            $data['provider_response'] = $data['response'];
         }
 
         $data['updated_at'] = now();
@@ -323,21 +562,6 @@ class SendEventMessage extends Page
         return collect($data)
             ->filter(fn ($value, $column) => Schema::hasColumn($table, $column))
             ->all();
-    }
-
-    public function sendRsvpReminderSms(): void
-    {
-        Notification::make()->title('RSVP reminder coming next')->body('This button will send SMS reminders to pending RSVP invitees.')->info()->send();
-    }
-
-    public function sendEventDayReminderSms(): void
-    {
-        Notification::make()->title('Event day reminder coming next')->body('This button will send final SMS reminders.')->info()->send();
-    }
-
-    public function sendThankYouSms(): void
-    {
-        Notification::make()->title('Thank you SMS coming next')->body('This button will send thank-you SMS after the event.')->info()->send();
     }
 
     public function getInviteesCountProperty(): int
@@ -366,8 +590,8 @@ class SendEventMessage extends Page
             ->whereDoesntHave('smsLogs', function ($query): void {
                 $query
                     ->where('event_id', $this->record->id)
-                    ->where('sms_type', 'invitation')
-                    ->whereIn('status', ['queued', 'pending', 'sending', 'sent']);
+                    ->whereIn('sms_type', ['invitation', 'invitation_card'])
+                    ->whereIn('status', ['queued', 'pending', 'sending', 'sent', 'logged', 'accepted', 'delivered']);
             })
             ->count();
     }
@@ -402,14 +626,29 @@ class SendEventMessage extends Page
         return $this->record->invitees()->where('rsvp_status', 'not_attending')->count();
     }
 
+    public function getCheckedInInviteesCountProperty(): int
+    {
+        return $this->record->invitees()
+            ->where(function ($query): void {
+                $query
+                    ->whereNotNull('checked_in_at')
+                    ->orWhere('checked_in_count', '>', 0);
+            })
+            ->count();
+    }
+
     public function getSentSmsCountProperty(): int
     {
-        return method_exists($this->record, 'smsLogs') ? $this->record->smsLogs()->where('status', 'sent')->count() : 0;
+        return method_exists($this->record, 'smsLogs')
+            ? $this->record->smsLogs()->whereIn('status', ['sent', 'logged', 'accepted', 'delivered'])->count()
+            : 0;
     }
 
     public function getQueuedSmsCountProperty(): int
     {
-        return method_exists($this->record, 'smsLogs') ? $this->record->smsLogs()->whereIn('status', ['queued', 'pending', 'sending'])->count() : 0;
+        return method_exists($this->record, 'smsLogs')
+            ? $this->record->smsLogs()->whereIn('status', ['queued', 'pending', 'sending'])->count()
+            : 0;
     }
 
     public function getFailedSmsCountProperty(): int

@@ -2,10 +2,14 @@
 
 namespace App\Filament\Resources\EventResource\Pages;
 
+use App\Exports\EventSummaryExport;
 use App\Filament\Resources\EventResource;
+use App\Filament\Resources\EventResource\Widgets\EventQuickActions;
 use App\Filament\Resources\EventResource\Widgets\EventWorkspaceStats;
 use Filament\Actions;
 use Filament\Resources\Pages\ViewRecord;
+use Illuminate\Support\Str;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ViewEvent extends ViewRecord
 {
@@ -15,6 +19,7 @@ class ViewEvent extends ViewRecord
     {
         return [
             EventWorkspaceStats::class,
+            EventQuickActions::class,
         ];
     }
 
@@ -25,6 +30,19 @@ class ViewEvent extends ViewRecord
                 ->label('Edit Event')
                 ->icon('heroicon-o-pencil-square')
                 ->color('gray'),
+
+            Actions\Action::make('exportEventSummary')
+                ->label('Export Event Summary')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('success')
+                ->action(function () {
+                    $eventName = Str::slug((string) ($this->record->title ?? $this->record->name ?? 'event-' . $this->record->id));
+
+                    return Excel::download(
+                        new EventSummaryExport((int) $this->record->id),
+                        $eventName . '-event-summary.xlsx'
+                    );
+                }),
 
             Actions\Action::make('messageCenter')
                 ->label('Message Center')
@@ -48,6 +66,14 @@ class ViewEvent extends ViewRecord
                 ->color('success')
                 ->url(fn () => route('gate.check-in.show', $this->record))
                 ->openUrlInNewTab(),
+
+            Actions\Action::make('deliveryLogs')
+                ->label('Delivery Logs')
+                ->icon('heroicon-o-inbox-stack')
+                ->color('info')
+                ->url(fn () => EventResource::getUrl('view', [
+                    'record' => $this->record,
+                ])),
 
             Actions\Action::make('viewReports')
                 ->label('Reports')

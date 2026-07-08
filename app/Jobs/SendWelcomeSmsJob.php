@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Invitee;
 use App\Services\SmsService;
+use App\Support\EliveMessagePlaceholders;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -62,7 +63,7 @@ class SendWelcomeSmsJob implements ShouldQueue
             return;
         }
 
-        if (! $event->hasWelcomeSmsEnabled()) {
+        if (! $this->welcomeSmsEnabled($event)) {
             Log::info('Welcome SMS skipped because it is disabled for the event.', [
                 'invitee_id' => $invitee->id,
                 'event_id' => $event->id,
@@ -71,10 +72,13 @@ class SendWelcomeSmsJob implements ShouldQueue
             return;
         }
 
+        $templateMessage = $this->welcomeSmsTemplate($event);
+        $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
+
         if (blank($invitee->phone)) {
             $this->recordSmsLog(
                 invitee: $invitee,
-                message: $event->renderWelcomeSms($invitee),
+                message: $message,
                 status: 'failed',
                 errorMessage: 'Invitee phone number is empty.',
             );
@@ -96,39 +100,21 @@ class SendWelcomeSmsJob implements ShouldQueue
             return;
         }
 
-        $message = $event->renderWelcomeSms($invitee);
-
-        $pendingLogId = $this->recordSmsLog(
-            invitee: $invitee,
-            message: $message,
-            status: 'pending',
-        );
-
         try {
             $result = $smsService->sendCustomMessage(
                 invitee: $invitee,
                 message: $message,
-                type: 'welcome_checkin',
+                type: 'welcome_sms',
             );
 
             $successful = (bool) ($result['success'] ?? false);
             $status = (string) ($result['status'] ?? ($successful ? 'sent' : 'failed'));
-            $messageId = $result['message_id'] ?? null;
-            $provider = $result['provider'] ?? null;
-            $error = $result['error'] ?? null;
-
-            $this->updateSmsLog(
-                logId: $pendingLogId,
-                status: $status,
-                provider: $provider,
-                providerMessageId: $messageId,
-                errorMessage: $error,
-                providerResponse: $result,
-            );
 
             if (! $successful) {
                 throw new \RuntimeException(
-                    filled($error) ? (string) $error : 'Welcome SMS provider returned a failed response.'
+                    filled($result['error'] ?? null)
+                        ? (string) $result['error']
+                        : 'Welcome SMS provider returned a failed response.'
                 );
             }
 
@@ -136,11 +122,12 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'invitee_id' => $invitee->id,
                 'event_id' => $event->id,
                 'status' => $status,
-                'message_id' => $messageId,
+                'message_id' => $result['message_id'] ?? null,
             ]);
         } catch (Throwable $exception) {
-            $this->updateSmsLog(
-                logId: $pendingLogId,
+            $this->recordSmsLog(
+                invitee: $invitee,
+                message: $message,
                 status: 'failed',
                 errorMessage: $exception->getMessage(),
             );
@@ -155,6 +142,22 @@ class SendWelcomeSmsJob implements ShouldQueue
         }
     }
 
+    protected function welcomeSmsEnabled(object $event): bool
+    {
+        if (method_exists($event, 'hasWelcomeSmsEnabled')) {
+            return (bool) $event->hasWelcomeSmsEnabled();
+        }
+
+        return (bool) ($event->welcome_sms_enabled ?? false);
+    }
+
+    protected function welcomeSmsTemplate(object $event): string
+    {
+        return filled($event->welcome_sms_message ?? null)
+            ? (string) $event->welcome_sms_message
+            : 'Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe. Furahia tukio hili maalum.';
+    }
+
     protected function alreadySent(int $inviteeId): bool
     {
         if (! Schema::hasTable('sms_logs')) {
@@ -163,7 +166,7 @@ class SendWelcomeSmsJob implements ShouldQueue
 
         return DB::table('sms_logs')
             ->where('invitee_id', $inviteeId)
-            ->where('sms_type', 'welcome_checkin')
+            ->whereIn('sms_type', ['welcome_sms', 'welcome_checkin'])
             ->whereIn('status', ['logged', 'accepted', 'sent', 'delivered'])
             ->exists();
     }
@@ -188,18 +191,33 @@ class SendWelcomeSmsJob implements ShouldQueue
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
             'phone' => $invitee->phone,
-            'sms_type' => 'welcome_checkin',
+            'recipient' => $invitee->phone,
+            'to' => $invitee->phone,
+            'sms_type' => 'welcome_sms',
+            'type' => 'welcome_sms',
+            'message_type' => 'welcome_sms',
+            'channel' => 'sms',
             'message' => $message,
+            'body' => $message,
             'status' => $status,
             'provider' => $provider,
+            'provider_name' => $provider,
+            'provider_status' => $status,
             'provider_message_id' => $providerMessageId,
+            'shoot_id' => $providerMessageId,
+            'message_id' => $providerMessageId,
             'error_message' => $errorMessage,
+            'error' => $errorMessage,
             'sent_at' => in_array($status, ['logged', 'accepted', 'sent', 'delivered'], true) ? $now : null,
             'delivered_at' => $status === 'delivered' ? $now : null,
-            'failed_at' => $status === 'failed' ? $now : null,
+            'failed_at' => in_array($status, ['failed', 'undelivered', 'expired', 'rejected'], true) ? $now : null,
             'provider_response' => $providerResponse ? json_encode($providerResponse) : null,
+            'response' => $providerResponse ? json_encode($providerResponse) : null,
+            'meta' => $providerResponse ? json_encode($providerResponse) : null,
             'send_source' => 'check_in',
             'sent_by_user_id' => null,
+            'sent_by' => null,
+            'user_id' => null,
             'batch_id' => null,
             'created_at' => $now,
             'updated_at' => $now,
@@ -207,39 +225,11 @@ class SendWelcomeSmsJob implements ShouldQueue
 
         $insertable = Arr::only($row, $columns);
 
-        return (int) DB::table('sms_logs')->insertGetId($insertable);
-    }
-
-    protected function updateSmsLog(
-        ?int $logId,
-        string $status,
-        ?string $provider = null,
-        ?string $providerMessageId = null,
-        ?string $errorMessage = null,
-        ?array $providerResponse = null,
-    ): void {
-        if (! $logId || ! Schema::hasTable('sms_logs')) {
-            return;
+        if ($insertable === []) {
+            return null;
         }
 
-        $now = now();
-        $columns = Schema::getColumnListing('sms_logs');
-
-        $updates = [
-            'status' => $status,
-            'provider' => $provider,
-            'provider_message_id' => $providerMessageId,
-            'error_message' => $errorMessage,
-            'sent_at' => in_array($status, ['logged', 'accepted', 'sent', 'delivered'], true) ? $now : null,
-            'delivered_at' => $status === 'delivered' ? $now : null,
-            'failed_at' => $status === 'failed' ? $now : null,
-            'provider_response' => $providerResponse ? json_encode($providerResponse) : null,
-            'updated_at' => $now,
-        ];
-
-        DB::table('sms_logs')
-            ->where('id', $logId)
-            ->update(Arr::only($updates, $columns));
+        return (int) DB::table('sms_logs')->insertGetId($insertable);
     }
 
     public function failed(?Throwable $exception): void

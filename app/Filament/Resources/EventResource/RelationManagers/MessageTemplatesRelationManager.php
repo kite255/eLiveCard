@@ -23,6 +23,11 @@ class MessageTemplatesRelationManager extends RelationManager
 
     protected static ?string $pluralModelLabel = 'Message Templates';
 
+    public function isReadOnly(): bool
+    {
+        return false;
+    }
+
     private const TYPE_WELCOME_CHECKIN = 'welcome_checkin';
     private const TYPE_THANK_YOU = 'thank_you';
 
@@ -30,24 +35,32 @@ class MessageTemplatesRelationManager extends RelationManager
 
     private const PLACEHOLDERS = [
         '#NAME#',
-        '#PHONE#',
         '#EVENT_NAME#',
         '#EVENT_DATE#',
         '#EVENT_TIME#',
         '#EVENT_VENUE#',
-        '#VENUE_ADDRESS#',
-        '#LOCATION_LINK#',
-        '#DRESS_CODE#',
+        '#INVITATION_LINK#',
+        '#RSVP_LINK#',
+        '#SERIAL_NUMBER#',
         '#CARD_TYPE#',
-        '#ALLOWED_GUESTS#',
+        '#LOCATION_LINK#',
         '#GUEST_COUNT#',
         '#TABLE_NUMBER#',
-        '#CATEGORY#',
-        '#SERIAL_NUMBER#',
-        '#INVITATION_LINK#',
-        '#PRIVATE_INVITATION_URL#',
-        '#RSVP_LINK#',
-        '#CARD_LINK#',
+    ];
+
+    private const PLACEHOLDER_DESCRIPTIONS = [
+        '#NAME#' => 'Invitee name',
+        '#EVENT_NAME#' => 'Event name',
+        '#EVENT_DATE#' => 'Event date',
+        '#EVENT_TIME#' => 'Event time',
+        '#EVENT_VENUE#' => 'Venue name',
+        '#INVITATION_LINK#' => 'Private invitee page / card link',
+        '#RSVP_LINK#' => 'RSVP confirmation link',
+        '#SERIAL_NUMBER#' => 'Invitee serial number',
+        '#CARD_TYPE#' => 'Card type such as Single, Family, VIP',
+        '#LOCATION_LINK#' => 'Google Maps / venue link',
+        '#GUEST_COUNT#' => 'Allowed guest count',
+        '#TABLE_NUMBER#' => 'Assigned table number',
     ];
 
     private const SAMPLE_VALUES = [
@@ -76,55 +89,9 @@ class MessageTemplatesRelationManager extends RelationManager
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('1. Select Template')
-                    ->description('Choose the message template first. The customization options will appear after selection.')
-                    ->icon('heroicon-o-chat-bubble-left-right')
-                    ->schema([
-                        Forms\Components\Select::make('type')
-                            ->label('Template')
-                            ->options(self::typeOptions())
-                            ->placeholder('Select a template')
-                            ->required()
-                            ->native(false)
-                            ->live()
-                            ->afterStateUpdated(function (?string $state, Forms\Get $get, callable $set): void {
-                                if (blank($state)) {
-                                    $set('name', null);
-                                    $set('content', null);
-                                    $set('whatsapp_template_name', null);
-                                    $set('whatsapp_buttons', null);
-
-                                    return;
-                                }
-
-                                $channel = $get('channel') ?: MessageTemplate::CHANNEL_SMS;
-                                $starter = self::starterFor($state, $channel);
-
-                                if (! $starter) {
-                                    return;
-                                }
-
-                                $set('name', $starter['name']);
-                                $set('content', $starter['content']);
-                                $set('whatsapp_template_name', $starter['whatsapp_template_name'] ?? null);
-                                $set('whatsapp_buttons', $starter['whatsapp_buttons'] ?? null);
-                            })
-                            ->columnSpanFull(),
-
-                        Forms\Components\Placeholder::make('template_summary')
-                            ->label('')
-                            ->content(fn (Forms\Get $get): HtmlString => new HtmlString(
-                                blank($get('type'))
-                                    ? $this->emptyTemplateBox()
-                                    : $this->selectedTemplateBox((string) $get('type'))
-                            ))
-                            ->columnSpanFull(),
-                    ]),
-
-                Forms\Components\Section::make('2. Template Options')
-                    ->description('Control where this template is used and whether it is active.')
+                Forms\Components\Section::make('Template Details')
+                    ->description('Choose the channel, template type, status, and name. Then edit the message below.')
                     ->icon('heroicon-o-adjustments-horizontal')
-                    ->visible(fn (Forms\Get $get): bool => filled($get('type')))
                     ->schema([
                         Forms\Components\Select::make('channel')
                             ->label('Channel')
@@ -133,27 +100,23 @@ class MessageTemplatesRelationManager extends RelationManager
                             ->required()
                             ->native(false)
                             ->live()
-                            ->afterStateUpdated(function (?string $state, Forms\Get $get, callable $set): void {
-                                $type = $get('type');
-
-                                if (blank($type) || blank($state)) {
-                                    return;
-                                }
-
-                                $starter = self::starterFor($type, $state);
-
-                                if ($starter) {
-                                    $set('name', $starter['name']);
-                                    $set('content', $starter['content']);
-                                    $set('whatsapp_template_name', $starter['whatsapp_template_name'] ?? null);
-                                    $set('whatsapp_buttons', $starter['whatsapp_buttons'] ?? null);
-                                }
-
+                            ->afterStateUpdated(function (?string $state, callable $set): void {
                                 if ($state !== MessageTemplate::CHANNEL_WHATSAPP) {
                                     $set('whatsapp_template_name', null);
+                                    $set('whatsapp_language_code', null);
                                     $set('whatsapp_buttons', null);
                                 }
-                            }),
+                            })
+                            ->helperText('Choose SMS for text messages or WhatsApp for approved Meta templates.'),
+
+                        Forms\Components\Select::make('type')
+                            ->label('Template Type')
+                            ->options(self::typeOptions())
+                            ->placeholder('Select template type')
+                            ->required()
+                            ->native(false)
+                            ->live()
+                            ->helperText('This controls which action uses this template, for example Invitation or Thank You.'),
 
                         Forms\Components\Select::make('status')
                             ->label('Status')
@@ -161,41 +124,30 @@ class MessageTemplatesRelationManager extends RelationManager
                             ->default(MessageTemplate::STATUS_ACTIVE)
                             ->required()
                             ->native(false)
-                            ->helperText('Only active templates are used when sending messages.'),
+                            ->helperText('Only active templates are used automatically.'),
 
                         Forms\Components\TextInput::make('name')
                             ->label('Template Name')
                             ->required()
                             ->maxLength(255)
-                            ->columnSpanFull(),
-
-                        Forms\Components\Placeholder::make('usage_rule')
-                            ->label('How it will be used')
-                            ->content(fn (Forms\Get $get): HtmlString => new HtmlString(
-                                $this->usageRuleBox(
-                                    (string) ($get('channel') ?: MessageTemplate::CHANNEL_SMS),
-                                    (string) ($get('type') ?: MessageTemplate::TYPE_INVITATION),
-                                )
-                            ))
-                            ->columnSpanFull(),
+                            ->placeholder('Example: SMS Invitation'),
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('3. Customize Message')
-                    ->description('Edit the wording. The preview will update automatically.')
+                Forms\Components\Section::make('Message Content')
+                    ->description('Edit the SMS or WhatsApp message text. The preview updates automatically.')
                     ->icon('heroicon-o-pencil-square')
-                    ->visible(fn (Forms\Get $get): bool => filled($get('type')))
                     ->schema([
                         Forms\Components\Select::make('starter_template')
-                            ->label('Load Sample Wording')
+                            ->label('Optional: Load Sample Wording')
                             ->dehydrated(false)
                             ->native(false)
                             ->options(fn (Forms\Get $get): array => self::starterOptionsFor(
                                 $get('type'),
                                 $get('channel') ?: MessageTemplate::CHANNEL_SMS,
                             ))
-                            ->placeholder('Optional: choose sample wording')
-                            ->helperText('Selecting a sample will replace the current message content.')
+                            ->placeholder('Do not load sample')
+                            ->helperText('Use this only when creating a new template or when you want to replace the current wording.')
                             ->live()
                             ->afterStateUpdated(function (?string $state, callable $set): void {
                                 if (! $state) {
@@ -213,63 +165,74 @@ class MessageTemplatesRelationManager extends RelationManager
                                 $set('name', $starter['name']);
                                 $set('content', $starter['content']);
                                 $set('whatsapp_template_name', $starter['whatsapp_template_name'] ?? null);
+                                $set('whatsapp_language_code', $starter['whatsapp_language_code'] ?? self::WHATSAPP_LANGUAGE_CODE);
                                 $set('whatsapp_buttons', $starter['whatsapp_buttons'] ?? null);
                             })
                             ->columnSpanFull(),
 
                         Forms\Components\Textarea::make('content')
-                            ->label('Message Content')
-                            ->rows(12)
+                            ->label('Message Text')
+                            ->rows(10)
                             ->required()
                             ->live(debounce: 500)
-                            ->placeholder("Habari #NAME#, umealikwa kwenye #EVENT_NAME#.\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #EVENT_VENUE#\nKadi yako: #INVITATION_LINK#")
-                            ->helperText('Use placeholders like #NAME#, #EVENT_NAME#, #EVENT_DATE#, #EVENT_TIME#, #EVENT_VENUE#, #INVITATION_LINK#, #RSVP_LINK#, #LOCATION_LINK#.')
+                            ->placeholder("Habari #NAME#, umealikwa kwenye #EVENT_NAME#. Fungua kadi yako hapa: #INVITATION_LINK#")
+                            ->helperText('Recommended placeholders: #NAME#, #EVENT_NAME#, #EVENT_DATE#, #EVENT_TIME#, #EVENT_VENUE#, #INVITATION_LINK#, #RSVP_LINK#, #SERIAL_NUMBER#.')
                             ->columnSpanFull(),
 
                         Forms\Components\Placeholder::make('live_preview')
-                            ->label('Live Preview')
+                            ->label('Preview')
                             ->content(fn (Forms\Get $get): HtmlString => new HtmlString(
                                 $this->previewBox((string) ($get('content') ?? ''))
                             ))
                             ->columnSpanFull(),
                     ]),
 
-                Forms\Components\Section::make('4. WhatsApp Options')
-                    ->description('These options are shown only for WhatsApp templates.')
+                Forms\Components\Section::make('WhatsApp Settings')
+                    ->description('Only needed for WhatsApp templates approved in Meta.')
                     ->icon('heroicon-o-device-phone-mobile')
-                    ->visible(fn (Forms\Get $get): bool => filled($get('type')) && $get('channel') === MessageTemplate::CHANNEL_WHATSAPP)
+                    ->visible(fn (Forms\Get $get): bool => $get('channel') === MessageTemplate::CHANNEL_WHATSAPP)
                     ->schema([
                         Forms\Components\TextInput::make('whatsapp_template_name')
-                            ->label('Provider Template Name')
-                            ->placeholder('Example: elive_event_invitation_rsvp')
+                            ->label('Meta Template Name')
+                            ->placeholder('Example: event_invitation_en')
                             ->required(fn (Forms\Get $get): bool => $get('channel') === MessageTemplate::CHANNEL_WHATSAPP)
                             ->maxLength(255)
-                            ->helperText('Use the exact approved Meta template name. For the current templates, use language code: en.')
-                            ->columnSpanFull(),
+                            ->helperText('Use only the exact approved Meta template name: event_invitation_en, event_ticket_en, or event_invitation_sw.'),
+
+                        Forms\Components\Select::make('whatsapp_language_code')
+                            ->label('WhatsApp Language')
+                            ->options([
+                                'en' => 'English',
+                                'sw' => 'Swahili',
+                            ])
+                            ->default(self::WHATSAPP_LANGUAGE_CODE)
+                            ->required(fn (Forms\Get $get): bool => $get('channel') === MessageTemplate::CHANNEL_WHATSAPP)
+                            ->native(false)
+                            ->helperText('Must match the language selected in Meta. Use English if Meta created the template under English.'),
 
                         Forms\Components\KeyValue::make('whatsapp_buttons')
-                            ->label('WhatsApp Buttons')
+                            ->label('Button Notes')
                             ->keyLabel('Button Text')
                             ->valueLabel('Action / URL / Payload')
                             ->addActionLabel('Add Button')
                             ->reorderable()
-                            ->helperText('Examples: View Invitation = #INVITATION_LINK#, View Location = #LOCATION_LINK#, RSVP Yes = rsvp_attending.')
+                            ->helperText('These are notes for admin. The actual RSVP and LOCATION buttons are sent from the WhatsApp Cloud API payload.')
                             ->columnSpanFull(),
 
                         Forms\Components\Placeholder::make('whatsapp_warning')
-                            ->label('Note')
+                            ->label('Allowed Meta Templates')
                             ->content(new HtmlString(
-                                '<div style="background:#F8FAFC;border-left:4px solid #FD9618;border-radius:12px;padding:12px;color:#111827;">WhatsApp sending requires approved Meta templates. Current Meta templates use language code <strong>en</strong>. The provider template name must match exactly, for example <strong>elive_event_invitation_rsvp</strong>.</div>'
+                                '<div style="background:#F8FAFC;border-left:4px solid #FD9618;border-radius:12px;padding:12px;color:#111827;line-height:1.6;">Use only: <strong>event_invitation_en</strong>, <strong>event_ticket_en</strong>, or <strong>event_invitation_sw</strong>.</div>'
                             ))
                             ->columnSpanFull(),
-                    ]),
+                    ])
+                    ->columns(2),
 
-                Forms\Components\Section::make('Available Placeholders')
-                    ->description('Copy these placeholders into the message content.')
+                Forms\Components\Section::make('Recommended Placeholders & SMS Examples')
+                    ->description('Use only the recommended placeholders below to keep SMS and WhatsApp messages clean.')
                     ->icon('heroicon-o-code-bracket')
                     ->collapsible()
                     ->collapsed()
-                    ->visible(fn (Forms\Get $get): bool => filled($get('type')))
                     ->schema([
                         Forms\Components\Placeholder::make('placeholders')
                             ->label('')
@@ -278,6 +241,7 @@ class MessageTemplatesRelationManager extends RelationManager
                     ]),
             ]);
     }
+
 
     public function table(Table $table): Table
     {
@@ -338,6 +302,24 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->label('Provider Template')
                     ->placeholder('-')
                     ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('whatsapp_language_code')
+                    ->label('WA Lang')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => match ($state) {
+                        'sw' => 'Swahili',
+                        'en' => 'English',
+                        null, '' => '-',
+                        default => strtoupper((string) $state),
+                    })
+                    ->color(fn (?string $state): string => match ($state) {
+                        'sw' => 'success',
+                        'en' => 'info',
+                        default => 'gray',
+                    })
+                    ->placeholder('-')
                     ->sortable()
                     ->toggleable(),
 
@@ -404,13 +386,13 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->action(fn () => $this->createDefaultsAndNotify()),
 
                 Tables\Actions\Action::make('sync_whatsapp_provider_templates')
-                    ->label('Sync WhatsApp Providers')
+                    ->label('Sync WhatsApp Templates')
                     ->icon('heroicon-o-arrow-path-rounded-square')
                     ->button()
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Sync WhatsApp provider template names')
-                    ->modalDescription('This updates this event\'s WhatsApp templates to the approved Meta provider names: elive_event_invitation_rsvp, elive_event_rsvp_reminder, elive_event_attending_reminder, and elive_event_day_reminder. Use WHATSAPP_TEMPLATE_LANGUAGE=en in .env.')
+                    ->modalDescription('This creates/updates only the current approved Meta templates: event_invitation_en, event_ticket_en, and event_invitation_sw.')
                     ->action(fn () => $this->syncWhatsAppProviderTemplatesAndNotify()),
             ])
             ->actions([
@@ -577,74 +559,77 @@ class MessageTemplatesRelationManager extends RelationManager
                 'name' => 'SMS Thank You Message',
                 'content' => "Habari #NAME#, asante kwa kuhudhuria #EVENT_NAME#.\nTunashukuru sana kwa muda wako, upendo wako, na ushiriki wako.",
             ],
-            'whatsapp_invitation' => [
-                'label' => 'WhatsApp Invitation with RSVP Buttons',
+            'whatsapp_invitation_en' => [
+                'label' => 'WhatsApp Invitation English',
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
                 'type' => MessageTemplate::TYPE_INVITATION,
-                'name' => 'WhatsApp Invitation',
-                'content' => "Habari #NAME#,\n\nUnakaribishwa kwenye #EVENT_NAME#.\nKadi yako ni #CARD_TYPE#.\nUkumbi ni #EVENT_VENUE#.\nMuda: #EVENT_TIME#\n\nPia tusaidie kujua ushiriki wako kwa kubonyeza mojawapo ya vitufe vilivyo hapa chini.",
-                'whatsapp_template_name' => 'elive_event_invitation_rsvp',
+                'name' => 'WhatsApp Invitation English',
+                'content' => "Hello #NAME#,
+
+You are invited to #EVENT_NAME#.
+
+Your card type is #CARD_TYPE#.
+Venue: #EVENT_VENUE#
+Time: #EVENT_TIME#
+
+Please confirm your attendance by tapping one of the buttons below.
+
+For the venue map, tap LOCATION.",
+                'whatsapp_template_name' => 'event_invitation_en',
+                'whatsapp_language_code' => 'en',
                 'whatsapp_buttons' => [
-                    'Asante, Nitafika' => 'rsvp_attending',
-                    'Sitafika, Nina udhuru' => 'rsvp_not_attending',
-                    'View Invitation' => '#INVITATION_LINK#',
-                    'View Location' => '#LOCATION_LINK#',
+                    'Attending' => 'rsvp_attending',
+                    'Not Attending' => 'rsvp_not_attending',
+                    'LOCATION' => '#LOCATION_LINK#',
                 ],
             ],
-            'whatsapp_rsvp_pending' => [
-                'label' => 'WhatsApp RSVP Pending Reminder',
+            'whatsapp_event_ticket_en' => [
+                'label' => 'WhatsApp Event Ticket English',
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
-                'type' => MessageTemplate::TYPE_RSVP_PENDING_REMINDER,
-                'name' => 'WhatsApp RSVP Pending Reminder',
-                'content' => "Habari #NAME#,\n\nTunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\n\nTafadhali tumia button kuthibitisha.",
-                'whatsapp_template_name' => 'elive_event_rsvp_reminder',
+                'type' => MessageTemplate::TYPE_INVITATION,
+                'name' => 'WhatsApp Event Ticket English',
+                'content' => "Hello #NAME#,
+
+Your ticket for #EVENT_NAME# is ready.
+
+Ticket type: #CARD_TYPE#
+Venue: #EVENT_VENUE#
+Time: #EVENT_TIME#
+
+Please come with your ticket on the event day. This ticket will be verified at the gate using the QR code.
+
+For the venue map, tap LOCATION.",
+                'whatsapp_template_name' => 'event_ticket_en',
+                'whatsapp_language_code' => 'en',
                 'whatsapp_buttons' => [
-                    'Asante, Nitafika' => 'rsvp_attending',
-                    'Sitafika, Nina udhuru' => 'rsvp_not_attending',
-                    'View Invitation' => '#INVITATION_LINK#',
+                    'Attending' => 'rsvp_attending',
+                    'Not Attending' => 'rsvp_not_attending',
+                    'LOCATION' => '#LOCATION_LINK#',
                 ],
             ],
-            'whatsapp_attending' => [
-                'label' => 'WhatsApp One Day Before Reminder',
+            'whatsapp_invitation_sw' => [
+                'label' => 'WhatsApp Invitation Swahili',
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
-                'type' => MessageTemplate::TYPE_ATTENDING_REMINDER,
-                'name' => 'WhatsApp One Day Before Reminder',
-                'content' => "Habari #NAME#,\n\nTunakukumbusha kuhusu #EVENT_NAME#.\nKadi yako ni #CARD_TYPE#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\n\nFungua kadi yako kwa maelezo zaidi.",
-                'whatsapp_template_name' => 'elive_event_attending_reminder',
+                'type' => MessageTemplate::TYPE_INVITATION,
+                'name' => 'WhatsApp Invitation Swahili',
+                'content' => "Habari #NAME#,
+
+Unakaribishwa kwenye #EVENT_NAME#.
+
+Aina ya kadi yako ni #CARD_TYPE#.
+Ukumbi: #EVENT_VENUE#
+Muda: #EVENT_TIME#
+
+Tafadhali thibitisha kama utahudhuria kwa kubonyeza mojawapo ya vitufe hapa chini.
+
+Kwa ramani ya ukumbi, bonyeza LOCATION.",
+                'whatsapp_template_name' => 'event_invitation_sw',
+                'whatsapp_language_code' => 'en',
                 'whatsapp_buttons' => [
-                    'View Invitation' => '#INVITATION_LINK#',
-                    'View Location' => '#LOCATION_LINK#',
+                    'Attending' => 'rsvp_attending',
+                    'Not Attending' => 'rsvp_not_attending',
+                    'LOCATION' => '#LOCATION_LINK#',
                 ],
-            ],
-            'whatsapp_event_day' => [
-                'label' => 'WhatsApp Event Day Reminder',
-                'channel' => MessageTemplate::CHANNEL_WHATSAPP,
-                'type' => MessageTemplate::TYPE_EVENT_DAY_REMINDER,
-                'name' => 'WhatsApp Event Day Reminder',
-                'content' => "Habari #NAME#,\n\nLeo ni siku ya #EVENT_NAME#.\nKadi yako ni #CARD_TYPE#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\n\nTafadhali njoo na kadi yako kwa ajili ya check-in.",
-                'whatsapp_template_name' => 'elive_event_day_reminder',
-                'whatsapp_buttons' => [
-                    'View Invitation' => '#INVITATION_LINK#',
-                    'View Location' => '#LOCATION_LINK#',
-                ],
-            ],
-            'whatsapp_welcome_checkin' => [
-                'label' => 'WhatsApp Welcome After Check-in',
-                'channel' => MessageTemplate::CHANNEL_WHATSAPP,
-                'type' => self::TYPE_WELCOME_CHECKIN,
-                'name' => 'WhatsApp Welcome After Check-in',
-                'content' => "Karibu #NAME# kwenye #EVENT_NAME#.\n\nTunafurahi kuwa nawe. Furahia tukio.",
-                'whatsapp_template_name' => 'elive_event_welcome_checkin',
-                'whatsapp_buttons' => null,
-            ],
-            'whatsapp_thank_you' => [
-                'label' => 'WhatsApp Thank You Message',
-                'channel' => MessageTemplate::CHANNEL_WHATSAPP,
-                'type' => self::TYPE_THANK_YOU,
-                'name' => 'WhatsApp Thank You Message',
-                'content' => "Habari #NAME#,\n\nAsante kwa kuhudhuria #EVENT_NAME#.\n\nTunashukuru sana kwa muda wako, upendo wako, na ushiriki wako.",
-                'whatsapp_template_name' => 'elive_event_thank_you',
-                'whatsapp_buttons' => null,
             ],
         ];
     }
@@ -708,6 +693,11 @@ class MessageTemplatesRelationManager extends RelationManager
                     'name' => $template['name'],
                     'content' => $template['content'],
                     'whatsapp_template_name' => $template['whatsapp_template_name'] ?? null,
+                    'whatsapp_language_code' => $template['whatsapp_language_code'] ?? (
+                        ($template['channel'] ?? null) === MessageTemplate::CHANNEL_WHATSAPP
+                            ? self::WHATSAPP_LANGUAGE_CODE
+                            : null
+                    ),
                     'whatsapp_buttons' => $template['whatsapp_buttons'] ?? null,
                     'status' => MessageTemplate::STATUS_ACTIVE,
                 ],
@@ -727,7 +717,7 @@ class MessageTemplatesRelationManager extends RelationManager
 
         Notification::make()
             ->title('WhatsApp provider templates synced')
-            ->body("Updated/created: {$updated}. Make sure WHATSAPP_TEMPLATE_LANGUAGE=en is set in .env, then run php artisan optimize:clear.")
+            ->body("Updated/created: {$updated}. Each template language is stored on the template. Run php artisan optimize:clear after syncing.")
             ->success()
             ->persistent()
             ->send();
@@ -753,6 +743,11 @@ class MessageTemplatesRelationManager extends RelationManager
                     'name' => $template['name'],
                     'content' => $template['content'],
                     'whatsapp_template_name' => $template['whatsapp_template_name'] ?? null,
+                    'whatsapp_language_code' => $template['whatsapp_language_code'] ?? (
+                        ($template['channel'] ?? null) === MessageTemplate::CHANNEL_WHATSAPP
+                            ? self::WHATSAPP_LANGUAGE_CODE
+                            : null
+                    ),
                     'whatsapp_buttons' => $template['whatsapp_buttons'] ?? null,
                     'status' => MessageTemplate::STATUS_ACTIVE,
                 ],
@@ -799,7 +794,12 @@ class MessageTemplatesRelationManager extends RelationManager
     {
         if (($data['channel'] ?? null) !== MessageTemplate::CHANNEL_WHATSAPP) {
             $data['whatsapp_template_name'] = null;
+            $data['whatsapp_language_code'] = null;
             $data['whatsapp_buttons'] = null;
+        }
+
+        if (($data['channel'] ?? null) === MessageTemplate::CHANNEL_WHATSAPP && blank($data['whatsapp_language_code'] ?? null)) {
+            $data['whatsapp_language_code'] = self::WHATSAPP_LANGUAGE_CODE;
         }
 
         if (! array_key_exists('status', $data) || blank($data['status'])) {
@@ -896,11 +896,45 @@ class MessageTemplatesRelationManager extends RelationManager
 
     private function placeholdersBox(): string
     {
-        return '<div style="display:flex;flex-wrap:wrap;gap:6px;line-height:1.8;">'
-            . collect(self::PLACEHOLDERS)
-                ->unique()
-                ->map(fn (string $placeholder): string => '<code style="background:#F8FAFC;border:1px solid #E5E7EB;padding:3px 7px;border-radius:7px;">' . e($placeholder) . '</code>')
-                ->implode('')
+        $placeholderRows = collect(self::PLACEHOLDERS)
+            ->unique()
+            ->map(function (string $placeholder): string {
+                $description = self::PLACEHOLDER_DESCRIPTIONS[$placeholder] ?? 'Message value';
+
+                return '<tr>'
+                    . '<td style="padding:8px 10px;border-bottom:1px solid #E5E7EB;white-space:nowrap;"><code style="background:#F8FAFC;border:1px solid #E5E7EB;padding:3px 7px;border-radius:7px;">' . e($placeholder) . '</code></td>'
+                    . '<td style="padding:8px 10px;border-bottom:1px solid #E5E7EB;color:#475569;">' . e($description) . '</td>'
+                    . '</tr>';
+            })
+            ->implode('');
+
+        $smsExamples = [
+            'SMS Invitation' => "Habari #NAME#, umealikwa kwenye #EVENT_NAME#.\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #EVENT_VENUE#\nFungua kadi yako hapa: #INVITATION_LINK#",
+            'SMS RSVP Reminder' => "Habari #NAME#, tunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\nTafadhali fungua link hii: #RSVP_LINK#",
+            'SMS Event Day Reminder' => "Habari #NAME#, leo ni siku ya #EVENT_NAME#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\nNjoo na kadi yako au serial number: #SERIAL_NUMBER#.",
+            'SMS Thank You' => "Habari #NAME#, asante kwa kuhudhuria #EVENT_NAME#.\nTunashukuru sana kwa muda wako, upendo wako, na ushiriki wako.",
+        ];
+
+        $exampleHtml = collect($smsExamples)
+            ->map(fn (string $example, string $title): string => '<div style="background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;padding:12px;margin-top:10px;">'
+                . '<div style="font-weight:700;color:#213B73;margin-bottom:6px;">' . e($title) . '</div>'
+                . '<pre style="white-space:pre-wrap;margin:0;color:#111827;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;line-height:1.6;">' . e($example) . '</pre>'
+                . '</div>')
+            ->implode('');
+
+        return '<div style="display:grid;gap:14px;color:#111827;">'
+            . '<div style="background:#F8FAFC;border-left:4px solid #213B73;border-radius:12px;padding:12px;line-height:1.6;">'
+            . '<strong>Recommended:</strong> For SMS, mainly use <code>#NAME#</code>, <code>#EVENT_NAME#</code>, <code>#EVENT_DATE#</code>, <code>#EVENT_TIME#</code>, <code>#EVENT_VENUE#</code>, and <code>#INVITATION_LINK#</code>. Keep SMS short to reduce SMS cost.'
+            . '</div>'
+            . '<table style="width:100%;border-collapse:collapse;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">'
+            . '<thead><tr style="background:#F8FAFC;"><th style="text-align:left;padding:8px 10px;color:#111827;">Placeholder</th><th style="text-align:left;padding:8px 10px;color:#111827;">Meaning</th></tr></thead>'
+            . '<tbody>' . $placeholderRows . '</tbody>'
+            . '</table>'
+            . '<div>'
+            . '<div style="font-weight:700;color:#111827;margin-bottom:4px;">Ready SMS examples</div>'
+            . '<div style="color:#64748B;font-size:13px;">Copy one example into Message Text, then edit it for your event.</div>'
+            . $exampleHtml
+            . '</div>'
             . '</div>';
     }
 
@@ -916,7 +950,11 @@ class MessageTemplatesRelationManager extends RelationManager
     private function templateDescription(MessageTemplate $record): string
     {
         if ($record->channel === MessageTemplate::CHANNEL_WHATSAPP && filled($record->whatsapp_template_name)) {
-            return 'Provider: ' . $record->whatsapp_template_name;
+            $language = filled($record->whatsapp_language_code ?? null)
+                ? ' • Lang: ' . strtoupper((string) $record->whatsapp_language_code)
+                : '';
+
+            return 'Provider: ' . $record->whatsapp_template_name . $language;
         }
 
         return match ($record->type) {
@@ -936,6 +974,10 @@ class MessageTemplatesRelationManager extends RelationManager
             ? '<div><strong>Provider Template:</strong> ' . e($record->whatsapp_template_name) . '</div>'
             : '';
 
+        $providerLanguage = filled($record->whatsapp_language_code ?? null)
+            ? '<div><strong>WhatsApp Language:</strong> ' . e(strtoupper((string) $record->whatsapp_language_code)) . '</div>'
+            : '';
+
         $buttons = collect($record->whatsapp_buttons ?? [])
             ->map(fn ($value, $key): string => '<span style="display:inline-block;background:#F8FAFC;border:1px solid #E5E7EB;border-radius:999px;padding:4px 10px;margin:4px;">' . e($key) . ' → ' . e($value) . '</span>')
             ->implode('');
@@ -950,6 +992,7 @@ class MessageTemplatesRelationManager extends RelationManager
             . '<div><strong>Type:</strong> ' . e(self::typeOptions()[$record->type] ?? $record->type) . '</div>'
             . '<div><strong>Status:</strong> ' . e(self::statusOptions()[$record->status] ?? $record->status) . '</div>'
             . $providerTemplate
+            . $providerLanguage
             . '</div>'
             . '<div style="white-space:pre-line;background:#F8FAFC;border:1px solid #E5E7EB;border-radius:12px;padding:14px;line-height:1.7;">'
             . e($this->previewMessage((string) $record->content))

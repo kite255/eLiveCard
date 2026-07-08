@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\EventResource\RelationManagers;
 
+use App\Exports\EventInviteesExport;
+use App\Exports\EventRsvpExport;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Models\CardType;
 use App\Models\GeneratedCard;
@@ -24,6 +26,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 use Throwable;
@@ -654,6 +657,36 @@ class InviteesRelationManager extends RelationManager
                         $this->importInviteesFromExcel($data['excel_file']);
                     }),
 
+                Tables\Actions\Action::make('export_invitees')
+                    ->label('Export Invitees')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->action(function () {
+                        $event = $this->getOwnerRecord();
+
+                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        return Excel::download(
+                            new EventInviteesExport((int) $event->id),
+                            $eventName . '-invitees-report.xlsx'
+                        );
+                    }),
+
+                Tables\Actions\Action::make('export_rsvp')
+                    ->label('Export RSVP')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('warning')
+                    ->action(function () {
+                        $event = $this->getOwnerRecord();
+
+                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        return Excel::download(
+                            new EventRsvpExport((int) $event->id),
+                            $eventName . '-rsvp-report.xlsx'
+                        );
+                    }),
+
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('send_message')
                         ->label('Send Message')
@@ -709,19 +742,16 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('primary')
                         ->modalHeading('Send WhatsApp Message')
-                        ->modalDescription('Choose the WhatsApp message option and recipients.')
+                        ->modalDescription('Choose the exact approved Meta WhatsApp template and recipients.')
                         ->modalSubmitActionLabel('Send WhatsApp')
                         ->form([
-                            Forms\Components\Select::make('template_type')
-                                ->label('WhatsApp Option')
-                                ->options([
-                                    'invitation' => 'Invitation WhatsApp',
-                                    'card_link' => 'Card Link WhatsApp',
-                                    'rsvp_pending_reminder' => 'RSVP WhatsApp',
-                                    'custom' => 'Location / Custom WhatsApp',
-                                ])
-                                ->default('invitation')
-                                ->required(),
+                            Forms\Components\Select::make('message_template_id')
+                                ->label('WhatsApp Template')
+                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
+                                ->searchable()
+                                ->preload()
+                                ->required()
+                                ->helperText('Choose the exact Meta template to send, for example event_invitation_en, event_invitation_sw, or event_ticket_en.'),
 
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
@@ -736,20 +766,28 @@ class InviteesRelationManager extends RelationManager
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Note')
-                                ->content('This will send the message using the real WhatsApp Cloud API and save the response in Message Logs.'),
+                                ->content('This sends using the selected WhatsApp Cloud API template and saves the response in Message Logs.'),
                         ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
-                            $templateType = match ($data['template_type']) {
-                                'card_link' => 'invitation',
-                                default => $data['template_type'],
-                            };
+                            $selectedTemplate = $this->messageTemplateById((int) $data['message_template_id'], 'whatsapp');
+
+                            if (! $selectedTemplate) {
+                                Notification::make()
+                                    ->title('WhatsApp template not found')
+                                    ->body('Please choose a valid WhatsApp template.')
+                                    ->danger()
+                                    ->send();
+
+                                return;
+                            }
 
                             $this->sendEventMessagesFromToolbar(
                                 channel: 'whatsapp',
-                                templateType: $templateType,
+                                templateType: $selectedTemplate->type,
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'WhatsApp messages processed',
+                                messageTemplateId: $selectedTemplate->id,
                             );
                         }),
 
@@ -1119,7 +1157,7 @@ class InviteesRelationManager extends RelationManager
                                 ->required(),
 
                             Forms\Components\Select::make('template_type')
-                                ->label('Message Template')
+                                ->label('Message Type')
                                 ->options([
                                     'invitation' => 'Invitation',
                                     'rsvp_pending_reminder' => 'RSVP Pending Reminder',
@@ -1132,15 +1170,25 @@ class InviteesRelationManager extends RelationManager
                                 ->default('invitation')
                                 ->required(),
 
+                            Forms\Components\Select::make('message_template_id')
+                                ->label('Exact WhatsApp Template')
+                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
+                                ->searchable()
+                                ->preload()
+                                ->helperText('For WhatsApp, choose the exact approved Meta template. For SMS, leave this empty.'),
+
                             Forms\Components\Placeholder::make('template_note')
                                 ->label('Template Source')
-                                ->content('The system will use the active template for this event, channel, and type. Edit messages in the Message Templates tab.'),
+                                ->content('For WhatsApp, the selected exact template is used. For SMS, the active template for the selected type is used.'),
                         ])
                         ->action(function (Invitee $record, array $data): void {
                             $result = $this->sendInviteeMessageUsingTemplate(
                                 invitee: $record,
                                 channel: $data['channel'],
                                 templateType: $data['template_type'],
+                                messageTemplateId: ($data['channel'] ?? null) === 'whatsapp' && filled($data['message_template_id'] ?? null)
+                                    ? (int) $data['message_template_id']
+                                    : null,
                             );
 
                             $notification = Notification::make()
@@ -1621,7 +1669,7 @@ class InviteesRelationManager extends RelationManager
                         ->color('success')
                         ->requiresConfirmation()
                         ->modalHeading('Send message to selected invitees')
-                        ->modalDescription('The selected active template will be used for each invitee.')
+                        ->modalDescription('Choose the channel and, for WhatsApp, the exact Meta template.')
                         ->form([
                             Forms\Components\Select::make('channel')
                                 ->label('Channel')
@@ -1633,7 +1681,7 @@ class InviteesRelationManager extends RelationManager
                                 ->required(),
 
                             Forms\Components\Select::make('template_type')
-                                ->label('Message Template')
+                                ->label('Message Type')
                                 ->options([
                                     'invitation' => 'Invitation',
                                     'rsvp_pending_reminder' => 'RSVP Pending Reminder',
@@ -1645,6 +1693,13 @@ class InviteesRelationManager extends RelationManager
                                 ])
                                 ->default('invitation')
                                 ->required(),
+
+                            Forms\Components\Select::make('message_template_id')
+                                ->label('Exact WhatsApp Template')
+                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
+                                ->searchable()
+                                ->preload()
+                                ->helperText('For WhatsApp bulk sending, choose the exact Meta template. For SMS, leave this empty.'),
                         ])
                         ->deselectRecordsAfterCompletion()
                         ->action(function (Collection $records, array $data): void {
@@ -1663,6 +1718,9 @@ class InviteesRelationManager extends RelationManager
                                     channel: $data['channel'],
                                     templateType: $data['template_type'],
                                     notifySkipped: false,
+                                    messageTemplateId: ($data['channel'] ?? null) === 'whatsapp' && filled($data['message_template_id'] ?? null)
+                                        ? (int) $data['message_template_id']
+                                        : null,
                                 );
 
                                 if (in_array($result['status'], ['sent', 'logged'], true)) {
@@ -1692,6 +1750,7 @@ class InviteesRelationManager extends RelationManager
         string $templateType,
         string $recipientScope,
         string $actionTitle,
+        ?int $messageTemplateId = null,
     ): void {
         $event = $this->getOwnerRecord();
 
@@ -1752,7 +1811,7 @@ class InviteesRelationManager extends RelationManager
             return;
         }
 
-        $template = $this->activeMessageTemplate($channel, $templateType);
+        $template = $this->resolveMessageTemplate($channel, $templateType, $messageTemplateId);
 
         if (! $template) {
             Notification::make()
@@ -1780,8 +1839,9 @@ class InviteesRelationManager extends RelationManager
             $result = $this->sendInviteeMessageUsingTemplate(
                 invitee: $invitee,
                 channel: $channel,
-                templateType: $templateType,
+                templateType: $template->type ?: $templateType,
                 notifySkipped: false,
+                messageTemplateId: $template->id,
             );
 
             if (in_array($result['status'] ?? null, ['sent', 'logged'], true)) {
@@ -1828,6 +1888,45 @@ class InviteesRelationManager extends RelationManager
             ->first();
     }
 
+    protected function messageTemplateById(int $messageTemplateId, ?string $channel = null): ?MessageTemplate
+    {
+        return MessageTemplate::query()
+            ->where('event_id', $this->getOwnerRecord()->id)
+            ->when($channel, fn ($query) => $query->where('channel', $channel))
+            ->where('id', $messageTemplateId)
+            ->first();
+    }
+
+    protected function resolveMessageTemplate(string $channel, string $type, ?int $messageTemplateId = null): ?MessageTemplate
+    {
+        if ($messageTemplateId) {
+            return $this->messageTemplateById($messageTemplateId, $channel);
+        }
+
+        return $this->activeMessageTemplate($channel, $type);
+    }
+
+    protected function whatsappMessageTemplateOptions(): array
+    {
+        return MessageTemplate::query()
+            ->where('event_id', $this->getOwnerRecord()->id)
+            ->where('channel', 'whatsapp')
+            ->whereNotNull('whatsapp_template_name')
+            ->where('whatsapp_template_name', '!=', '')
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(function (MessageTemplate $template): array {
+                $status = $template->status ?: 'unknown';
+                $providerName = $template->whatsapp_template_name ?: 'missing_provider_name';
+
+                return [
+                    $template->id => "{$template->name} — {$providerName} [{$status}]",
+                ];
+            })
+            ->toArray();
+    }
+
     protected function renderMessageTemplate(MessageTemplate $template, Invitee $invitee): string
     {
         $message = app(MessageTemplateRenderer::class)
@@ -1841,6 +1940,7 @@ class InviteesRelationManager extends RelationManager
         string $channel,
         string $templateType,
         bool $notifySkipped = true,
+        ?int $messageTemplateId = null,
     ): array {
         $invitee->loadMissing(['event', 'cardType', 'latestGeneratedCard']);
 
@@ -1853,7 +1953,7 @@ class InviteesRelationManager extends RelationManager
             ];
         }
 
-        $template = $this->activeMessageTemplate($channel, $templateType);
+        $template = $this->resolveMessageTemplate($channel, $templateType, $messageTemplateId);
 
         if (! $template) {
             return [
@@ -1865,16 +1965,17 @@ class InviteesRelationManager extends RelationManager
         }
 
         $message = $this->renderMessageTemplate($template, $invitee);
+        $effectiveTemplateType = $template->type ?: $templateType;
 
         if ($channel === 'sms') {
-            return $this->sendSmsUsingTemplate($invitee, $templateType, $message);
+            return $this->sendSmsUsingTemplate($invitee, $effectiveTemplateType, $message);
         }
 
         return $this->recordWhatsappUsingTemplate(
             invitee: $invitee,
             template: $template,
             message: $message,
-            templateType: $templateType,
+            templateType: $effectiveTemplateType,
         );
     }
 
@@ -2215,6 +2316,7 @@ class InviteesRelationManager extends RelationManager
                 phone: $phone,
                 message: $message,
                 template: $template,
+                templateType: $templateType,
             );
 
             $response = Http::withToken($accessToken)
@@ -2336,6 +2438,7 @@ class InviteesRelationManager extends RelationManager
         string $phone,
         string $message,
         ?MessageTemplate $template = null,
+        string $templateType = 'invitation',
     ): array {
         $providerTemplateName = trim((string) ($template?->whatsapp_template_name ?? ''));
 
@@ -2370,6 +2473,10 @@ class InviteesRelationManager extends RelationManager
                 'parameters' => $this->buildWhatsappTemplateBodyParameters($invitee),
             ];
 
+            foreach ($this->buildWhatsappTemplateButtonComponents($invitee, $templateType) as $buttonComponent) {
+                $components[] = $buttonComponent;
+            }
+
             return [
                 'messaging_product' => 'whatsapp',
                 'recipient_type' => 'individual',
@@ -2378,7 +2485,7 @@ class InviteesRelationManager extends RelationManager
                 'template' => [
                     'name' => $providerTemplateName,
                     'language' => [
-                        'code' => config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'en')),
+                        'code' => $this->whatsappTemplateLanguageCode($template),
                     ],
                     'components' => $components,
                 ],
@@ -2399,6 +2506,77 @@ class InviteesRelationManager extends RelationManager
                 'body' => $message,
             ],
         ];
+    }
+
+    protected function buildWhatsappTemplateButtonComponents(Invitee $invitee, string $templateType): array
+    {
+        /*
+         * These payloads must match WhatsAppWebhookController/RsvpService.
+         *
+         * Button index 0 = Attending
+         * Button index 1 = Not Attending
+         * Button index 2 = LOCATION URL button
+         *
+         * Meta template button order must be:
+         * 1. Quick Reply
+         * 2. Quick Reply
+         * 3. Visit Website dynamic URL: https://digital.elive.co.tz/l/{{1}}
+         */
+        if (! in_array($templateType, [
+            'invitation',
+            'rsvp_pending_reminder',
+        ], true)) {
+            return [];
+        }
+
+        return [
+            [
+                'type' => 'button',
+                'sub_type' => 'quick_reply',
+                'index' => '0',
+                'parameters' => [
+                    [
+                        'type' => 'payload',
+                        'payload' => 'rsvp_attending',
+                    ],
+                ],
+            ],
+            [
+                'type' => 'button',
+                'sub_type' => 'quick_reply',
+                'index' => '1',
+                'parameters' => [
+                    [
+                        'type' => 'payload',
+                        'payload' => 'rsvp_not_attending',
+                    ],
+                ],
+            ],
+            [
+                'type' => 'button',
+                'sub_type' => 'url',
+                'index' => '2',
+                'parameters' => [
+                    [
+                        'type' => 'text',
+                        'text' => (string) $invitee->short_code,
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    protected function whatsappTemplateLanguageCode(?MessageTemplate $template): string
+    {
+        if (
+            $template instanceof MessageTemplate
+            && Schema::hasColumn($template->getTable(), 'whatsapp_language_code')
+            && filled($template->whatsapp_language_code ?? null)
+        ) {
+            return (string) $template->whatsapp_language_code;
+        }
+
+        return (string) config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'en'));
     }
 
     protected function whatsappHeaderImageUrl(Invitee $invitee): ?string

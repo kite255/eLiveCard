@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource\RelationManagers;
 use App\Models\Event;
+use App\Support\EliveMessagePlaceholders;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Infolists;
@@ -177,6 +178,12 @@ class EventResource extends Resource
                             ->default(true)
                             ->inline(false),
 
+                        Forms\Components\Toggle::make('show_photo_upload')
+                            ->label('Show Photo Upload Form')
+                            ->helperText('Allows invitees to upload event photos for admin approval before public display.')
+                            ->default(true)
+                            ->inline(false),
+
                         Forms\Components\Toggle::make('show_organizer_contact')
                             ->label('Show Organizer Contact')
                             ->default(true)
@@ -198,9 +205,9 @@ class EventResource extends Resource
 
                         Forms\Components\Textarea::make('welcome_sms_message')
                             ->label('Welcome SMS Message')
-                            ->default('Welcome {name} to {event_name}. We are happy to have you with us. Enjoy the event.')
-                            ->placeholder('Welcome {name} to {event_name}. We are happy to have you with us.')
-                            ->helperText('Placeholders: {name}, {phone}, {event_name}, {event_date}, {event_time}, {venue}, {venue_address}, {location_link}, {dress_code}, {card_type}, {allowed_guests}, {table_number}, {category}, {serial_number}, {private_invitation_url}, {rsvp_url}.')
+                            ->default('Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe. Furahia tukio hili maalum.')
+                            ->placeholder('Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe.')
+                            ->helperText(EliveMessagePlaceholders::helperText())
                             ->rows(5)
                             ->maxLength(480)
                             ->required(fn (Forms\Get $get): bool => (bool) $get('welcome_sms_enabled'))
@@ -434,6 +441,12 @@ class EventResource extends Resource
 
                                 Infolists\Components\TextEntry::make('show_wishes')
                                     ->label('Wishes')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray'),
+
+                                Infolists\Components\TextEntry::make('show_photo_upload')
+                                    ->label('Photo Upload')
                                     ->formatStateUsing(fn ($state): string => $state ? 'Visible' : 'Hidden')
                                     ->badge()
                                     ->color(fn ($state): string => $state ? 'success' : 'gray'),
@@ -701,19 +714,19 @@ class EventResource extends Resource
     }
 
     public static function getRelations(): array
-    {
-        return [
-            RelationManagers\CardTypesRelationManager::class,
-            RelationManagers\InviteesRelationManager::class,
-            RelationManagers\CardTemplatesRelationManager::class,
-            RelationManagers\GeneratedCardsRelationManager::class,
-            RelationManagers\MessageTemplatesRelationManager::class,
-            RelationManagers\MessageLogsRelationManager::class,
-            RelationManagers\SmsLogsRelationManager::class,
-            RelationManagers\CheckInsRelationManager::class,
-        ];
-    }
-
+{
+    return [
+        RelationManagers\CardTypesRelationManager::class,
+        RelationManagers\InviteesRelationManager::class,
+        RelationManagers\InviteeUploadsRelationManager::class,
+        RelationManagers\CardTemplatesRelationManager::class,
+        RelationManagers\GeneratedCardsRelationManager::class,
+        RelationManagers\MessageTemplatesRelationManager::class,
+        RelationManagers\MessageLogsRelationManager::class,
+        RelationManagers\SmsLogsRelationManager::class,
+        RelationManagers\CheckInsRelationManager::class,
+    ];
+}
     public static function getPages(): array
     {
         return [

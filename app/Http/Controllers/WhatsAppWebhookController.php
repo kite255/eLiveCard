@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Invitee;
+use App\Services\RsvpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -45,7 +47,7 @@ class WhatsAppWebhookController extends Controller
         ], SymfonyResponse::HTTP_FORBIDDEN);
     }
 
-    public function handle(Request $request): JsonResponse
+    public function handle(Request $request, RsvpService $rsvpService): JsonResponse
     {
         if (! $this->hasValidSignature($request)) {
             Log::warning('WhatsApp webhook rejected because of invalid signature.');
@@ -60,12 +62,116 @@ class WhatsAppWebhookController extends Controller
         Log::info('WhatsApp webhook received.', [
             'object' => $payload['object'] ?? null,
             'entry_count' => count($payload['entry'] ?? []),
-            'payload' => $payload,
         ]);
+
+        foreach ($payload['entry'] ?? [] as $entry) {
+            foreach ($entry['changes'] ?? [] as $change) {
+                $value = $change['value'] ?? [];
+
+                foreach ($value['messages'] ?? [] as $message) {
+                    $this->handleIncomingMessage($message, $rsvpService);
+                }
+
+                foreach ($value['statuses'] ?? [] as $status) {
+                    $this->handleMessageStatus($status);
+                }
+            }
+        }
 
         return response()->json([
             'received' => true,
         ], SymfonyResponse::HTTP_OK);
+    }
+
+    protected function handleIncomingMessage(array $message, RsvpService $rsvpService): void
+    {
+        $fromPhone = $this->normalizePhone((string) ($message['from'] ?? ''));
+
+        $buttonPayload = data_get($message, 'interactive.button_reply.id');
+        $buttonTitle = data_get($message, 'interactive.button_reply.title');
+
+        // Some WhatsApp replies may come as normal button payloads.
+        if (! $buttonPayload) {
+            $buttonPayload = data_get($message, 'button.payload');
+            $buttonTitle = data_get($message, 'button.text');
+        }
+
+        if (! $fromPhone) {
+            Log::warning('WhatsApp incoming message ignored because phone number is missing.', [
+                'message' => $message,
+            ]);
+
+            return;
+        }
+
+        if (! $buttonPayload) {
+            Log::info('WhatsApp incoming message received without RSVP button payload.', [
+                'from' => $fromPhone,
+                'type' => $message['type'] ?? null,
+            ]);
+
+            return;
+        }
+
+        $invitee = $this->findInviteeByPhone($fromPhone);
+
+        if (! $invitee) {
+            Log::warning('WhatsApp RSVP reply ignored because invitee was not found.', [
+                'from' => $fromPhone,
+                'button_payload' => $buttonPayload,
+                'button_title' => $buttonTitle,
+            ]);
+
+            return;
+        }
+
+        $beforeStatus = $invitee->rsvp_status;
+
+        $updatedInvitee = $rsvpService->updateFromWhatsappButton(
+            invitee: $invitee,
+            buttonPayload: (string) $buttonPayload,
+            buttonTitle: $buttonTitle ? (string) $buttonTitle : null,
+        );
+
+        Log::info('WhatsApp RSVP reply processed.', [
+            'invitee_id' => $updatedInvitee->id,
+            'event_id' => $updatedInvitee->event_id,
+            'phone' => $fromPhone,
+            'button_payload' => $buttonPayload,
+            'button_title' => $buttonTitle,
+            'before_status' => $beforeStatus,
+            'after_status' => $updatedInvitee->rsvp_status,
+        ]);
+    }
+
+    protected function handleMessageStatus(array $status): void
+    {
+        Log::info('WhatsApp message status received.', [
+            'message_id' => $status['id'] ?? null,
+            'recipient_id' => $status['recipient_id'] ?? null,
+            'status' => $status['status'] ?? null,
+            'timestamp' => $status['timestamp'] ?? null,
+        ]);
+    }
+
+    protected function findInviteeByPhone(string $phone): ?Invitee
+    {
+        $normalizedPhone = $this->normalizePhone($phone);
+
+        if (! $normalizedPhone) {
+            return null;
+        }
+
+        return Invitee::query()
+            ->where('phone', $normalizedPhone)
+            ->orWhere('phone', '+' . $normalizedPhone)
+            ->latest('id')
+            ->first();
+    }
+
+    protected function normalizePhone(string $phone): string
+    {
+        return preg_replace('/\D+/', '', $phone) ?: '';
     }
 
     protected function hasValidSignature(Request $request): bool

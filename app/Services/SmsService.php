@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invitee;
+use App\Support\EliveMessagePlaceholders;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
@@ -22,9 +23,11 @@ class SmsService
     {
         $invitee->loadMissing(['event', 'cardType']);
 
-        $message = filled($customMessage)
-            ? $this->replacePlaceholders($customMessage, $invitee)
+        $templateMessage = filled($customMessage)
+            ? $customMessage
             : $this->buildInvitationMessage($invitee);
+
+        $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
 
         return $this->sendToInvitee(
             invitee: $invitee,
@@ -50,11 +53,15 @@ class SmsService
     {
         $invitee->loadMissing(['event', 'cardType']);
 
+        $templateMessage = filled($customMessage)
+            ? $customMessage
+            : $this->buildRsvpPendingReminderMessage($invitee);
+
+        $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
+
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: filled($customMessage)
-                ? $this->replacePlaceholders($customMessage, $invitee)
-                : $this->buildRsvpPendingReminderMessage($invitee),
+            message: $message,
             type: 'rsvp_pending_reminder',
             successCallback: 'markReminderSmsAsSent',
             failedCallback: 'markReminderSmsAsFailed',
@@ -68,11 +75,15 @@ class SmsService
     {
         $invitee->loadMissing(['event', 'cardType']);
 
+        $templateMessage = filled($customMessage)
+            ? $customMessage
+            : $this->buildAttendingReminderMessage($invitee);
+
+        $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
+
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: filled($customMessage)
-                ? $this->replacePlaceholders($customMessage, $invitee)
-                : $this->buildAttendingReminderMessage($invitee),
+            message: $message,
             type: 'attending_reminder',
             successCallback: 'markReminderSmsAsSent',
             failedCallback: 'markReminderSmsAsFailed',
@@ -86,11 +97,15 @@ class SmsService
     {
         $invitee->loadMissing(['event', 'cardType']);
 
+        $templateMessage = filled($customMessage)
+            ? $customMessage
+            : $this->buildEventDayReminderMessage($invitee);
+
+        $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
+
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: filled($customMessage)
-                ? $this->replacePlaceholders($customMessage, $invitee)
-                : $this->buildEventDayReminderMessage($invitee),
+            message: $message,
             type: 'event_day_reminder',
             successCallback: 'markFinalSmsAsSent',
             failedCallback: 'markFinalSmsAsFailed',
@@ -104,9 +119,11 @@ class SmsService
     {
         $invitee->loadMissing(['event', 'cardType']);
 
+        $renderedMessage = EliveMessagePlaceholders::render($message, $invitee);
+
         return $this->sendToInvitee(
             invitee: $invitee,
-            message: $this->replacePlaceholders($message, $invitee),
+            message: $renderedMessage,
             type: $type,
         );
     }
@@ -1212,119 +1229,106 @@ class SmsService
 
     public function buildInvitationMessage(Invitee $invitee): string
     {
-        $invitee->loadMissing(['event', 'cardType']);
+        return "Habari #NAME#,
 
-        $eventName = $this->eventName($invitee);
-        $invitationLink = $this->privateInvitationLink($invitee);
-        $serial = $invitee->serial_number ?: 'N/A';
-        $guestCount = $invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1;
+"
+            . "Umealikwa kwenye #EVENT_NAME#.
+"
+            . "Tarehe: #EVENT_DATE#
+"
+            . "Muda: #EVENT_TIME#
+"
+            . "Ukumbi: #VENUE#
+"
+            . "Wageni: #ALLOWED_GUESTS#
+"
+            . "Serial No: #SERIAL_NUMBER#
 
-        return "Habari {$invitee->name},\n\n"
-            . "Karibu kwenye {$eventName}. Fungua kadi yako ya mwaliko hapa:\n{$invitationLink}\n\n"
-            . "Wageni: {$guestCount}\n"
-            . "Serial No: {$serial}\n\n"
+"
+            . "Fungua kadi yako hapa:
+#PRIVATE_INVITATION_URL#
+
+"
             . "eLive Card";
     }
 
     public function buildRsvpPendingReminderMessage(Invitee $invitee): string
     {
-        $invitee->loadMissing(['event', 'cardType']);
+        return "Habari #NAME#,
 
-        $eventName = $this->eventName($invitee);
-        $date = $this->eventDate($invitee);
-        $rsvpLink = $this->rsvpLink($invitee);
-        $serial = $invitee->serial_number ?: 'N/A';
+"
+            . "Tunakukumbusha kuthibitisha mahudhurio yako kwenye #EVENT_NAME#.
+"
+            . "Tarehe: #EVENT_DATE#
+"
+            . "Muda: #EVENT_TIME#
+"
+            . "Ukumbi: #VENUE#
 
-        return "Habari {$invitee->name},\n\n"
-            . "Tafadhali thibitisha kuhudhuria {$eventName}.\n"
-            . "Tarehe: {$date}\n"
-            . "RSVP: {$rsvpLink}\n\n"
-            . "Serial No: {$serial}\n\n"
+"
+            . "Thibitisha hapa:
+#RSVP_URL#
+
+"
+            . "Serial No: #SERIAL_NUMBER#
+
+"
             . "eLive Card";
     }
 
     public function buildAttendingReminderMessage(Invitee $invitee): string
     {
-        $invitee->loadMissing(['event', 'cardType']);
+        return "Habari #NAME#,
 
-        $eventName = $this->eventName($invitee);
-        $venue = $this->eventVenue($invitee);
-        $date = $this->eventDate($invitee);
-        $time = $this->eventTime($invitee);
-        $confirmedGuests = $invitee->confirmed_guests ?: ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1);
-        $serial = $invitee->serial_number ?: 'N/A';
+"
+            . "Tunakukumbusha kuhusu #EVENT_NAME#.
+"
+            . "Tarehe: #EVENT_DATE#
+"
+            . "Muda: #EVENT_TIME#
+"
+            . "Ukumbi: #VENUE#
+"
+            . "Wageni: #ALLOWED_GUESTS#
+"
+            . "Meza: #TABLE_NUMBER#
+"
+            . "Serial No: #SERIAL_NUMBER#
 
-        return "Habari {$invitee->name},\n\n"
-            . "Tunakukumbusha kuhusu {$eventName}.\n"
-            . "Tarehe: {$date}\n"
-            . "Muda: {$time}\n"
-            . "Ukumbi: {$venue}\n"
-            . "Wageni: {$confirmedGuests}\n"
-            . "Serial No: {$serial}\n\n"
+"
+            . "Tunakusubiri kwa furaha.
+
+"
             . "eLive Card";
     }
 
     public function buildEventDayReminderMessage(Invitee $invitee): string
     {
-        $invitee->loadMissing(['event', 'cardType']);
+        return "Habari #NAME#,
 
-        $eventName = $this->eventName($invitee);
-        $venue = $this->eventVenue($invitee);
-        $time = $this->eventTime($invitee);
-        $mapsLink = $invitee->event?->google_maps_link;
-        $serial = $invitee->serial_number ?: 'N/A';
+"
+            . "Leo ni #EVENT_NAME#.
+"
+            . "Muda: #EVENT_TIME#
+"
+            . "Ukumbi: #VENUE#
+"
+            . "Ramani: #LOCATION_LINK#
+"
+            . "Meza: #TABLE_NUMBER#
+"
+            . "Serial No: #SERIAL_NUMBER#
 
-        $message = "Habari {$invitee->name},\n\n"
-            . "Leo ni {$eventName}.\n"
-            . "Muda: {$time}\n"
-            . "Ukumbi: {$venue}\n"
-            . "Serial No: {$serial}\n";
+"
+            . "Tunakusubiri kwa furaha.
 
-        if (filled($mapsLink)) {
-            $message .= "Ramani: {$mapsLink}\n";
-        }
-
-        return $message . "\neLive Card";
+"
+            . "eLive Card";
     }
 
     public function replacePlaceholders(string $message, Invitee $invitee): string
     {
-        $invitee->loadMissing(['event', 'cardType']);
-
-        $replacements = [
-            '#NAME#' => (string) $invitee->name,
-            '{{name}}' => (string) $invitee->name,
-            '#PHONE#' => (string) $invitee->phone,
-            '{{phone}}' => (string) $invitee->phone,
-            '#EVENT_NAME#' => $this->eventName($invitee),
-            '{{event_name}}' => $this->eventName($invitee),
-            '#INVITATION_LINK#' => $this->privateInvitationLink($invitee),
-            '{{invitation_link}}' => $this->privateInvitationLink($invitee),
-            '#CARD_LINK#' => $this->privateInvitationLink($invitee),
-            '{{card_link}}' => $this->privateInvitationLink($invitee),
-            '#RSVP_LINK#' => $this->rsvpLink($invitee),
-            '{{rsvp_link}}' => $this->rsvpLink($invitee),
-            '#SERIAL_NUMBER#' => (string) $invitee->serial_number,
-            '{{serial_number}}' => (string) $invitee->serial_number,
-            '#CARD_TYPE#' => (string) ($invitee->cardType?->name ?? $invitee->card_type ?? ''),
-            '{{card_type}}' => (string) ($invitee->cardType?->name ?? $invitee->card_type ?? ''),
-            '#GUEST_COUNT#' => (string) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1),
-            '{{guest_count}}' => (string) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? 1),
-            '#TABLE_NUMBER#' => (string) ($invitee->table_number ?? ''),
-            '{{table_number}}' => (string) ($invitee->table_number ?? ''),
-            '#CATEGORY#' => (string) ($invitee->category ?? ''),
-            '{{category}}' => (string) ($invitee->category ?? ''),
-            '#EVENT_DATE#' => $this->eventDate($invitee),
-            '{{event_date}}' => $this->eventDate($invitee),
-            '#EVENT_TIME#' => $this->eventTime($invitee),
-            '{{event_time}}' => $this->eventTime($invitee),
-            '#EVENT_VENUE#' => $this->eventVenue($invitee),
-            '{{event_venue}}' => $this->eventVenue($invitee),
-            '#LOCATION_LINK#' => (string) ($invitee->event?->google_maps_link ?? ''),
-            '{{location_link}}' => (string) ($invitee->event?->google_maps_link ?? ''),
-        ];
-
-        return str_replace(array_keys($replacements), array_values($replacements), $message);
+        return EliveMessagePlaceholders::render($message, $invitee);
     }
 
     protected function eventName(Invitee $invitee): string

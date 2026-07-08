@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\EventResource\RelationManagers;
 
+use App\Exports\EventMessageLogsExport;
 use App\Models\MessageLog;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -9,6 +10,9 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\HtmlString;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class MessageLogsRelationManager extends RelationManager
 {
@@ -66,8 +70,8 @@ class MessageLogsRelationManager extends RelationManager
                             ->label('Delivered At')
                             ->disabled(),
 
-                        Forms\Components\DateTimePicker::make('read_at')
-                            ->label('Read At')
+                        Forms\Components\DateTimePicker::make('failed_at')
+                            ->label('Failed At')
                             ->disabled(),
                     ])
                     ->columns(2),
@@ -107,6 +111,19 @@ class MessageLogsRelationManager extends RelationManager
                 'SMS and WhatsApp delivery records for this event will appear here.'
             )
             ->emptyStateIcon('heroicon-o-chat-bubble-left-right')
+            ->headerActions([
+                Tables\Actions\Action::make('export_delivery_logs')
+                    ->label('Export Delivery Logs')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('success')
+                    ->action(fn (): BinaryFileResponse => $this->downloadMessageLogs(false)),
+
+                Tables\Actions\Action::make('export_failed_messages')
+                    ->label('Export Failed Messages')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->color('danger')
+                    ->action(fn (): BinaryFileResponse => $this->downloadMessageLogs(true)),
+            ])
             ->columns([
                 Tables\Columns\TextColumn::make('invitee.name')
                     ->label('Invitee')
@@ -299,8 +316,8 @@ class MessageLogsRelationManager extends RelationManager
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
-                Tables\Columns\TextColumn::make('read_at')
-                    ->label('Read At')
+                Tables\Columns\TextColumn::make('failed_at')
+                    ->label('Failed At')
                     ->dateTime('d M Y H:i:s')
                     ->placeholder('-')
                     ->sortable()
@@ -388,12 +405,7 @@ class MessageLogsRelationManager extends RelationManager
                         fn (MessageLog $record): string =>
                             'Message to ' . ($record->invitee?->name ?: $record->phone)
                     )
-                    ->modalContent(
-                        fn (MessageLog $record) => view(
-                            'filament.components.message-log-content',
-                            ['record' => $record]
-                        )
-                    )
+                    ->modalContent(fn (MessageLog $record): HtmlString => new HtmlString($this->messageLogModalContent($record)))
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close'),
             ])
@@ -420,5 +432,53 @@ class MessageLogsRelationManager extends RelationManager
     protected function canDelete($record): bool
     {
         return false;
+    }
+
+    private function downloadMessageLogs(bool $failedOnly = false): BinaryFileResponse
+    {
+        $event = $this->getOwnerRecord();
+        $suffix = $failedOnly ? 'failed-messages' : 'delivery-logs';
+        $eventName = str($event->title ?? $event->name ?? 'event')
+            ->slug()
+            ->toString();
+
+        return Excel::download(
+            new EventMessageLogsExport((int) $event->getKey(), $failedOnly),
+            $eventName . '-' . $suffix . '-' . now()->format('Ymd-His') . '.xlsx'
+        );
+    }
+
+    private function messageLogModalContent(MessageLog $record): string
+    {
+        $inviteeName = e($record->invitee?->name ?: 'Unknown invitee');
+        $phone = e($record->phone ?: '-');
+        $channel = e(strtoupper((string) ($record->channel ?: '-')));
+        $type = e(str($record->type ?: '-')->replace('_', ' ')->title()->toString());
+        $status = e(str($record->status ?: '-')->replace('_', ' ')->title()->toString());
+        $provider = e($record->provider ?: '-');
+        $providerId = e($record->provider_message_id ?: '-');
+        $error = filled($record->error_message)
+            ? '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:12px;color:#991B1B;white-space:pre-wrap;">' . e($record->error_message) . '</div>'
+            : '<div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:12px;padding:12px;color:#64748B;">No error recorded.</div>';
+
+        return '<div style="font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#111827;display:grid;gap:14px;">'
+            . '<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">'
+            . '<div><strong>Invitee:</strong><br>' . $inviteeName . '</div>'
+            . '<div><strong>Phone:</strong><br>' . $phone . '</div>'
+            . '<div><strong>Channel:</strong><br>' . $channel . '</div>'
+            . '<div><strong>Type:</strong><br>' . $type . '</div>'
+            . '<div><strong>Status:</strong><br>' . $status . '</div>'
+            . '<div><strong>Provider:</strong><br>' . $provider . '</div>'
+            . '<div style="grid-column:1 / -1;"><strong>Provider Message ID:</strong><br>' . $providerId . '</div>'
+            . '</div>'
+            . '<div>'
+            . '<div style="font-weight:700;margin-bottom:6px;">Message</div>'
+            . '<div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:12px;padding:12px;white-space:pre-wrap;line-height:1.6;">' . e((string) $record->message) . '</div>'
+            . '</div>'
+            . '<div>'
+            . '<div style="font-weight:700;margin-bottom:6px;">Error</div>'
+            . $error
+            . '</div>'
+            . '</div>';
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\EliveMessagePlaceholders;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -32,6 +33,7 @@ class Event extends Model
         'show_program',
         'show_countdown',
         'show_wishes',
+        'show_photo_upload',
         'show_organizer_contact',
 
         'contact_person_name',
@@ -72,6 +74,7 @@ class Event extends Model
         'show_program' => 'boolean',
         'show_countdown' => 'boolean',
         'show_wishes' => 'boolean',
+        'show_photo_upload' => 'boolean',
         'show_organizer_contact' => 'boolean',
     ];
 
@@ -140,6 +143,11 @@ class Event extends Model
         return $this->hasMany(Invitee::class);
     }
 
+    public function inviteeUploads(): HasMany
+    {
+        return $this->hasMany(InviteeUpload::class);
+    }
+
     public function cardTemplates(): HasMany
     {
         return $this->hasMany(CardTemplate::class);
@@ -161,10 +169,6 @@ class Event extends Model
         return $this->hasMany(CheckIn::class);
     }
 
-    /*
-     * Older SMS reminder logs.
-     * Keep this relationship for backward compatibility with your previous SMS reminder module.
-     */
     public function smsLogs(): HasMany
     {
         return $this->hasMany(SmsLog::class);
@@ -180,11 +184,6 @@ class Event extends Model
         return $this->hasMany(MessageTemplate::class);
     }
 
-    /*
-     * Unified communication logs.
-     * This is the relation used by EventResource -> MessageLogsRelationManager.
-     * It stores SMS and WhatsApp invitation/reminder logs in one place.
-     */
     public function messageLogs(): HasMany
     {
         return $this->hasMany(MessageLog::class);
@@ -288,7 +287,6 @@ class Event extends Model
             && (bool) $this->auto_event_day_reminder_enabled;
     }
 
-
     public function getEffectiveRsvpPendingReminderTimeAttribute(): string
     {
         return $this->rsvp_pending_reminder_time?->format('H:i') ?? '09:00';
@@ -337,36 +335,17 @@ class Event extends Model
     {
         return filled($this->welcome_sms_message)
             ? (string) $this->welcome_sms_message
-            : 'Welcome {name} to {event_name}. We are happy to have you with us. Enjoy the event.';
+            : 'Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe. Furahia tukio hili maalum.';
     }
 
     public function renderWelcomeSms(Invitee $invitee): string
     {
-        $invitee->loadMissing('cardType');
+        $invitee->loadMissing(['event', 'cardType']);
 
-        return strtr($this->effective_welcome_sms_message, [
-            '{name}' => (string) $invitee->name,
-            '{phone}' => (string) ($invitee->phone ?? ''),
-            '{event_name}' => (string) $this->title,
-            '{event_date}' => $this->event_date?->format('d M Y') ?? '',
-            '{date}' => $this->event_date?->format('d M Y') ?? '',
-            '{event_time}' => $this->start_time?->format('H:i') ?? '',
-            '{time}' => $this->start_time?->format('H:i') ?? '',
-            '{venue}' => (string) ($this->venue_name ?? ''),
-            '{venue_address}' => (string) ($this->venue_address ?? ''),
-            '{location_link}' => (string) ($this->google_maps_link ?? ''),
-            '{google_maps_link}' => (string) ($this->google_maps_link ?? ''),
-            '{dress_code}' => (string) ($this->dress_code ?? ''),
-            '{card_type}' => (string) ($invitee->cardType?->name ?? ''),
-            '{allowed_guests}' => (string) ($invitee->allowed_guests ?? 1),
-            '{guest_count}' => (string) ($invitee->allowed_guests ?? 1),
-            '{table_number}' => (string) ($invitee->table_number ?? ''),
-            '{category}' => (string) ($invitee->category ?? ''),
-            '{serial_number}' => (string) ($invitee->serial_number ?? ''),
-            '{private_invitation_url}' => (string) $invitee->private_invitation_url,
-            '{private_link}' => (string) $invitee->private_invitation_url,
-            '{rsvp_url}' => (string) $invitee->rsvp_url,
-        ]);
+        return EliveMessagePlaceholders::render(
+            $this->effective_welcome_sms_message,
+            $invitee
+        );
     }
 
     /*
@@ -398,6 +377,11 @@ class Event extends Model
     public function shouldShowWishes(): bool
     {
         return (bool) ($this->show_wishes ?? true);
+    }
+
+    public function shouldShowPhotoUpload(): bool
+    {
+        return (bool) ($this->show_photo_upload ?? true);
     }
 
     public function shouldShowOrganizerContact(): bool
@@ -583,6 +567,32 @@ class Event extends Model
         return $this->checkIns()->count();
     }
 
+    public function getInviteeUploadsCountAttribute(): int
+    {
+        return $this->inviteeUploads()->count();
+    }
+
+    public function getPendingInviteeUploadsCountAttribute(): int
+    {
+        return $this->inviteeUploads()
+            ->where('status', InviteeUpload::STATUS_PENDING)
+            ->count();
+    }
+
+    public function getApprovedInviteeUploadsCountAttribute(): int
+    {
+        return $this->inviteeUploads()
+            ->where('status', InviteeUpload::STATUS_APPROVED)
+            ->count();
+    }
+
+    public function getRejectedInviteeUploadsCountAttribute(): int
+    {
+        return $this->inviteeUploads()
+            ->where('status', InviteeUpload::STATUS_REJECTED)
+            ->count();
+    }
+
     public function getRsvpPendingCountAttribute(): int
     {
         return $this->invitees()
@@ -608,7 +618,7 @@ class Event extends Model
     {
         return $this->invitees()
             ->where(function ($query) {
-                $query->where('checkin_status', 'checked_in')
+                $query->where('check_in_status', 'checked_in')
                     ->orWhere('checked_in_count', '>', 0);
             })
             ->count();
@@ -618,15 +628,12 @@ class Event extends Model
     |--------------------------------------------------------------------------
     | Older SMS Log Counts
     |--------------------------------------------------------------------------
-    | These support the earlier SmsLog table. New SMS/WhatsApp reports should use
-    | the unified message_logs counts below.
-    |--------------------------------------------------------------------------
     */
 
     public function getSmsSentCountAttribute(): int
     {
         return $this->smsLogs()
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('status', ['sent', 'delivered', 'logged'])
             ->count();
     }
 
@@ -640,15 +647,15 @@ class Event extends Model
     public function getSmsPendingCountAttribute(): int
     {
         return $this->smsLogs()
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'queued', 'sending'])
             ->count();
     }
 
     public function getInvitationSmsSentCountAttribute(): int
     {
         return $this->smsLogs()
-            ->where('sms_type', 'invitation')
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('sms_type', ['invitation', 'invitation_card'])
+            ->whereIn('status', ['sent', 'delivered', 'logged'])
             ->count();
     }
 
@@ -659,7 +666,7 @@ class Event extends Model
                 'rsvp_pending_reminder',
                 'attending_reminder',
             ])
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('status', ['sent', 'delivered', 'logged'])
             ->count();
     }
 
@@ -667,7 +674,7 @@ class Event extends Model
     {
         return $this->smsLogs()
             ->where('sms_type', 'event_day_reminder')
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('status', ['sent', 'delivered', 'logged'])
             ->count();
     }
 
@@ -675,7 +682,7 @@ class Event extends Model
     {
         return $this->smsLogs()
             ->whereIn('sms_type', ['welcome_checkin', 'welcome_sms', 'welcome'])
-            ->whereIn('status', ['accepted', 'sent', 'delivered'])
+            ->whereIn('status', ['accepted', 'sent', 'delivered', 'logged'])
             ->count();
     }
 
@@ -706,7 +713,7 @@ class Event extends Model
     public function getCommunicationSentCountAttribute(): int
     {
         return $this->messageLogs()
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('status', ['sent', 'delivered', 'read', 'logged'])
             ->count();
     }
 
@@ -720,7 +727,7 @@ class Event extends Model
     public function getCommunicationPendingCountAttribute(): int
     {
         return $this->messageLogs()
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'queued', 'sending'])
             ->count();
     }
 
@@ -742,7 +749,7 @@ class Event extends Model
     {
         return $this->messageLogs()
             ->where('channel', 'sms')
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('status', ['sent', 'delivered', 'logged'])
             ->count();
     }
 
@@ -773,7 +780,7 @@ class Event extends Model
     {
         return $this->messageLogs()
             ->where('channel', 'whatsapp')
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('status', ['sent', 'delivered', 'read'])
             ->count();
     }
 
@@ -796,22 +803,22 @@ class Event extends Model
     public function getInvitationCardMessageCountAttribute(): int
     {
         return $this->messageLogs()
-            ->where('type', 'invitation_card')
+            ->whereIn('type', ['invitation_card', 'invitation'])
             ->count();
     }
 
     public function getInvitationCardMessageSentCountAttribute(): int
     {
         return $this->messageLogs()
-            ->where('type', 'invitation_card')
-            ->whereIn('status', ['sent', 'delivered'])
+            ->whereIn('type', ['invitation_card', 'invitation'])
+            ->whereIn('status', ['sent', 'delivered', 'read', 'logged'])
             ->count();
     }
 
     public function getInvitationCardMessageFailedCountAttribute(): int
     {
         return $this->messageLogs()
-            ->where('type', 'invitation_card')
+            ->whereIn('type', ['invitation_card', 'invitation'])
             ->where('status', 'failed')
             ->count();
     }
