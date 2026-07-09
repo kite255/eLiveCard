@@ -194,7 +194,7 @@ class Invitee extends Model
     {
         static::creating(function (Invitee $invitee) {
             if (blank($invitee->serial_number)) {
-                $invitee->serial_number = self::generateUniqueSerialNumber();
+                $invitee->serial_number = self::generateUniqueSerialNumber($invitee->event_id);
             }
 
             if (blank($invitee->short_code)) {
@@ -399,13 +399,42 @@ class Invitee extends Model
     |--------------------------------------------------------------------------
     */
 
-    public static function generateUniqueSerialNumber(): string
+    public static function generateUniqueSerialNumber(?int $eventId = null): string
     {
+        /*
+         * Simple random serial number for invitee cards and gate check-in.
+         *
+         * Format: ELV-483927
+         *
+         * The serial is intentionally short enough for manual gate search,
+         * but uses 6 random digits to reduce duplicate risk.
+         */
         do {
-            $serialNumber = 'ELV-' . now()->format('Y') . '-' . strtoupper(Str::random(6));
-        } while (self::query()->where('serial_number', $serialNumber)->exists());
+            $serialNumber = 'ELV-' . random_int(100000, 999999);
+
+            $query = self::query()->where('serial_number', $serialNumber);
+
+            if ($eventId !== null) {
+                $query->where('event_id', $eventId);
+            }
+        } while ($query->exists());
 
         return $serialNumber;
+    }
+
+    public static function normalizeSerialNumber(?string $serialNumber): ?string
+    {
+        if (blank($serialNumber)) {
+            return null;
+        }
+
+        $serialNumber = strtoupper(trim($serialNumber));
+
+        if (str_starts_with($serialNumber, 'ELV-')) {
+            return $serialNumber;
+        }
+
+        return 'ELV-' . preg_replace('/\D/', '', $serialNumber);
     }
 
     public static function generateUniqueShortCode(): string
@@ -569,7 +598,7 @@ class Invitee extends Model
         $data = [];
 
         if (blank($this->serial_number)) {
-            $data['serial_number'] = self::generateUniqueSerialNumber();
+            $data['serial_number'] = self::generateUniqueSerialNumber($this->event_id);
         }
 
         if (blank($this->short_code)) {

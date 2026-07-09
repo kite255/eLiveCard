@@ -3285,13 +3285,42 @@ class InviteesRelationManager extends RelationManager
 
     protected function generateUniqueSerialNumber(): string
     {
+        /*
+         * Simple random serial number for manual gate check-in.
+         *
+         * Format:
+         * ELV-483927
+         *
+         * The number is unique within the current event, so the same number can
+         * still be used in another event without affecting this event's gate search.
+         */
         do {
-            $serialNumber = 'ELV-' . now()->format('Y') . '-' . strtoupper(Str::random(6));
+            $serialNumber = 'ELV-' . random_int(100000, 999999);
         } while (
             Invitee::where('event_id', $this->getOwnerRecord()->id)
                 ->where('serial_number', $serialNumber)
                 ->exists()
         );
+
+        return $serialNumber;
+    }
+
+    protected function normalizeSerialNumber(?string $serialNumber): ?string
+    {
+        if (blank($serialNumber)) {
+            return null;
+        }
+
+        $serialNumber = strtoupper(trim($serialNumber));
+        $serialNumber = preg_replace('/\s+/', '', $serialNumber);
+
+        if (preg_match('/^\d{6}$/', $serialNumber)) {
+            return 'ELV-' . $serialNumber;
+        }
+
+        if (preg_match('/^ELV-\d{6}$/', $serialNumber)) {
+            return $serialNumber;
+        }
 
         return $serialNumber;
     }
