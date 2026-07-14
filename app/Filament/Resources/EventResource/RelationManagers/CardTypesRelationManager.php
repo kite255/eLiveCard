@@ -23,6 +23,25 @@ class CardTypesRelationManager extends RelationManager
 
     protected static ?string $pluralModelLabel = 'Card Types';
 
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
     public function form(Form $form): Form
     {
         return $form->schema($this->getCardTypeFormSchema());
@@ -38,6 +57,7 @@ class CardTypesRelationManager extends RelationManager
             ->emptyStateActions([
                 Tables\Actions\Action::make('add_card_type_empty')
                     ->label('Add Card Type')
+                    ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                     ->icon('heroicon-o-plus-circle')
                     ->color('primary')
                     ->modalHeading('Add Card Type')
@@ -47,6 +67,7 @@ class CardTypesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('create_default_card_types_empty')
                     ->label('Create Default Card Types')
+                    ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
                     ->requiresConfirmation()
@@ -115,6 +136,7 @@ class CardTypesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\Action::make('add_card_type')
                     ->label('Add Card Type')
+                    ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                     ->icon('heroicon-o-plus-circle')
                     ->color('primary')
                     ->button()
@@ -125,6 +147,7 @@ class CardTypesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('create_default_card_types')
                     ->label('Create Default Card Types')
+                    ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
                     ->button()
@@ -138,6 +161,7 @@ class CardTypesRelationManager extends RelationManager
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('edit_card_type')
                         ->label('Edit Card Type')
+                        ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                         ->icon('heroicon-o-pencil-square')
                         ->color('primary')
                         ->modalHeading(fn (Model $record): string => 'Edit Card Type: ' . $record->name)
@@ -151,6 +175,10 @@ class CardTypesRelationManager extends RelationManager
                         ])
                         ->form($this->getCardTypeFormSchema())
                         ->action(function (Model $record, array $data): void {
+                            if (! $this->canManageCurrentEventCardTypes()) {
+                                abort(403);
+                            }
+
                             $data = $this->prepareCardTypeData($data);
 
                             $this->validateUniqueCardTypeName($data['name'], $record->id);
@@ -165,13 +193,17 @@ class CardTypesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('deactivate_card_type')
                         ->label('Deactivate Card Type')
+                        ->visible(fn (Model $record): bool => $this->canManageCurrentEventCardTypes() && (bool) $record->is_active)
                         ->icon('heroicon-o-x-circle')
                         ->color('warning')
                         ->requiresConfirmation()
                         ->modalHeading('Deactivate card type')
                         ->modalDescription('Existing invitees will remain linked, but this card type will not be used for new invitees/imports.')
-                        ->visible(fn (Model $record): bool => (bool) $record->is_active)
                         ->action(function (Model $record): void {
+                            if (! $this->canManageCurrentEventCardTypes()) {
+                                abort(403);
+                            }
+
                             $record->update(['is_active' => false]);
 
                             Notification::make()
@@ -182,12 +214,16 @@ class CardTypesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('activate_card_type')
                         ->label('Activate Card Type')
+                        ->visible(fn (Model $record): bool => $this->canManageCurrentEventCardTypes() && ! (bool) $record->is_active)
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
                         ->modalHeading('Activate card type')
-                        ->visible(fn (Model $record): bool => ! (bool) $record->is_active)
                         ->action(function (Model $record): void {
+                            if (! $this->canManageCurrentEventCardTypes()) {
+                                abort(403);
+                            }
+
                             $record->update(['is_active' => true]);
 
                             Notification::make()
@@ -198,12 +234,17 @@ class CardTypesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('delete_card_type')
                         ->label('Delete Card Type')
+                        ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
                         ->modalHeading('Delete card type')
                         ->modalDescription('Delete only unused card types. If invitees are using this card type, delete will be blocked.')
                         ->action(function (Model $record): void {
+                            if (! $this->canManageCurrentEventCardTypes()) {
+                                abort(403);
+                            }
+
                             try {
                                 if ($this->cardTypeHasInvitees($record)) {
                                     Notification::make()
@@ -241,11 +282,16 @@ class CardTypesRelationManager extends RelationManager
             ->bulkActions([
                 Tables\Actions\BulkAction::make('activate_selected_card_types')
                     ->label('Activate Selected')
+                    ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
                     ->requiresConfirmation()
                     ->deselectRecordsAfterCompletion()
                     ->action(function ($records): void {
+                        if (! $this->canManageCurrentEventCardTypes()) {
+                            abort(403);
+                        }
+
                         $records->each(fn ($record) => $record->update(['is_active' => true]));
 
                         Notification::make()
@@ -256,12 +302,17 @@ class CardTypesRelationManager extends RelationManager
 
                 Tables\Actions\BulkAction::make('deactivate_selected_card_types')
                     ->label('Deactivate Selected')
+                    ->visible(fn (): bool => $this->canManageCurrentEventCardTypes())
                     ->icon('heroicon-o-x-circle')
                     ->color('warning')
                     ->requiresConfirmation()
                     ->modalDescription('Existing invitees remain linked, but inactive card types will not be used for new invitees/imports.')
                     ->deselectRecordsAfterCompletion()
                     ->action(function ($records): void {
+                        if (! $this->canManageCurrentEventCardTypes()) {
+                            abort(403);
+                        }
+
                         $records->each(fn ($record) => $record->update(['is_active' => false]));
 
                         Notification::make()
@@ -270,6 +321,26 @@ class CardTypesRelationManager extends RelationManager
                             ->send();
                     }),
             ]);
+    }
+
+    protected function canManageCurrentEventCardTypes(): bool
+    {
+        $user = auth()->user();
+        $event = $this->getOwnerRecord();
+
+        if (! $user || ! $event) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($event->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
     }
 
     protected function getCardTypeFormSchema(): array
@@ -318,6 +389,10 @@ class CardTypesRelationManager extends RelationManager
 
     protected function createCardType(array $data): void
     {
+        if (! $this->canManageCurrentEventCardTypes()) {
+            abort(403);
+        }
+
         $data = $this->prepareCardTypeData($data);
 
         $this->validateUniqueCardTypeName($data['name']);
@@ -334,6 +409,10 @@ class CardTypesRelationManager extends RelationManager
 
     protected function createDefaultCardTypes(): void
     {
+        if (! $this->canManageCurrentEventCardTypes()) {
+            abort(403);
+        }
+
         $created = 0;
         $skipped = 0;
 

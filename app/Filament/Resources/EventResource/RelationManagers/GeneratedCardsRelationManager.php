@@ -10,6 +10,7 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
 class GeneratedCardsRelationManager extends RelationManager
@@ -18,12 +19,62 @@ class GeneratedCardsRelationManager extends RelationManager
 
     protected static ?string $title = 'Generated Cards';
 
+    protected static ?string $modelLabel = 'Generated Card';
+
+    protected static ?string $pluralModelLabel = 'Generated Cards';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::canAccessOwnerRecord($ownerRecord);
+    }
+
+    protected static function canAccessOwnerRecord(Model $ownerRecord): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected function canViewGeneratedCards(): bool
+    {
+        return static::canAccessOwnerRecord($this->getOwnerRecord());
+    }
+
+    protected function canManageGeneratedCards(): bool
+    {
+        return $this->canViewGeneratedCards()
+            && (auth()->user()?->canGenerateCards() ?? false);
+    }
+
+    protected function canDeleteGeneratedCards(): bool
+    {
+        return auth()->user()?->isSuperAdmin() ?? false;
+    }
+
+    public function isReadOnly(): bool
+    {
+        return ! $this->canManageGeneratedCards();
+    }
+
     public function table(Table $table): Table
     {
         return $table
             ->heading('Generated Cards')
             ->description('View, download, regenerate, and manage personalized cards for this event.')
             ->modifyQueryUsing(fn ($query) => $query
+                ->where('event_id', $this->getOwnerRecord()->getKey())
                 ->with([
                     'invitee',
                     'cardTemplate',
@@ -133,6 +184,7 @@ class GeneratedCardsRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->modalHeading('Regenerate invitation card')
                         ->modalDescription('This will regenerate the card using the current template and invitee details.')
+                        ->visible(fn (): bool => $this->canManageGeneratedCards())
                         ->action(function (GeneratedCard $record): void {
                             if (! $record->invitee_id) {
                                 Notification::make()
@@ -160,7 +212,7 @@ class GeneratedCardsRelationManager extends RelationManager
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->visible(fn (GeneratedCard $record): bool => ! $record->isSent())
+                        ->visible(fn (GeneratedCard $record): bool => $this->canManageGeneratedCards() && ! $record->isSent())
                         ->action(function (GeneratedCard $record): void {
                             $record->markAsSent();
 
@@ -171,7 +223,8 @@ class GeneratedCardsRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\DeleteAction::make()
-                        ->label('Delete'),
+                        ->label('Delete')
+                        ->visible(fn (): bool => $this->canDeleteGeneratedCards()),
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -186,12 +239,13 @@ class GeneratedCardsRelationManager extends RelationManager
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
                         ->requiresConfirmation()
+                        ->visible(fn (): bool => $this->canManageGeneratedCards())
                         ->deselectRecordsAfterCompletion()
                         ->action(function (Collection $records): void {
                             $count = 0;
 
                             foreach ($records as $record) {
-                                if (! $record->invitee_id) {
+                                if (! $record instanceof GeneratedCard || ! $record->invitee_id) {
                                     continue;
                                 }
 
@@ -214,10 +268,13 @@ class GeneratedCardsRelationManager extends RelationManager
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->requiresConfirmation()
+                        ->visible(fn (): bool => $this->canManageGeneratedCards())
                         ->deselectRecordsAfterCompletion()
                         ->action(function (Collection $records): void {
                             foreach ($records as $record) {
-                                $record->markAsSent();
+                                if ($record instanceof GeneratedCard) {
+                                    $record->markAsSent();
+                                }
                             }
 
                             Notification::make()
@@ -226,7 +283,8 @@ class GeneratedCardsRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => $this->canDeleteGeneratedCards()),
                 ]),
             ])
             ->emptyStateIcon('heroicon-o-identification')

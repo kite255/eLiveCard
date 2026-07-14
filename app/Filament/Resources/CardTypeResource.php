@@ -4,18 +4,20 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\CardTypeResource\Pages;
 use App\Models\CardType;
+use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class CardTypeResource extends Resource
 {
     protected static ?string $model = CardType::class;
 
     /**
-     * Card types are managed inside each Event workspace,
+     * Card types are mainly managed inside each Event workspace,
      * so they should not appear as a separate sidebar item.
      */
     protected static bool $shouldRegisterNavigation = false;
@@ -32,35 +34,101 @@ class CardTypeResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()
+            ->with('event');
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
     public static function canViewAny(): bool
     {
-        return auth()->user()?->canManageEvents() ?? false;
+        return auth()->user()?->canManageCardTypes() ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->canManageEvents() ?? false;
+        return auth()->user()?->canManageCardTypes() ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return static::canAccessRecord($record);
     }
 
     public static function canEdit($record): bool
     {
-        return auth()->user()?->canManageEvents() ?? false;
+        return static::canAccessRecord($record);
     }
 
     public static function canDelete($record): bool
     {
-        $user = auth()->user();
-
-        return ($user?->isSuperAdmin() ?? false)
-            || ($user?->isEventOwner() ?? false);
+        return static::canAccessRecord($record);
     }
 
     public static function canDeleteAny(): bool
     {
+        return auth()->user()?->canManageCardTypes() ?? false;
+    }
+
+    protected static function canAccessRecord(?CardType $record): bool
+    {
         $user = auth()->user();
 
-        return ($user?->isSuperAdmin() ?? false)
-            || ($user?->isEventOwner() ?? false);
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected static function visibleEventOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return [];
+        }
+
+        return \App\Models\Event::query()
+            ->when(
+                $user->isEventAdmin(),
+                fn (Builder $query): Builder => $query->where('user_id', $user->id)
+            )
+            ->when(
+                $user->isCheckInOfficer(),
+                fn (Builder $query): Builder => $query->whereRaw('1 = 0')
+            )
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
     }
 
     public static function form(Form $form): Form
@@ -68,30 +136,39 @@ class CardTypeResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Card Type Details')
-                    ->description(
-                        'Create only the card types you want to use for this specific event.'
-                    )
+                    ->description('Create only the card types you want to use for this specific event.')
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => static::visibleEventOptions())
                             ->searchable()
                             ->preload()
-                            ->required(),
+                            ->default(function (): ?int {
+                                $user = auth()->user();
+
+                                if (! $user?->isEventAdmin()) {
+                                    return null;
+                                }
+
+                                return \App\Models\Event::query()
+                                    ->where('user_id', $user->id)
+                                    ->orderBy('id')
+                                    ->value('id');
+                            })
+                            ->disabled(fn (): bool => auth()->user()?->isEventAdmin() ?? false)
+                            ->dehydrated()
+                            ->required()
+                            ->helperText('Super Admin can choose any event. Event Admin can only use their own event.'),
 
                         Forms\Components\TextInput::make('name')
                             ->label('Card Type Name')
-                            ->placeholder(
-                                'Example: Single, Double, Family, VIP, VVIP, Committee'
-                            )
+                            ->placeholder('Example: Single, Double, Family, VIP, VVIP, Committee')
                             ->required()
                             ->maxLength(255),
 
                         Forms\Components\TextInput::make('allowed_people')
                             ->label('Allowed Guests')
-                            ->helperText(
-                                'Total number of people allowed to enter using this card type.'
-                            )
+                            ->helperText('Total number of people allowed to enter using this card type.')
                             ->required()
                             ->numeric()
                             ->integer()
@@ -104,17 +181,13 @@ class CardTypeResource extends Resource
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Active')
-                            ->helperText(
-                                'Only active card types can be used when adding or importing invitees.'
-                            )
+                            ->helperText('Only active card types can be used when adding or importing invitees.')
                             ->default(true)
                             ->required(),
 
                         Forms\Components\Textarea::make('description')
                             ->label('Description')
-                            ->placeholder(
-                                'Optional notes or instructions about this card type.'
-                            )
+                            ->placeholder('Optional notes or instructions about this card type.')
                             ->rows(3)
                             ->maxLength(1000)
                             ->columnSpanFull(),
@@ -173,7 +246,7 @@ class CardTypeResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->options(fn (): array => static::visibleEventOptions())
                     ->searchable()
                     ->preload(),
 
@@ -185,31 +258,20 @@ class CardTypeResource extends Resource
                     ->native(false),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->visible(fn (CardType $record): bool => static::canAccessRecord($record)),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(function (): bool {
-                        $user = auth()->user();
-
-                        return ($user?->isSuperAdmin() ?? false)
-                            || ($user?->isEventOwner() ?? false);
-                    }),
+                    ->visible(fn (CardType $record): bool => static::canAccessRecord($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(function (): bool {
-                            $user = auth()->user();
-
-                            return ($user?->isSuperAdmin() ?? false)
-                                || ($user?->isEventOwner() ?? false);
-                        }),
+                        ->visible(fn (): bool => auth()->user()?->canManageCardTypes() ?? false),
                 ]),
             ])
             ->emptyStateHeading('No card types yet')
-            ->emptyStateDescription(
-                'Open an event workspace and create the card types required for that event.'
-            )
+            ->emptyStateDescription('Open an event workspace and create the card types required for that event.')
             ->emptyStateIcon('heroicon-o-identification');
     }
 

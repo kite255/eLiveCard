@@ -127,10 +127,10 @@ class InviteePageController extends Controller
             'This invitation is not active.'
         );
 
-        if (! Schema::hasTable('invitee_uploads')) {
+        if (! $this->inviteeUploadsTableIsReady()) {
             return redirect()
                 ->route('invitee.page', $invitee->short_code)
-                ->with('info', 'Your wish was received, but the approval table is not enabled yet.');
+                ->with('warning', 'Wishes approval is not enabled yet. Please contact the organizer.');
         }
 
         $this->createInviteeUpload([
@@ -151,7 +151,7 @@ class InviteePageController extends Controller
 
         return redirect()
             ->route('invitee.page', $invitee->short_code)
-            ->with('success', 'Thank you. Your wishes have been submitted for approval.');
+            ->with('success', 'Thank you. Your wish has been submitted and is waiting for admin approval.');
     }
 
     public function storePhoto(Request $request, string $shortCode)
@@ -176,10 +176,10 @@ class InviteePageController extends Controller
             'This invitation is not active.'
         );
 
-        if (! Schema::hasTable('invitee_uploads')) {
+        if (! $this->inviteeUploadsTableIsReady()) {
             return redirect()
                 ->route('invitee.page', $invitee->short_code)
-                ->with('info', 'Photo upload is not enabled yet.');
+                ->with('warning', 'Photo approval is not enabled yet. Please contact the organizer.');
         }
 
         $path = $request->file('photo')->store(
@@ -205,64 +205,86 @@ class InviteePageController extends Controller
 
         return redirect()
             ->route('invitee.page', $invitee->short_code)
-            ->with('success', 'Thank you. Your photo has been submitted for approval.');
+            ->with('success', 'Thank you. Your photo has been submitted and is waiting for admin approval.');
+    }
+
+    protected function inviteeUploadsTableIsReady(): bool
+    {
+        return Schema::hasTable('invitee_uploads')
+            && Schema::hasColumn('invitee_uploads', 'event_id')
+            && Schema::hasColumn('invitee_uploads', 'invitee_id')
+            && Schema::hasColumn('invitee_uploads', 'type')
+            && Schema::hasColumn('invitee_uploads', 'status');
     }
 
     protected function createInviteeUpload(array $data): void
     {
-        if (class_exists(InviteeUpload::class)) {
-            InviteeUpload::query()->create($data);
-            return;
-        }
+        $columns = Schema::getColumnListing('invitee_uploads');
 
-        DB::table('invitee_uploads')->insert(
-            collect($data)
-                ->only(Schema::getColumnListing('invitee_uploads'))
-                ->all()
-        );
+        $safeData = collect($data)
+            ->only($columns)
+            ->all();
+
+        /*
+         * Use DB insert instead of InviteeUpload::create() here.
+         * This avoids production 500 errors when the model fillable contains
+         * a field that is not present in the current database, such as `name`.
+         */
+        DB::table('invitee_uploads')->insert($safeData);
     }
 
     protected function approvedWishes(?int $eventId)
     {
-        if (! $eventId || ! Schema::hasTable('invitee_uploads')) {
+        if (! $eventId || ! $this->inviteeUploadsTableIsReady()) {
             return collect();
         }
 
-        return DB::table('invitee_uploads')
+        $query = DB::table('invitee_uploads')
             ->leftJoin('invitees', 'invitee_uploads.invitee_id', '=', 'invitees.id')
             ->where('invitee_uploads.event_id', $eventId)
             ->where('invitee_uploads.type', 'wish')
-            ->where('invitee_uploads.status', 'approved')
+            ->where('invitee_uploads.status', 'approved');
+
+        $select = ['invitee_uploads.*'];
+
+        $select[] = Schema::hasColumn('invitee_uploads', 'name')
+            ? DB::raw('COALESCE(invitee_uploads.name, invitees.name) as display_name')
+            : DB::raw('invitees.name as display_name');
+
+        return $query
             ->latest('invitee_uploads.approved_at')
             ->latest('invitee_uploads.created_at')
-            ->select([
-                'invitee_uploads.*',
-                DB::raw('COALESCE(invitee_uploads.name, invitees.name) as display_name'),
-            ])
+            ->select($select)
             ->get();
     }
 
     protected function approvedPhotos(?int $eventId)
     {
-        if (! $eventId || ! Schema::hasTable('invitee_uploads')) {
+        if (! $eventId || ! $this->inviteeUploadsTableIsReady()) {
             return collect();
         }
 
-        return DB::table('invitee_uploads')
+        $query = DB::table('invitee_uploads')
             ->leftJoin('invitees', 'invitee_uploads.invitee_id', '=', 'invitees.id')
             ->where('invitee_uploads.event_id', $eventId)
             ->where('invitee_uploads.type', 'photo')
             ->where('invitee_uploads.status', 'approved')
-            ->whereNotNull('invitee_uploads.file_path')
+            ->whereNotNull('invitee_uploads.file_path');
+
+        $select = ['invitee_uploads.*'];
+
+        $select[] = Schema::hasColumn('invitee_uploads', 'name')
+            ? DB::raw('COALESCE(invitee_uploads.name, invitees.name) as display_name')
+            : DB::raw('invitees.name as display_name');
+
+        return $query
             ->latest('invitee_uploads.approved_at')
             ->latest('invitee_uploads.created_at')
-            ->select([
-                'invitee_uploads.*',
-                DB::raw('COALESCE(invitee_uploads.name, invitees.name) as display_name'),
-            ])
+            ->select($select)
             ->get()
             ->map(function ($photo) {
                 $photo->file_url = Storage::disk('public')->url($photo->file_path);
+
                 return $photo;
             });
     }
@@ -309,7 +331,7 @@ class InviteePageController extends Controller
             'open_count' => ((int) $invitee->open_count) + 1,
             'last_open_ip' => $request->ip(),
             'last_open_user_agent' => substr((string) $request->userAgent(), 0, 1000),
-        ])->save();
+        ])->saveQuietly();
     }
 
     protected function canOpenInvitation(Invitee $invitee): bool
@@ -341,12 +363,17 @@ class InviteePageController extends Controller
             return $invitee->generated_card_url;
         }
 
-        if (filled($invitee->generated_card_path) && Storage::disk('public')->exists($invitee->generated_card_path)) {
-            return Storage::disk('public')->url($invitee->generated_card_path);
-        }
+        $paths = [
+            $invitee->generated_card_path ?? null,
+            $invitee->card_path ?? null,
+        ];
 
-        if (filled($invitee->card_path) && Storage::disk('public')->exists($invitee->card_path)) {
-            return Storage::disk('public')->url($invitee->card_path);
+        foreach ($paths as $path) {
+            $path = $this->normalizePublicStoragePath($path);
+
+            if (filled($path) && Storage::disk('public')->exists($path)) {
+                return Storage::disk('public')->url($path);
+            }
         }
 
         if (method_exists($invitee, 'generatedCards')) {
@@ -355,8 +382,10 @@ class InviteePageController extends Controller
                 ->latest()
                 ->first();
 
-            if ($generatedCard && Storage::disk('public')->exists($generatedCard->file_path)) {
-                return Storage::disk('public')->url($generatedCard->file_path);
+            $path = $this->normalizePublicStoragePath($generatedCard?->file_path);
+
+            if (filled($path) && Storage::disk('public')->exists($path)) {
+                return Storage::disk('public')->url($path);
             }
         }
 
@@ -373,11 +402,37 @@ class InviteePageController extends Controller
             return $event->cover_image_url;
         }
 
-        if (filled($event->cover_image) && Storage::disk('public')->exists($event->cover_image)) {
-            return Storage::disk('public')->url($event->cover_image);
+        $coverImage = $this->normalizePublicStoragePath($event->cover_image ?? null);
+
+        if (filled($coverImage) && Storage::disk('public')->exists($coverImage)) {
+            return Storage::disk('public')->url($coverImage);
         }
 
         return null;
+    }
+
+    protected function normalizePublicStoragePath(?string $path): ?string
+    {
+        if (blank($path)) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        if (filter_var($path, FILTER_VALIDATE_URL)) {
+            $urlPath = parse_url($path, PHP_URL_PATH);
+            $path = is_string($urlPath) ? $urlPath : $path;
+        }
+
+        $path = ltrim($path, '/');
+
+        foreach (['storage/', 'public/'] as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                $path = substr($path, strlen($prefix));
+            }
+        }
+
+        return filled($path) ? $path : null;
     }
 
     protected function programItems($event): array
@@ -418,7 +473,7 @@ class InviteePageController extends Controller
             return $event->effective_organizer_phone;
         }
 
-        foreach (['organizer_phone', 'contact_phone', 'phone'] as $field) {
+        foreach (['organizer_phone', 'contact_person_phone', 'contact_phone', 'phone'] as $field) {
             if (isset($event->{$field}) && filled($event->{$field})) {
                 return $event->{$field};
             }

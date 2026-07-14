@@ -3,6 +3,7 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\MessageLogResource\Pages;
+use App\Models\Event;
 use App\Models\MessageLog;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -32,43 +33,30 @@ class MessageLogResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-    /**
-     * Allow authorized users to view message logs.
-     */
     public static function canViewAny(): bool
     {
-        $user = auth()->user();
-
-        return ($user?->isSuperAdmin() ?? false)
-            || ($user?->isEventOwner() ?? false)
-            || ($user?->isEventManager() ?? false)
-            || ($user?->isMessageSender() ?? false)
-            || ($user?->isReportViewer() ?? false);
+        return auth()->user()?->canViewReports() ?? false;
     }
 
-    /**
-     * Message logs should only be created automatically
-     * when SMS or WhatsApp messages are sent.
-     */
+    public static function canView($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
     public static function canCreate(): bool
     {
         return false;
     }
 
-    /**
-     * Message logs should remain immutable for auditing.
-     */
     public static function canEdit($record): bool
     {
         return false;
     }
 
-    /**
-     * Only Super Admin can delete a message log.
-     */
     public static function canDelete($record): bool
     {
-        return auth()->user()?->isSuperAdmin() ?? false;
+        return (auth()->user()?->isSuperAdmin() ?? false)
+            && static::canAccessRecord($record);
     }
 
     public static function canDeleteAny(): bool
@@ -76,9 +64,75 @@ class MessageLogResource extends Resource
         return auth()->user()?->isSuperAdmin() ?? false;
     }
 
-    /**
-     * Logs are read-only, so no editable form is required.
-     */
+    public static function getEloquentQuery(): Builder
+    {
+        return static::scopeQueryToUser(parent::getEloquentQuery());
+    }
+
+    protected static function scopeQueryToUser(Builder $query): Builder
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    protected static function canAccessRecord(?MessageLog $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected static function visibleEventOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return [];
+        }
+
+        return Event::query()
+            ->when(
+                $user->isEventAdmin(),
+                fn (Builder $query): Builder => $query->where('user_id', $user->id)
+            )
+            ->when(
+                $user->isCheckInOfficer(),
+                fn (Builder $query): Builder => $query->whereRaw('1 = 0')
+            )
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([]);
@@ -87,39 +141,11 @@ class MessageLogResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(function (Builder $query): Builder {
-                $user = auth()->user();
-
-                if (! $user) {
-                    return $query->whereRaw('1 = 0');
-                }
-
-                if ($user->isSuperAdmin()) {
-                    return $query;
-                }
-
-                /*
-                 * Apply event ownership filtering when the users table
-                 * and Event model use owner_id or user_id.
-                 *
-                 * Adjust this relationship condition if your Event model
-                 * uses a different ownership field.
-                 */
-                if (
-                    $user->isEventOwner()
-                    || $user->isEventManager()
-                    || $user->isMessageSender()
-                    || $user->isReportViewer()
-                ) {
-                    return $query->whereHas(
-                        'event',
-                        fn (Builder $eventQuery): Builder =>
-                            $eventQuery->where('user_id', $user->id)
-                    );
-                }
-
-                return $query->whereRaw('1 = 0');
-            })
+            ->modifyQueryUsing(
+                fn (Builder $query): Builder => $query
+                    ->with(['event', 'invitee'])
+                    ->latest('created_at')
+            )
             ->columns([
                 Tables\Columns\TextColumn::make('event.title')
                     ->label('Event')
@@ -280,7 +306,7 @@ class MessageLogResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->options(fn (): array => static::visibleEventOptions())
                     ->searchable()
                     ->preload(),
 
@@ -296,10 +322,15 @@ class MessageLogResource extends Resource
                     ->label('Message Type')
                     ->options([
                         'invitation' => 'Invitation',
+                        'invitation_card' => 'Invitation Card',
                         'rsvp_reminder' => 'RSVP Reminder',
+                        'rsvp_pending_reminder' => 'RSVP Pending Reminder',
                         'one_day_reminder' => 'One Day Before',
+                        'attending_reminder' => 'Attending Reminder',
                         'event_day_reminder' => 'Event Day',
                         'welcome' => 'Welcome',
+                        'welcome_sms' => 'Welcome SMS',
+                        'welcome_checkin' => 'Welcome Check-in',
                         'thank_you' => 'Thank You',
                         'custom' => 'Custom',
                     ])
@@ -315,9 +346,11 @@ class MessageLogResource extends Resource
                         'sent' => 'Sent',
                         'delivered' => 'Delivered',
                         'read' => 'Read',
+                        'logged' => 'Logged',
                         'failed' => 'Failed',
                         'rejected' => 'Rejected',
                         'undelivered' => 'Undelivered',
+                        'error' => 'Error',
                     ])
                     ->native(false),
 
@@ -347,20 +380,12 @@ class MessageLogResource extends Resource
                                 ->when(
                                     $data['from'] ?? null,
                                     fn (Builder $query, $date): Builder =>
-                                        $query->whereDate(
-                                            'created_at',
-                                            '>=',
-                                            $date
-                                        )
+                                        $query->whereDate('created_at', '>=', $date)
                                 )
                                 ->when(
                                     $data['until'] ?? null,
                                     fn (Builder $query, $date): Builder =>
-                                        $query->whereDate(
-                                            'created_at',
-                                            '<=',
-                                            $date
-                                        )
+                                        $query->whereDate('created_at', '<=', $date)
                                 );
                         }
                     ),
@@ -368,18 +393,19 @@ class MessageLogResource extends Resource
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->modalHeading('Message Log Details')
+                    ->visible(fn (MessageLog $record): bool => static::canAccessRecord($record))
                     ->modalContent(
                         fn ($record) =>
-                            view(
-                                'components.message-log-content',
-                                ['record' => $record]
-                            )
+                            view('components.message-log-content', [
+                                'record' => $record,
+                            ])
                     ),
 
                 Tables\Actions\DeleteAction::make()
                     ->visible(
-                        fn (): bool =>
-                            auth()->user()?->isSuperAdmin() ?? false
+                        fn (MessageLog $record): bool =>
+                            (auth()->user()?->isSuperAdmin() ?? false)
+                            && static::canAccessRecord($record)
                     ),
             ])
             ->bulkActions([

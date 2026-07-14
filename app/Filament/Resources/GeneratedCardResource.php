@@ -34,13 +34,139 @@ class GeneratedCardResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with([
                 'event',
                 'invitee',
                 'cardTemplate',
             ])
             ->latest();
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->canViewReports() ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->canGenerateCards() ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canEdit($record): bool
+    {
+        return static::canManageGeneratedCard($record);
+    }
+
+    public static function canDelete($record): bool
+    {
+        return static::canDeleteGeneratedCard($record);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->isSuperAdmin() ?? false;
+    }
+
+    protected static function canAccessRecord(?GeneratedCard $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if (! ($user->canViewReports() ?? false)) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected static function canManageGeneratedCard(?GeneratedCard $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if (! ($user->canGenerateCards() ?? false)) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected static function canDeleteGeneratedCard(?GeneratedCard $record): bool
+    {
+        return (auth()->user()?->isSuperAdmin() ?? false)
+            && static::canAccessRecord($record);
+    }
+
+    protected static function visibleEventOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return [];
+        }
+
+        return \App\Models\Event::query()
+            ->when(
+                $user->isEventAdmin(),
+                fn (Builder $query): Builder => $query->where('user_id', $user->id)
+            )
+            ->when(
+                $user->isCheckInOfficer(),
+                fn (Builder $query): Builder => $query->whereRaw('1 = 0')
+            )
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
     }
 
     public static function table(Table $table): Table
@@ -127,7 +253,7 @@ class GeneratedCardResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->options(fn (): array => static::visibleEventOptions())
                     ->searchable()
                     ->preload(),
 
@@ -143,13 +269,13 @@ class GeneratedCardResource extends Resource
                         ->color('info')
                         ->url(fn (GeneratedCard $record): ?string => $record->file_url)
                         ->openUrlInNewTab()
-                        ->visible(fn (GeneratedCard $record): bool => filled($record->file_path) && $record->fileExists()),
+                        ->visible(fn (GeneratedCard $record): bool => static::canAccessRecord($record) && filled($record->file_path) && $record->fileExists()),
 
                     Tables\Actions\Action::make('download_card')
                         ->label('Download')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('gray')
-                        ->visible(fn (GeneratedCard $record): bool => filled($record->file_path) && $record->fileExists())
+                        ->visible(fn (GeneratedCard $record): bool => static::canAccessRecord($record) && filled($record->file_path) && $record->fileExists())
                         ->action(function (GeneratedCard $record) {
                             return response()->download(
                                 Storage::disk('public')->path($record->file_path),
@@ -164,7 +290,18 @@ class GeneratedCardResource extends Resource
                         ->requiresConfirmation()
                         ->modalHeading('Regenerate invitation card')
                         ->modalDescription('This will regenerate the card using the current template and invitee details.')
+                        ->visible(fn (GeneratedCard $record): bool => static::canManageGeneratedCard($record))
                         ->action(function (GeneratedCard $record): void {
+                            if (! static::canManageGeneratedCard($record)) {
+                                Notification::make()
+                                    ->title('Access denied')
+                                    ->body('You are not allowed to regenerate this card.')
+                                    ->danger()
+                                    ->send();
+
+                                return;
+                            }
+
                             if (! $record->invitee_id) {
                                 Notification::make()
                                     ->title('Invitee not found')
@@ -191,8 +328,18 @@ class GeneratedCardResource extends Resource
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->visible(fn (GeneratedCard $record): bool => ! $record->isSent())
+                        ->visible(fn (GeneratedCard $record): bool => static::canManageGeneratedCard($record) && ! $record->isSent())
                         ->action(function (GeneratedCard $record): void {
+                            if (! static::canManageGeneratedCard($record)) {
+                                Notification::make()
+                                    ->title('Access denied')
+                                    ->body('You are not allowed to update this generated card.')
+                                    ->danger()
+                                    ->send();
+
+                                return;
+                            }
+
                             $record->markAsSent();
 
                             Notification::make()
@@ -202,7 +349,8 @@ class GeneratedCardResource extends Resource
                         }),
 
                     Tables\Actions\DeleteAction::make()
-                        ->label('Delete'),
+                        ->label('Delete')
+                        ->visible(fn (GeneratedCard $record): bool => static::canDeleteGeneratedCard($record)),
                 ])
                     ->label('Actions')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -218,11 +366,19 @@ class GeneratedCardResource extends Resource
                         ->color('warning')
                         ->requiresConfirmation()
                         ->deselectRecordsAfterCompletion()
+                        ->visible(fn (): bool => auth()->user()?->canGenerateCards() ?? false)
                         ->action(function (Collection $records): void {
                             $count = 0;
+                            $skipped = 0;
 
                             foreach ($records as $record) {
+                                if (! $record instanceof GeneratedCard || ! static::canManageGeneratedCard($record)) {
+                                    $skipped++;
+                                    continue;
+                                }
+
                                 if (! $record->invitee_id) {
+                                    $skipped++;
                                     continue;
                                 }
 
@@ -234,9 +390,9 @@ class GeneratedCardResource extends Resource
                             }
 
                             Notification::make()
-                                ->title('Card regeneration jobs started')
-                                ->body($count . ' card(s) queued for regeneration.')
-                                ->success()
+                                ->title('Card regeneration jobs processed')
+                                ->body("Queued: {$count}. Skipped: {$skipped}.")
+                                ->color($count > 0 ? 'success' : 'warning')
                                 ->send();
                         }),
 
@@ -246,18 +402,30 @@ class GeneratedCardResource extends Resource
                         ->color('success')
                         ->requiresConfirmation()
                         ->deselectRecordsAfterCompletion()
+                        ->visible(fn (): bool => auth()->user()?->canGenerateCards() ?? false)
                         ->action(function (Collection $records): void {
+                            $marked = 0;
+                            $skipped = 0;
+
                             foreach ($records as $record) {
+                                if (! $record instanceof GeneratedCard || ! static::canManageGeneratedCard($record)) {
+                                    $skipped++;
+                                    continue;
+                                }
+
                                 $record->markAsSent();
+                                $marked++;
                             }
 
                             Notification::make()
-                                ->title('Selected cards marked as sent')
-                                ->success()
+                                ->title('Selected cards processed')
+                                ->body("Marked as sent: {$marked}. Skipped: {$skipped}.")
+                                ->color($marked > 0 ? 'success' : 'warning')
                                 ->send();
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
                 ]),
             ])
             ->emptyStateIcon('heroicon-o-identification')

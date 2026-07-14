@@ -6,6 +6,7 @@ use App\Exports\EventCheckInsExport;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Maatwebsite\Excel\Facades\Excel;
 
 class CheckInsRelationManager extends RelationManager
@@ -17,6 +18,54 @@ class CheckInsRelationManager extends RelationManager
     protected static ?string $modelLabel = 'Check-in';
 
     protected static ?string $pluralModelLabel = 'Check-ins';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::canAccessOwnerRecord($ownerRecord);
+    }
+
+    protected static function canAccessOwnerRecord(Model $ownerRecord): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
+        if ($user->isCheckInOfficer()) {
+            return $user->canScanGuests();
+        }
+
+        return false;
+    }
+
+    protected function canExportCheckIns(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($this->getOwnerRecord()->user_id ?? 0) === (int) $user->id
+                && ($user->canViewReports() ?? false);
+        }
+
+        return false;
+    }
 
     public function table(Table $table): Table
     {
@@ -31,6 +80,7 @@ class CheckInsRelationManager extends RelationManager
                     ->label('Export Check-ins')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
+                    ->visible(fn (): bool => $this->canExportCheckIns())
                     ->action(function () {
                         $event = $this->getOwnerRecord();
                         $eventName = str($event->title ?? $event->name ?? 'event')

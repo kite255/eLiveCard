@@ -18,6 +18,7 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +41,103 @@ class InviteesRelationManager extends RelationManager
     protected static ?string $modelLabel = 'Invitee';
 
     protected static ?string $pluralModelLabel = 'Invitees';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::userCanAccessOwnerRecord(auth()->user(), $ownerRecord)
+            && static::userCanManageInvitees(auth()->user());
+    }
+
+    protected static function userCanAccessOwnerRecord($user, Model $ownerRecord): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (
+            method_exists($user, 'isEventAdmin')
+            && $user->isEventAdmin()
+            && (int) ($ownerRecord->user_id ?? 0) === (int) $user->id
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    protected static function userCanManageInvitees($user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if (method_exists($user, 'canManageInvitees')) {
+            return $user->canManageInvitees();
+        }
+
+        return (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+            || (method_exists($user, 'isEventAdmin') && $user->isEventAdmin());
+    }
+
+    protected function canManageInviteesForOwner(): bool
+    {
+        return static::userCanAccessOwnerRecord(auth()->user(), $this->getOwnerRecord())
+            && static::userCanManageInvitees(auth()->user());
+    }
+
+    protected function canGenerateCardsForOwner(): bool
+    {
+        $user = auth()->user();
+
+        if (! static::userCanAccessOwnerRecord($user, $this->getOwnerRecord())) {
+            return false;
+        }
+
+        if (method_exists($user, 'canGenerateCards')) {
+            return $user->canGenerateCards();
+        }
+
+        return static::userCanManageInvitees($user);
+    }
+
+    protected function canSendMessagesForOwner(): bool
+    {
+        $user = auth()->user();
+
+        if (! static::userCanAccessOwnerRecord($user, $this->getOwnerRecord())) {
+            return false;
+        }
+
+        return method_exists($user, 'canSendMessages')
+            ? $user->canSendMessages()
+            : static::userCanManageInvitees($user);
+    }
+
+    protected function canViewReportsForOwner(): bool
+    {
+        $user = auth()->user();
+
+        if (! static::userCanAccessOwnerRecord($user, $this->getOwnerRecord())) {
+            return false;
+        }
+
+        return method_exists($user, 'canViewReports')
+            ? $user->canViewReports()
+            : static::userCanManageInvitees($user);
+    }
+
+    protected function canDeleteInviteesForOwner(): bool
+    {
+        $user = auth()->user();
+
+        return $user
+            && method_exists($user, 'isSuperAdmin')
+            && $user->isSuperAdmin();
+    }
 
     public function form(Form $form): Form
     {
@@ -457,6 +555,7 @@ class InviteesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\Action::make('add_manual_invitee')
                     ->label('Add Invitee')
+                    ->visible(fn (): bool => $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-user-plus')
                     ->color('primary')
                     ->modalHeading('Add Invitee Manually')
@@ -577,6 +676,7 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('generate_missing_cards')
                     ->label('Generate Cards')
+                    ->visible(fn (): bool => $this->canGenerateCardsForOwner())
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
                     ->requiresConfirmation()
@@ -633,6 +733,7 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('import_excel')
                     ->label('Import Excel')
+                    ->visible(fn (): bool => $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('gray')
                     ->modalHeading('Import Invitees from Excel')
@@ -659,6 +760,7 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('export_invitees')
                     ->label('Export Invitees')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('info')
                     ->action(function () {
@@ -674,6 +776,7 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('export_rsvp')
                     ->label('Export RSVP')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('warning')
                     ->action(function () {
@@ -880,6 +983,7 @@ class InviteesRelationManager extends RelationManager
                         }),
                 ])
                     ->label('Communications')
+                    ->visible(fn (): bool => $this->canSendMessagesForOwner())
                     ->icon('heroicon-o-envelope')
                     ->button()
                     ->color('success'),
@@ -898,11 +1002,13 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('download_sample_excel')
                         ->label('Download Sample Excel')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-arrow-down-tray')
                         ->url(fn () => route('invitees.sample-excel'))
                         ->openUrlInNewTab(),
                 ])
                     ->label('More')
+                    ->visible(fn (): bool => $this->canManageInviteesForOwner() || $this->canViewReportsForOwner())
                     ->icon('heroicon-o-ellipsis-horizontal')
                     ->button()
                     ->color('gray'),
@@ -916,6 +1022,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('edit_invitee')
                         ->label('Edit Invitee')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-pencil-square')
                         ->color('primary')
                         ->modalHeading(fn ($record): string => 'Edit Invitee: ' . $record->name)
@@ -1071,6 +1178,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('generate_card')
                         ->label(fn (Invitee $record): string => $record->latestGeneratedCard ? 'Regenerate Card' : 'Generate Card')
+                        ->visible(fn (): bool => $this->canGenerateCardsForOwner())
                         ->icon('heroicon-o-photo')
                         ->color('success')
                         ->requiresConfirmation()
@@ -1108,7 +1216,7 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
                         ->requiresConfirmation()
-                        ->visible(fn (Invitee $record): bool => $record->latestGeneratedCard?->status === GeneratedCard::STATUS_FAILED)
+                        ->visible(fn (Invitee $record): bool => $this->canGenerateCardsForOwner() && $record->latestGeneratedCard?->status === GeneratedCard::STATUS_FAILED)
                         ->action(function (Invitee $record): void {
                             $this->queueAutomaticCardGeneration($record, true);
 
@@ -1205,10 +1313,11 @@ class InviteesRelationManager extends RelationManager
 
                             $notification->send();
                         })
-                        ->visible(fn (Invitee $record): bool => filled($record->short_code)),
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code)),
 
                     Tables\Actions\Action::make('mark_attending')
                         ->label('Mark Attending')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
@@ -1227,6 +1336,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('mark_not_attending')
                         ->label('Mark Not Attending')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->requiresConfirmation()
@@ -1245,6 +1355,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('reset_rsvp')
                         ->label('Reset RSVP')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -1263,6 +1374,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('cancel_invitee')
                         ->label('Cancel Invitee')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-no-symbol')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -1281,6 +1393,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('delete_invitee')
                         ->label('Delete Invitee')
+                        ->visible(fn (): bool => $this->canDeleteInviteesForOwner())
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
@@ -1314,6 +1427,7 @@ class InviteesRelationManager extends RelationManager
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('regenerate_missing_qr_codes')
                         ->label('Regenerate Missing QR Codes')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-qr-code')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -1366,6 +1480,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('health_check_selected_invitees')
                         ->label('Health Check Selected Invitees')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-shield-check')
                         ->color('info')
                         ->requiresConfirmation()
@@ -1466,6 +1581,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('generate_missing_selected_cards')
                         ->label('Generate Missing Selected Cards')
+                        ->visible(fn (): bool => $this->canGenerateCardsForOwner())
                         ->icon('heroicon-o-sparkles')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -1513,6 +1629,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('regenerate_selected_cards')
                         ->label('Regenerate Selected Cards')
+                        ->visible(fn (): bool => $this->canGenerateCardsForOwner())
                         ->icon('heroicon-o-photo')
                         ->color('success')
                         ->requiresConfirmation()
@@ -1554,6 +1671,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('mark_generated_cards_as_sent')
                         ->label('Mark Generated Cards as Sent')
+                        ->visible(fn (): bool => $this->canGenerateCardsForOwner())
                         ->icon('heroicon-o-paper-airplane')
                         ->color('info')
                         ->requiresConfirmation()
@@ -1581,6 +1699,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('mark_selected_attending')
                         ->label('Mark Selected Attending')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
@@ -1601,6 +1720,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('reset_selected_rsvp')
                         ->label('Reset Selected RSVP')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -1621,6 +1741,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('cancel_selected_invitees')
                         ->label('Cancel Selected Invitees')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
                         ->icon('heroicon-o-no-symbol')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -1639,6 +1760,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('delete_selected_invitees')
                         ->label('Delete Selected Invitees')
+                        ->visible(fn (): bool => $this->canDeleteInviteesForOwner())
                         ->icon('heroicon-o-trash')
                         ->color('danger')
                         ->requiresConfirmation()
@@ -1665,6 +1787,7 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\BulkAction::make('send_selected_message')
                         ->label('Send Message to Selected')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->requiresConfirmation()

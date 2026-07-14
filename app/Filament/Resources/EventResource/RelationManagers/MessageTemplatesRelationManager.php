@@ -25,6 +25,25 @@ class MessageTemplatesRelationManager extends RelationManager
 
     public function isReadOnly(): bool
     {
+        return ! $this->canManageMessages();
+    }
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
         return false;
     }
 
@@ -255,6 +274,7 @@ class MessageTemplatesRelationManager extends RelationManager
             ->emptyStateDescription('Create default templates first, then customize them for this event.')
             ->emptyStateActions([
                 Tables\Actions\Action::make('create_default_templates_empty')
+                    ->visible(fn (): bool => $this->canManageMessages())
                     ->label('Create Default Templates')
                     ->icon('heroicon-o-sparkles')
                     ->color('warning')
@@ -365,6 +385,7 @@ class MessageTemplatesRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
+                    ->visible(fn (): bool => $this->canManageMessages())
                     ->label('Create Template')
                     ->icon('heroicon-o-plus')
                     ->button()
@@ -376,6 +397,7 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->after(fn (MessageTemplate $record): null => $this->afterTemplateSaved($record)),
 
                 Tables\Actions\Action::make('create_default_templates')
+                    ->visible(fn (): bool => $this->canManageMessages())
                     ->label('Create Defaults')
                     ->icon('heroicon-o-sparkles')
                     ->button()
@@ -386,6 +408,7 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->action(fn () => $this->createDefaultsAndNotify()),
 
                 Tables\Actions\Action::make('sync_whatsapp_provider_templates')
+                    ->visible(fn (): bool => $this->canManageMessages())
                     ->label('Sync WhatsApp Templates')
                     ->icon('heroicon-o-arrow-path-rounded-square')
                     ->button()
@@ -397,6 +420,7 @@ class MessageTemplatesRelationManager extends RelationManager
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
+                    ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record))
                     ->label('Edit')
                     ->icon('heroicon-o-pencil-square')
                     ->color('primary')
@@ -417,6 +441,7 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalContent(fn (MessageTemplate $record): HtmlString => new HtmlString($this->recordPreviewBox($record))),
 
                 Tables\Actions\Action::make('duplicate')
+                    ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record))
                     ->label('Duplicate')
                     ->icon('heroicon-o-document-duplicate')
                     ->color('gray')
@@ -439,10 +464,10 @@ class MessageTemplatesRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\Action::make('activate')
+                    ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record) && $record->status !== MessageTemplate::STATUS_ACTIVE)
                     ->label('Activate')
                     ->icon('heroicon-o-check-circle')
                     ->color('success')
-                    ->visible(fn (MessageTemplate $record): bool => $record->status !== MessageTemplate::STATUS_ACTIVE)
                     ->requiresConfirmation()
                     ->modalHeading('Activate template')
                     ->modalDescription('Only one active template is kept for the same event, channel, and type.')
@@ -457,10 +482,10 @@ class MessageTemplatesRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\Action::make('deactivate')
+                    ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record) && $record->status === MessageTemplate::STATUS_ACTIVE)
                     ->label('Deactivate')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
-                    ->visible(fn (MessageTemplate $record): bool => $record->status === MessageTemplate::STATUS_ACTIVE)
                     ->requiresConfirmation()
                     ->action(function (MessageTemplate $record): void {
                         $record->update(['status' => MessageTemplate::STATUS_INACTIVE]);
@@ -472,6 +497,7 @@ class MessageTemplatesRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\DeleteAction::make()
+                    ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record))
                     ->label('Delete')
                     ->icon('heroicon-o-trash'),
             ])
@@ -479,6 +505,7 @@ class MessageTemplatesRelationManager extends RelationManager
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('activate_selected')
+                        ->visible(fn (): bool => $this->canManageMessages())
                         ->label('Activate Selected')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
@@ -496,6 +523,7 @@ class MessageTemplatesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\BulkAction::make('deactivate_selected')
+                        ->visible(fn (): bool => $this->canManageMessages())
                         ->label('Deactivate Selected')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
@@ -509,9 +537,55 @@ class MessageTemplatesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => $this->canManageMessages()),
                 ]),
             ]);
+    }
+
+    protected function canManageMessages(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! ($user->canSendMessages() ?? false)) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $event = $this->getOwnerRecord();
+
+            return (int) ($event?->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected function canManageMessageTemplate(?MessageTemplate $record = null): bool
+    {
+        if (! $this->canManageMessages()) {
+            return false;
+        }
+
+        if (! $record) {
+            return true;
+        }
+
+        $event = $this->getOwnerRecord();
+
+        return (int) $record->event_id === (int) ($event?->getKey() ?? 0);
+    }
+
+    protected function ensureCanManageMessages(): void
+    {
+        if (! $this->canManageMessages()) {
+            throw ValidationException::withMessages([
+                'permission' => 'You are not allowed to manage message templates for this event.',
+            ]);
+        }
     }
 
     private static function starterTemplates(): array
@@ -664,6 +738,8 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
 
     private function createDefaultsAndNotify(): void
     {
+        $this->ensureCanManageMessages();
+
         $created = $this->createDefaultTemplates();
 
         Notification::make()
@@ -713,6 +789,8 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
 
     private function syncWhatsAppProviderTemplatesAndNotify(): void
     {
+        $this->ensureCanManageMessages();
+
         $updated = $this->syncWhatsAppProviderTemplates();
 
         Notification::make()
@@ -763,6 +841,8 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
 
     private function afterTemplateSaved(MessageTemplate $record): null
     {
+        $this->ensureCanManageMessages();
+
         if ($record->status === MessageTemplate::STATUS_ACTIVE) {
             $this->deactivateOtherActiveTemplates($record);
         }

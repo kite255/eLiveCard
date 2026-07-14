@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\CardTemplateResource\Pages;
 use App\Models\CardTemplate;
+use App\Models\Event;
 use App\Models\Invitee;
 use App\Services\CardGenerationService;
 use Filament\Forms;
@@ -34,6 +35,117 @@ class CardTemplateResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()
+            ->with(['event']);
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->canManageCardDesigns() ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->canManageCardDesigns() ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canEdit($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canDelete($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->canManageCardDesigns() ?? false;
+    }
+
+    protected static function canAccessRecord(?CardTemplate $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if (! ($user->canManageCardDesigns() ?? false)) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected static function visibleEventOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user || ! ($user->canManageCardDesigns() ?? false)) {
+            return [];
+        }
+
+        return Event::query()
+            ->when(
+                $user->isEventAdmin(),
+                fn (Builder $query): Builder => $query->where('user_id', $user->id)
+            )
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
+    }
+
+    protected static function defaultEventId(): ?int
+    {
+        $user = auth()->user();
+
+        if (! $user?->isEventAdmin()) {
+            return null;
+        }
+
+        return Event::query()
+            ->where('user_id', $user->id)
+            ->orderBy('id')
+            ->value('id');
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -44,13 +156,16 @@ class CardTemplateResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => static::visibleEventOptions())
                             ->searchable()
                             ->preload()
                             ->live()
+                            ->default(fn (): ?int => static::defaultEventId())
+                            ->disabled(fn (): bool => auth()->user()?->isEventAdmin() ?? false)
+                            ->dehydrated()
                             ->required()
                             ->native(false)
-                            ->helperText('Select the event that will use this card template.'),
+                            ->helperText('Super Admin can choose any event. Event Admin can only use own event.'),
 
                         Forms\Components\TextInput::make('name')
                             ->label('Template Name')
@@ -179,7 +294,7 @@ class CardTemplateResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->options(fn (): array => static::visibleEventOptions())
                     ->searchable()
                     ->preload(),
 
@@ -197,6 +312,7 @@ class CardTemplateResource extends Resource
                     ->icon('heroicon-o-cursor-arrow-rays')
                     ->color('info')
                     ->button()
+                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record))
                     ->url(fn (CardTemplate $record): string => static::getUrl('designer', [
                         'record' => $record,
                     ])),
@@ -208,7 +324,7 @@ class CardTemplateResource extends Resource
                     ->requiresConfirmation()
                     ->modalHeading('Activate Template')
                     ->modalDescription('Activate this template only after placing and saving placeholders.')
-                    ->visible(fn (CardTemplate $record): bool => ! $record->isActive())
+                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record) && ! $record->isActive())
                     ->action(function (CardTemplate $record): void {
                         if (! $record->event_id) {
                             Notification::make()
@@ -240,6 +356,12 @@ class CardTemplateResource extends Resource
                             return;
                         }
 
+                        CardTemplate::query()
+                            ->where('event_id', $record->event_id)
+                            ->where('id', '!=', $record->id)
+                            ->where('status', CardTemplate::STATUS_ACTIVE)
+                            ->update(['status' => CardTemplate::STATUS_DRAFT]);
+
                         $record->update([
                             'status' => CardTemplate::STATUS_ACTIVE,
                         ]);
@@ -258,8 +380,18 @@ class CardTemplateResource extends Resource
                     ->requiresConfirmation()
                     ->modalHeading('Generate Personalized Cards')
                     ->modalDescription('This will generate cards for all invitees under this template event.')
-                    ->visible(fn (CardTemplate $record): bool => $record->isActive())
+                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record) && $record->isActive())
                     ->action(function (CardTemplate $record): void {
+                        if (! static::canAccessRecord($record)) {
+                            Notification::make()
+                                ->title('Access denied')
+                                ->body('You are not allowed to generate cards for this event.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
                         if (! $record->event_id) {
                             Notification::make()
                                 ->title('Template has no event')
@@ -348,14 +480,17 @@ class CardTemplateResource extends Resource
                     }),
 
                 Tables\Actions\EditAction::make()
-                    ->label('Edit'),
+                    ->label('Edit')
+                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record)),
 
                 Tables\Actions\DeleteAction::make()
-                    ->label('Delete'),
+                    ->label('Delete')
+                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => auth()->user()?->canManageCardDesigns() ?? false),
                 ]),
             ])
             ->emptyStateIcon('heroicon-o-photo')
@@ -364,7 +499,8 @@ class CardTemplateResource extends Resource
             ->emptyStateActions([
                 Tables\Actions\CreateAction::make()
                     ->label('Create Template')
-                    ->icon('heroicon-o-plus'),
+                    ->icon('heroicon-o-plus')
+                    ->visible(fn (): bool => auth()->user()?->canManageCardDesigns() ?? false),
             ])
             ->defaultSort('created_at', 'desc');
     }

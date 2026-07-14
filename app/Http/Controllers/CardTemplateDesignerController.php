@@ -13,7 +13,7 @@ class CardTemplateDesignerController extends Controller
 {
     public function show(CardTemplate $cardTemplate): View
     {
-        $this->authorizeAccess();
+        $this->authorizeAccess($cardTemplate);
 
         $cardTemplate->load([
             'event',
@@ -35,7 +35,7 @@ class CardTemplateDesignerController extends Controller
 
     public function save(Request $request, CardTemplate $cardTemplate): JsonResponse
     {
-        $this->authorizeAccess();
+        $this->authorizeAccess($cardTemplate);
 
         $validated = $request->validate([
             'placeholders' => ['required', 'array'],
@@ -123,7 +123,7 @@ class CardTemplateDesignerController extends Controller
 
     public function createPlaceholder(Request $request, CardTemplate $cardTemplate): JsonResponse
     {
-        $this->authorizeAccess();
+        $this->authorizeAccess($cardTemplate);
 
         $validated = $request->validate([
             'placeholder_key' => ['required', 'string', 'max:100'],
@@ -175,7 +175,7 @@ class CardTemplateDesignerController extends Controller
 
     public function deletePlaceholder(CardTemplate $cardTemplate, CardTemplatePlaceholder $placeholder): JsonResponse
     {
-        $this->authorizeAccess();
+        $this->authorizeAccess($cardTemplate);
 
         if ((int) $placeholder->card_template_id !== (int) $cardTemplate->id) {
             return response()->json([
@@ -192,19 +192,29 @@ class CardTemplateDesignerController extends Controller
         ]);
     }
 
-    protected function authorizeAccess(): void
+    protected function authorizeAccess(CardTemplate $cardTemplate): void
     {
         abort_unless(Auth::check(), 403);
 
         $user = Auth::user();
 
-        abort_unless(
-            $user?->canManageEvents()
-            || $user?->isSuperAdmin()
-            || $user?->isEventOwner()
-            || $user?->isEventManager()
-            || $user?->isCardDesigner(),
-            403
-        );
+        abort_unless($user?->canManageCardDesigns() ?? false, 403);
+
+        if ($user->isSuperAdmin()) {
+            return;
+        }
+
+        if ($user->isEventAdmin()) {
+            $cardTemplate->loadMissing('event');
+
+            abort_unless(
+                (int) ($cardTemplate->event?->user_id ?? 0) === (int) $user->id,
+                403
+            );
+
+            return;
+        }
+
+        abort(403);
     }
 }

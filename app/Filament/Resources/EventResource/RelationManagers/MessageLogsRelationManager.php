@@ -10,10 +10,10 @@ use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-
 class MessageLogsRelationManager extends RelationManager
 {
     protected static string $relationship = 'messageLogs';
@@ -23,6 +23,36 @@ class MessageLogsRelationManager extends RelationManager
     protected static ?string $modelLabel = 'Message Log';
 
     protected static ?string $pluralModelLabel = 'Message Logs';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::canAccessOwnerRecord($ownerRecord);
+    }
+
+    protected static function canAccessOwnerRecord(?Model $ownerRecord = null): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $ownerRecord) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected function canViewMessageLogs(): bool
+    {
+        return static::canAccessOwnerRecord($this->getOwnerRecord())
+            && (auth()->user()?->canViewReports() ?? false);
+    }
 
     public function form(Form $form): Form
     {
@@ -103,6 +133,7 @@ class MessageLogsRelationManager extends RelationManager
             ->recordTitleAttribute('phone')
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => $query
+                    ->where('event_id', $this->getOwnerRecord()->getKey())
                     ->with(['invitee'])
                     ->latest('created_at')
             )
@@ -116,12 +147,14 @@ class MessageLogsRelationManager extends RelationManager
                     ->label('Export Delivery Logs')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
+                    ->visible(fn (): bool => $this->canViewMessageLogs())
                     ->action(fn (): BinaryFileResponse => $this->downloadMessageLogs(false)),
 
                 Tables\Actions\Action::make('export_failed_messages')
                     ->label('Export Failed Messages')
                     ->icon('heroicon-o-exclamation-triangle')
                     ->color('danger')
+                    ->visible(fn (): bool => $this->canViewMessageLogs())
                     ->action(fn (): BinaryFileResponse => $this->downloadMessageLogs(true)),
             ])
             ->columns([
@@ -371,6 +404,7 @@ class MessageLogsRelationManager extends RelationManager
                 Tables\Filters\SelectFilter::make('provider')
                     ->label('Provider')
                     ->options(fn (): array => MessageLog::query()
+                        ->where('event_id', $this->getOwnerRecord()->getKey())
                         ->whereNotNull('provider')
                         ->where('provider', '!=', '')
                         ->distinct()
@@ -395,12 +429,14 @@ class MessageLogsRelationManager extends RelationManager
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->label('View')
-                    ->icon('heroicon-o-eye'),
+                    ->icon('heroicon-o-eye')
+                    ->visible(fn (): bool => $this->canViewMessageLogs()),
 
                 Tables\Actions\Action::make('show_message')
                     ->label('Message')
                     ->icon('heroicon-o-document-text')
                     ->color('gray')
+                    ->visible(fn (): bool => $this->canViewMessageLogs())
                     ->modalHeading(
                         fn (MessageLog $record): string =>
                             'Message to ' . ($record->invitee?->name ?: $record->phone)
@@ -436,6 +472,10 @@ class MessageLogsRelationManager extends RelationManager
 
     private function downloadMessageLogs(bool $failedOnly = false): BinaryFileResponse
     {
+        if (! $this->canViewMessageLogs()) {
+            abort(403);
+        }
+
         $event = $this->getOwnerRecord();
         $suffix = $failedOnly ? 'failed-messages' : 'delivery-logs';
         $eventName = str($event->title ?? $event->name ?? 'event')

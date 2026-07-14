@@ -3,6 +3,8 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Resources\InviteeUploadResource\Pages;
+use App\Models\Event;
+use App\Models\Invitee;
 use App\Models\InviteeUpload;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -31,6 +33,112 @@ class InviteeUploadResource extends Resource
 
     protected static ?int $navigationSort = 9;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canEdit($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canDelete($record): bool
+    {
+        return static::canAccessRecord($record);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    protected static function canAccessRecord(?InviteeUpload $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected static function visibleEventsQuery(): Builder
+    {
+        $query = Event::query();
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->where('user_id', $user->id);
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    protected static function visibleEventOptions(): array
+    {
+        return static::visibleEventsQuery()
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
+    }
+
+    protected static function visibleInviteeOptions(?int $eventId): array
+    {
+        if (! $eventId) {
+            return [];
+        }
+
+        $eventAllowed = static::visibleEventsQuery()
+            ->whereKey($eventId)
+            ->exists();
+
+        if (! $eventAllowed) {
+            return [];
+        }
+
+        return Invitee::query()
+            ->where('event_id', $eventId)
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->toArray();
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -40,17 +148,22 @@ class InviteeUploadResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => static::visibleEventOptions())
                             ->searchable()
                             ->preload()
-                            ->required(),
+                            ->live()
+                            ->required()
+                            ->afterStateUpdated(fn (callable $set): mixed => $set('invitee_id', null))
+                            ->helperText('Super Admin can select any event. Event Admin can select only own events.'),
 
                         Forms\Components\Select::make('invitee_id')
                             ->label('Invitee')
-                            ->relationship('invitee', 'name')
+                            ->options(fn (Forms\Get $get): array => static::visibleInviteeOptions((int) ($get('event_id') ?? 0)))
                             ->searchable()
                             ->preload()
-                            ->required(),
+                            ->required()
+                            ->disabled(fn (Forms\Get $get): bool => blank($get('event_id')))
+                            ->helperText('Invitees are filtered by the selected event.'),
 
                         Forms\Components\Select::make('type')
                             ->label('Type')
@@ -79,7 +192,7 @@ class InviteeUploadResource extends Resource
                             ->label('Photo')
                             ->image()
                             ->disk('public')
-                            ->directory('events/invitee-uploads')
+                            ->directory(fn (Forms\Get $get): string => 'events/' . ($get('event_id') ?: 'unassigned') . '/invitee-uploads')
                             ->visibility('public')
                             ->imageEditor()
                             ->maxSize(5120)
@@ -209,7 +322,7 @@ class InviteeUploadResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->options(fn (): array => static::visibleEventOptions())
                     ->searchable()
                     ->preload(),
 
@@ -242,7 +355,7 @@ class InviteeUploadResource extends Resource
                         ? Storage::disk('public')->url($record->file_path)
                         : null)
                     ->openUrlInNewTab()
-                    ->visible(fn (InviteeUpload $record): bool => $record->type === InviteeUpload::TYPE_PHOTO && filled($record->file_path)),
+                    ->visible(fn (InviteeUpload $record): bool => static::canAccessRecord($record) && $record->type === InviteeUpload::TYPE_PHOTO && filled($record->file_path)),
 
                 Tables\Actions\Action::make('approve')
                     ->label('Approve')
@@ -252,7 +365,7 @@ class InviteeUploadResource extends Resource
                     ->modalHeading('Approve Submission')
                     ->modalDescription('This wish or photo will become visible on the public invitee page.')
                     ->modalSubmitActionLabel('Approve')
-                    ->visible(fn (InviteeUpload $record): bool => $record->status !== InviteeUpload::STATUS_APPROVED)
+                    ->visible(fn (InviteeUpload $record): bool => static::canAccessRecord($record) && $record->status !== InviteeUpload::STATUS_APPROVED)
                     ->action(function (InviteeUpload $record): void {
                         $record->approve(Auth::id());
 
@@ -278,7 +391,7 @@ class InviteeUploadResource extends Resource
                     ->modalHeading('Reject Submission')
                     ->modalDescription('This wish or photo will not appear publicly.')
                     ->modalSubmitActionLabel('Reject')
-                    ->visible(fn (InviteeUpload $record): bool => $record->status !== InviteeUpload::STATUS_REJECTED)
+                    ->visible(fn (InviteeUpload $record): bool => static::canAccessRecord($record) && $record->status !== InviteeUpload::STATUS_REJECTED)
                     ->action(function (InviteeUpload $record, array $data): void {
                         $record->reject(Auth::id(), $data['admin_note'] ?? null);
 
@@ -294,7 +407,7 @@ class InviteeUploadResource extends Resource
                     ->icon('heroicon-o-clock')
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->visible(fn (InviteeUpload $record): bool => $record->status !== InviteeUpload::STATUS_PENDING)
+                    ->visible(fn (InviteeUpload $record): bool => static::canAccessRecord($record) && $record->status !== InviteeUpload::STATUS_PENDING)
                     ->action(function (InviteeUpload $record): void {
                         $record->markPending();
 
@@ -306,7 +419,12 @@ class InviteeUploadResource extends Resource
 
                 Tables\Actions\EditAction::make()
                     ->label('Edit')
-                    ->color('gray'),
+                    ->color('gray')
+                    ->visible(fn (InviteeUpload $record): bool => static::canAccessRecord($record)),
+
+                Tables\Actions\DeleteAction::make()
+                    ->label('Delete')
+                    ->visible(fn (InviteeUpload $record): bool => static::canAccessRecord($record)),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -316,10 +434,20 @@ class InviteeUploadResource extends Resource
                         ->color('success')
                         ->requiresConfirmation()
                         ->action(function ($records): void {
-                            $records->each(fn (InviteeUpload $record) => $record->approve(Auth::id()));
+                            $approved = 0;
+
+                            $records->each(function (InviteeUpload $record) use (&$approved): void {
+                                if (! static::canAccessRecord($record)) {
+                                    return;
+                                }
+
+                                $record->approve(Auth::id());
+                                $approved++;
+                            });
 
                             Notification::make()
                                 ->title('Selected submissions approved')
+                                ->body("Approved: {$approved}.")
                                 ->success()
                                 ->send();
                         }),
@@ -330,23 +458,52 @@ class InviteeUploadResource extends Resource
                         ->color('danger')
                         ->requiresConfirmation()
                         ->action(function ($records): void {
-                            $records->each(fn (InviteeUpload $record) => $record->reject(Auth::id()));
+                            $rejected = 0;
+
+                            $records->each(function (InviteeUpload $record) use (&$rejected): void {
+                                if (! static::canAccessRecord($record)) {
+                                    return;
+                                }
+
+                                $record->reject(Auth::id());
+                                $rejected++;
+                            });
 
                             Notification::make()
                                 ->title('Selected submissions rejected')
+                                ->body("Rejected: {$rejected}.")
                                 ->danger()
                                 ->send();
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => auth()->user()?->canManageEvents() ?? false),
                 ]),
             ]);
     }
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with(['event', 'invitee', 'approvedBy']);
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
     }
 
     public static function getRelations(): array

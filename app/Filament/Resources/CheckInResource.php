@@ -4,11 +4,13 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\CheckInResource\Pages;
 use App\Models\CheckIn;
+use App\Models\Event;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class CheckInResource extends Resource
 {
@@ -16,6 +18,7 @@ class CheckInResource extends Resource
 
     /**
      * Check-ins are managed from the Event workspace and Gate Check-In page.
+     * Keep this resource hidden from the sidebar, but still protect it if opened directly.
      */
     protected static bool $shouldRegisterNavigation = false;
 
@@ -31,15 +34,55 @@ class CheckInResource extends Resource
 
     protected static ?int $navigationSort = 4;
 
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()
+            ->with(['event', 'invitee', 'checkedInBy']);
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        /*
+         * MVP rule:
+         * Check-in Officer can view check-in records because this resource is part of
+         * the gate/check-in workflow. Later you can restrict this to assigned events.
+         */
+        if ($user->isCheckInOfficer() && ($user->canScanGuests() ?? false)) {
+            return $query;
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
     public static function canViewAny(): bool
     {
         $user = auth()->user();
 
-        return ($user?->isSuperAdmin() ?? false)
-            || ($user?->isEventOwner() ?? false)
-            || ($user?->isEventManager() ?? false)
-            || ($user?->isGateScanner() ?? false)
-            || ($user?->isReportViewer() ?? false);
+        return (bool) (
+            $user?->isSuperAdmin()
+            || $user?->isEventAdmin()
+            || $user?->isCheckInOfficer()
+            || $user?->canViewReports()
+            || $user?->canScanGuests()
+        );
+    }
+
+    public static function canView($record): bool
+    {
+        return static::canAccessRecord($record);
     }
 
     public static function canCreate(): bool
@@ -62,6 +105,53 @@ class CheckInResource extends Resource
         return auth()->user()?->isSuperAdmin() ?? false;
     }
 
+    protected static function canAccessRecord(?CheckIn $record): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || ! $record) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            $record->loadMissing('event');
+
+            return (int) ($record->event?->user_id ?? 0) === (int) $user->id;
+        }
+
+        if ($user->isCheckInOfficer()) {
+            return (bool) ($user->canScanGuests() ?? false);
+        }
+
+        return false;
+    }
+
+    protected static function visibleEventOptions(): array
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return [];
+        }
+
+        return Event::query()
+            ->when(
+                $user->isEventAdmin(),
+                fn (Builder $query): Builder => $query->where('user_id', $user->id)
+            )
+            ->when(
+                ! $user->isSuperAdmin() && ! $user->isEventAdmin() && ! $user->isCheckInOfficer(),
+                fn (Builder $query): Builder => $query->whereRaw('1 = 0')
+            )
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -71,7 +161,7 @@ class CheckInResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => static::visibleEventOptions())
                             ->searchable()
                             ->preload()
                             ->disabled(),
@@ -162,13 +252,15 @@ class CheckInResource extends Resource
                                 ->replace('_', ' ')
                                 ->title()
                                 ->toString()
-                    ),
+                    )
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('guests_checked_in')
                     ->label('Guests')
                     ->alignCenter()
                     ->badge()
-                    ->color('primary'),
+                    ->color('primary')
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('previous_checked_in_count')
                     ->label('Previous')
@@ -177,7 +269,8 @@ class CheckInResource extends Resource
 
                 Tables\Columns\TextColumn::make('remaining_guests')
                     ->label('Remaining')
-                    ->alignCenter(),
+                    ->alignCenter()
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
@@ -192,18 +285,35 @@ class CheckInResource extends Resource
                     ->color(
                         fn (?string $state): string =>
                             match ($state) {
-                                'success' => 'success',
+                                'success',
+                                'checked_in',
+                                'valid' => 'success',
+
+                                'partial',
+                                'duplicate',
+                                'warning' => 'warning',
+
+                                'failed',
+                                'invalid',
                                 'rejected' => 'danger',
-                                'duplicate' => 'warning',
+
                                 default => 'gray',
                             }
-                    ),
+                    )
+                    ->sortable(),
 
                 Tables\Columns\TextColumn::make('checked_in_at')
                     ->label('Checked In At')
                     ->dateTime('d M Y, H:i:s')
                     ->sortable()
                     ->placeholder('Not recorded'),
+
+                Tables\Columns\TextColumn::make('remarks')
+                    ->label('Remarks')
+                    ->limit(40)
+                    ->tooltip(fn ($record): ?string => $record->remarks)
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Created')
@@ -214,7 +324,7 @@ class CheckInResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->options(fn (): array => static::visibleEventOptions())
                     ->searchable()
                     ->preload(),
 
@@ -222,8 +332,13 @@ class CheckInResource extends Resource
                     ->label('Status')
                     ->options([
                         'success' => 'Success',
-                        'rejected' => 'Rejected',
+                        'checked_in' => 'Checked In',
+                        'valid' => 'Valid',
+                        'partial' => 'Partial',
                         'duplicate' => 'Duplicate',
+                        'rejected' => 'Rejected',
+                        'failed' => 'Failed',
+                        'invalid' => 'Invalid',
                     ])
                     ->native(false),
 
@@ -231,29 +346,29 @@ class CheckInResource extends Resource
                     ->label('Method')
                     ->options([
                         'manual' => 'Manual',
+                        'qr' => 'QR',
                         'qr_scan' => 'QR Scan',
+                        'serial' => 'Serial Number',
                         'serial_number' => 'Serial Number',
+                        'phone' => 'Phone',
                         'phone_search' => 'Phone Search',
+                        'name' => 'Name Search',
                         'name_search' => 'Name Search',
+                        'gate_scanner' => 'Gate Scanner',
                     ])
                     ->native(false),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make(),
+                Tables\Actions\ViewAction::make()
+                    ->visible(fn (CheckIn $record): bool => static::canAccessRecord($record)),
 
                 Tables\Actions\DeleteAction::make()
-                    ->visible(
-                        fn (): bool =>
-                            auth()->user()?->isSuperAdmin() ?? false
-                    ),
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(
-                            fn (): bool =>
-                                auth()->user()?->isSuperAdmin() ?? false
-                        ),
+                        ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
                 ]),
             ])
             ->defaultSort('checked_in_at', 'desc')

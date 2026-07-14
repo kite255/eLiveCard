@@ -8,6 +8,8 @@ use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -17,12 +19,8 @@ class User extends Authenticatable implements FilamentUser
     use HasFactory, Notifiable;
 
     public const ROLE_SUPER_ADMIN = 'super_admin';
-    public const ROLE_EVENT_OWNER = 'event_owner';
-    public const ROLE_EVENT_MANAGER = 'event_manager';
-    public const ROLE_CARD_DESIGNER = 'card_designer';
-    public const ROLE_MESSAGE_SENDER = 'message_sender';
-    public const ROLE_GATE_SCANNER = 'gate_scanner';
-    public const ROLE_REPORT_VIEWER = 'report_viewer';
+    public const ROLE_EVENT_ADMIN = 'event_admin';
+    public const ROLE_CHECK_IN_OFFICER = 'check_in_officer';
 
     protected $fillable = [
         'name',
@@ -44,65 +42,86 @@ class User extends Authenticatable implements FilamentUser
         ];
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Events created/owned by this user.
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(Event::class);
+    }
+
+    /**
+     * Events assigned to this user through the event_user pivot table.
+     *
+     * Pivot fields:
+     * - role: event_admin / check_in_officer
+     * - is_active: true / false
+     */
+    public function assignedEvents(): BelongsToMany
+    {
+        return $this->belongsToMany(Event::class, 'event_user')
+            ->withPivot([
+                'role',
+                'is_active',
+            ])
+            ->withTimestamps();
+    }
+
+    public function activeAssignedEvents(): BelongsToMany
+    {
+        return $this->assignedEvents()
+            ->wherePivot('is_active', true);
+    }
+
+    public function assignedManagedEvents(): BelongsToMany
+    {
+        return $this->activeAssignedEvents()
+            ->wherePivot('role', self::ROLE_EVENT_ADMIN);
+    }
+
+    public function assignedCheckInEvents(): BelongsToMany
+    {
+        return $this->activeAssignedEvents()
+            ->wherePivot('role', self::ROLE_CHECK_IN_OFFICER);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Roles
+    |--------------------------------------------------------------------------
+    */
+
     public static function roles(): array
     {
         return [
             self::ROLE_SUPER_ADMIN => 'Super Admin',
-            self::ROLE_EVENT_OWNER => 'Event Owner',
-            self::ROLE_EVENT_MANAGER => 'Event Manager',
-            self::ROLE_CARD_DESIGNER => 'Card Designer',
-            self::ROLE_MESSAGE_SENDER => 'Message Sender',
-            self::ROLE_GATE_SCANNER => 'Gate Scanner',
-            self::ROLE_REPORT_VIEWER => 'Report Viewer',
+            self::ROLE_EVENT_ADMIN => 'Event Admin',
+            self::ROLE_CHECK_IN_OFFICER => 'Check-in Officer',
         ];
+    }
+
+    public static function defaultRole(): string
+    {
+        return self::ROLE_EVENT_ADMIN;
+    }
+
+    public function roleLabel(): string
+    {
+        return self::roles()[$this->role] ?? str((string) $this->role)
+            ->replace('_', ' ')
+            ->title()
+            ->toString();
     }
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_OWNER,
-            self::ROLE_EVENT_MANAGER,
-            self::ROLE_CARD_DESIGNER,
-            self::ROLE_MESSAGE_SENDER,
-            self::ROLE_GATE_SCANNER,
-            self::ROLE_REPORT_VIEWER,
-        ]);
-    }
-
-    public function isSuperAdmin(): bool
-    {
-        return $this->role === self::ROLE_SUPER_ADMIN;
-    }
-
-    public function isEventOwner(): bool
-    {
-        return $this->role === self::ROLE_EVENT_OWNER;
-    }
-
-    public function isEventManager(): bool
-    {
-        return $this->role === self::ROLE_EVENT_MANAGER;
-    }
-
-    public function isCardDesigner(): bool
-    {
-        return $this->role === self::ROLE_CARD_DESIGNER;
-    }
-
-    public function isMessageSender(): bool
-    {
-        return $this->role === self::ROLE_MESSAGE_SENDER;
-    }
-
-    public function isGateScanner(): bool
-    {
-        return $this->role === self::ROLE_GATE_SCANNER;
-    }
-
-    public function isReportViewer(): bool
-    {
-        return $this->role === self::ROLE_REPORT_VIEWER;
+        return $this->hasAnyRole(array_keys(self::roles()));
     }
 
     public function hasRole(string $role): bool
@@ -115,12 +134,124 @@ class User extends Authenticatable implements FilamentUser
         return in_array($this->role, $roles, true);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Main Role Checks
+    |--------------------------------------------------------------------------
+    */
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->hasRole(self::ROLE_SUPER_ADMIN);
+    }
+
+    public function isEventAdmin(): bool
+    {
+        return $this->hasRole(self::ROLE_EVENT_ADMIN);
+    }
+
+    public function isCheckInOfficer(): bool
+    {
+        return $this->hasRole(self::ROLE_CHECK_IN_OFFICER);
+    }
+
+    public function isEventStaff(): bool
+    {
+        return $this->hasAnyRole([
+            self::ROLE_SUPER_ADMIN,
+            self::ROLE_EVENT_ADMIN,
+            self::ROLE_CHECK_IN_OFFICER,
+        ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Backward Compatibility Role Checks
+    |--------------------------------------------------------------------------
+    */
+
+    public function isEventOwner(): bool
+    {
+        return $this->isEventAdmin();
+    }
+
+    public function isEventManager(): bool
+    {
+        return $this->isEventAdmin();
+    }
+
+    public function isCardDesigner(): bool
+    {
+        return $this->isEventAdmin();
+    }
+
+    public function isMessageSender(): bool
+    {
+        return $this->isEventAdmin();
+    }
+
+    public function isGateScanner(): bool
+    {
+        return $this->isCheckInOfficer();
+    }
+
+    public function isReportViewer(): bool
+    {
+        return $this->isEventAdmin();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Permission Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function canManageUsers(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
+    public function canManageSystemSettings(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
+    public function canViewAuditLogs(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
+    public function canManageAllEvents(): bool
+    {
+        return $this->isSuperAdmin();
+    }
+
     public function canManageEvents(): bool
     {
         return $this->hasAnyRole([
             self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_OWNER,
-            self::ROLE_EVENT_MANAGER,
+            self::ROLE_EVENT_ADMIN,
+        ]);
+    }
+
+    public function canManageInvitees(): bool
+    {
+        return $this->hasAnyRole([
+            self::ROLE_SUPER_ADMIN,
+            self::ROLE_EVENT_ADMIN,
+        ]);
+    }
+
+    public function canImportInvitees(): bool
+    {
+        return $this->canManageInvitees();
+    }
+
+    public function canManageCardTypes(): bool
+    {
+        return $this->hasAnyRole([
+            self::ROLE_SUPER_ADMIN,
+            self::ROLE_EVENT_ADMIN,
         ]);
     }
 
@@ -128,9 +259,15 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->hasAnyRole([
             self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_OWNER,
-            self::ROLE_EVENT_MANAGER,
-            self::ROLE_CARD_DESIGNER,
+            self::ROLE_EVENT_ADMIN,
+        ]);
+    }
+
+    public function canGenerateCards(): bool
+    {
+        return $this->hasAnyRole([
+            self::ROLE_SUPER_ADMIN,
+            self::ROLE_EVENT_ADMIN,
         ]);
     }
 
@@ -138,9 +275,15 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->hasAnyRole([
             self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_OWNER,
-            self::ROLE_EVENT_MANAGER,
-            self::ROLE_MESSAGE_SENDER,
+            self::ROLE_EVENT_ADMIN,
+        ]);
+    }
+
+    public function canManageRsvp(): bool
+    {
+        return $this->hasAnyRole([
+            self::ROLE_SUPER_ADMIN,
+            self::ROLE_EVENT_ADMIN,
         ]);
     }
 
@@ -148,9 +291,8 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->hasAnyRole([
             self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_OWNER,
-            self::ROLE_EVENT_MANAGER,
-            self::ROLE_GATE_SCANNER,
+            self::ROLE_EVENT_ADMIN,
+            self::ROLE_CHECK_IN_OFFICER,
         ]);
     }
 
@@ -158,9 +300,150 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->hasAnyRole([
             self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_OWNER,
-            self::ROLE_EVENT_MANAGER,
-            self::ROLE_REPORT_VIEWER,
+            self::ROLE_EVENT_ADMIN,
         ]);
+    }
+
+    public function canManageInviteeUploads(): bool
+    {
+        return $this->hasAnyRole([
+            self::ROLE_SUPER_ADMIN,
+            self::ROLE_EVENT_ADMIN,
+        ]);
+    }
+
+    public function canApproveInviteeUploads(): bool
+    {
+        return $this->canManageInviteeUploads();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Event Assignment Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function isAssignedToEvent(Event|int $event, ?string $assignmentRole = null): bool
+    {
+        $eventId = $event instanceof Event ? $event->id : $event;
+
+        if (! $eventId) {
+            return false;
+        }
+
+        return $this->assignedEvents()
+            ->where('events.id', $eventId)
+            ->where('event_user.is_active', true)
+            ->when($assignmentRole, function ($query) use ($assignmentRole): void {
+                $query->where('event_user.role', $assignmentRole);
+            })
+            ->exists();
+    }
+
+    public function isAssignedAsEventAdmin(Event|int $event): bool
+    {
+        return $this->isAssignedToEvent($event, self::ROLE_EVENT_ADMIN);
+    }
+
+    public function isAssignedAsCheckInOfficer(Event|int $event): bool
+    {
+        return $this->isAssignedToEvent($event, self::ROLE_CHECK_IN_OFFICER);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Event Access Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    public function ownsEvent(Event $event): bool
+    {
+        return (int) $event->user_id === (int) $this->id;
+    }
+
+    /**
+     * General event visibility.
+     *
+     * super_admin:
+     * - Can access all events.
+     *
+     * event_admin:
+     * - Can access owned events.
+     * - Can access events assigned to them in event_user.
+     *
+     * check_in_officer:
+     * - Can access only events assigned to them for check-in.
+     */
+    public function canAccessEvent(Event $event): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($this->isEventAdmin()) {
+            return $this->ownsEvent($event)
+                || $this->isAssignedToEvent($event);
+        }
+
+        if ($this->isCheckInOfficer()) {
+            return $this->isAssignedAsCheckInOfficer($event);
+        }
+
+        return false;
+    }
+
+    /**
+     * Full management access to event admin features.
+     */
+    public function canManageEvent(Event $event): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        if (! $this->isEventAdmin()) {
+            return false;
+        }
+
+        return $this->ownsEvent($event)
+            || $this->isAssignedAsEventAdmin($event);
+    }
+
+    /**
+     * Gate/check-in access for a specific event.
+     */
+    public function canCheckInForEvent(Event $event): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($this->isEventAdmin()) {
+            return $this->ownsEvent($event)
+                || $this->isAssignedToEvent($event);
+        }
+
+        if ($this->isCheckInOfficer()) {
+            return $this->isAssignedAsCheckInOfficer($event);
+        }
+
+        return false;
+    }
+
+    /**
+     * Report access for a specific event.
+     */
+    public function canViewEventReports(Event $event): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        if (! $this->isEventAdmin()) {
+            return false;
+        }
+
+        return $this->ownsEvent($event)
+            || $this->isAssignedAsEventAdmin($event);
     }
 }

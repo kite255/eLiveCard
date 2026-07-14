@@ -8,6 +8,7 @@ use App\Jobs\GenerateInviteeCardJob;
 use App\Filament\Resources\InviteeResource\Pages;
 use App\Models\Invitee;
 use App\Models\GeneratedCard;
+use App\Models\Event;
 use App\Services\ReminderSmsService;
 use App\Services\SmsService;
 use Filament\Forms;
@@ -25,7 +26,6 @@ class InviteeResource extends Resource
 {
     protected static ?string $model = Invitee::class;
 
-    protected static bool $shouldRegisterNavigation = false;
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
 
@@ -39,15 +39,190 @@ class InviteeResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return self::currentUserCanManageInvitees();
+    }
+
+    public static function canViewAny(): bool
+    {
+        return self::currentUserCanManageInvitees();
+    }
+
+    public static function canCreate(): bool
+    {
+        return self::currentUserCanManageInvitees();
+    }
+
+    public static function canView($record): bool
+    {
+        return $record instanceof Invitee && self::currentUserCanAccessInvitee($record);
+    }
+
+    public static function canEdit($record): bool
+    {
+        return $record instanceof Invitee && self::currentUserCanAccessInvitee($record);
+    }
+
+    public static function canDelete($record): bool
+    {
+        return $record instanceof Invitee && self::currentUserCanAccessInvitee($record);
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return self::currentUserCanManageInvitees();
+    }
+
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->with([
                 'event',
                 'cardType',
                 'latestGeneratedCard',
             ]);
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): Builder {
+                return $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
     }
+
+    private static function currentUserCanManageInvitees(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if (method_exists($user, 'canManageInvitees')) {
+            return $user->canManageInvitees();
+        }
+
+        return (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+            || (method_exists($user, 'isEventAdmin') && $user->isEventAdmin());
+    }
+
+    private static function currentUserCanSendMessages(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return method_exists($user, 'canSendMessages')
+            ? $user->canSendMessages()
+            : self::currentUserCanManageInvitees();
+    }
+
+    private static function currentUserCanGenerateCards(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return method_exists($user, 'canGenerateCards')
+            ? $user->canGenerateCards()
+            : self::currentUserCanManageInvitees();
+    }
+
+    private static function currentUserCanScanGuests(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return method_exists($user, 'canScanGuests')
+            ? $user->canScanGuests()
+            : self::currentUserCanManageInvitees();
+    }
+
+    private static function currentUserCanViewReports(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return method_exists($user, 'canViewReports')
+            ? $user->canViewReports()
+            : self::currentUserCanManageInvitees();
+    }
+
+    private static function currentUserCanAccessInvitee(Invitee $invitee): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()) {
+            return (int) ($invitee->event?->user_id ?? $invitee->event()->value('user_id')) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    private static function currentUserCanAccessEvent(?int $eventId): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if (blank($eventId)) {
+            return method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+        }
+
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()) {
+            return Event::query()
+                ->whereKey($eventId)
+                ->where('user_id', $user->id)
+                ->exists();
+        }
+
+        return false;
+    }
+
+    private static function visibleEventsQuery(): Builder
+    {
+        return Event::query()
+            ->visibleTo(auth()->user())
+            ->orderByDesc('event_date')
+            ->orderBy('title');
+    }
+
 
     public static function form(Form $form): Form
     {
@@ -58,19 +233,36 @@ class InviteeResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => self::visibleEventsQuery()
+                                ->pluck('title', 'id')
+                                ->toArray())
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->live(),
+                            ->live()
+                            ->afterStateUpdated(fn (callable $set): null => $set('card_type_id', null))
+                            ->helperText('Super Admin can select any event. Event Admin can select only owned events.'),
 
                         Forms\Components\Select::make('card_type_id')
                             ->label('Card Type')
-                            ->relationship('cardType', 'name')
+                            ->options(function (callable $get): array {
+                                $eventId = $get('event_id');
+
+                                if (blank($eventId) || ! self::currentUserCanAccessEvent((int) $eventId)) {
+                                    return [];
+                                }
+
+                                return \App\Models\CardType::query()
+                                    ->where('event_id', $eventId)
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id')
+                                    ->toArray();
+                            })
                             ->searchable()
                             ->preload()
                             ->required()
-                            ->helperText('The selected card type determines the default number of people allowed.'),
+                            ->disabled(fn (callable $get): bool => blank($get('event_id')))
+                            ->helperText('Select the event first. Only card types for the selected event will appear.'),
 
                         Forms\Components\TextInput::make('name')
                             ->label('Full Name')
@@ -472,41 +664,15 @@ class InviteeResource extends Resource
                     ->placeholder('-')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-
-                Tables\Columns\TextColumn::make('latestGeneratedCard.status')
-                    ->label('Card Gen')
-                    ->badge()
-                    ->default('not_generated')
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        GeneratedCard::STATUS_PENDING => 'Pending',
-                        GeneratedCard::STATUS_GENERATING => 'Generating',
-                        GeneratedCard::STATUS_GENERATED => 'Generated',
-                        GeneratedCard::STATUS_SENT => 'Sent',
-                        GeneratedCard::STATUS_FAILED => 'Failed',
-                        default => 'Not Generated',
-                    })
-                    ->color(fn (?string $state): string => match ($state) {
-                        GeneratedCard::STATUS_PENDING => 'gray',
-                        GeneratedCard::STATUS_GENERATING => 'warning',
-                        GeneratedCard::STATUS_GENERATED => 'success',
-                        GeneratedCard::STATUS_SENT => 'info',
-                        GeneratedCard::STATUS_FAILED => 'danger',
-                        default => 'gray',
-                    })
-                    ->sortable()
-                    ->toggleable(),
-
-                Tables\Columns\TextColumn::make('latestGeneratedCard.generated_at')
-                    ->label('Card Generated')
-                    ->dateTime('d M Y H:i')
-                    ->placeholder('-')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('event_id')
                     ->label('Event')
-                    ->relationship('event', 'title')
+                    ->relationship(
+                        'event',
+                        'title',
+                        modifyQueryUsing: fn (Builder $query): Builder => $query->visibleTo(auth()->user())
+                    )
                     ->searchable()
                     ->preload(),
 
@@ -618,25 +784,40 @@ class InviteeResource extends Resource
             ])
             ->headerActions([
                 Tables\Actions\Action::make('refresh_status')
+                    ->visible(fn (): bool => self::currentUserCanManageInvitees())
                     ->label('Refresh Status')
                     ->icon('heroicon-o-arrow-path')
                     ->color('gray')
                     ->action(fn (): null => null),
 
                 Tables\Actions\Action::make('export_all_invitees')
+                    ->visible(fn (): bool => self::currentUserCanViewReports())
                     ->label('Export Invitees Excel')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('success')
                     ->form([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => self::visibleEventsQuery()
+                                ->pluck('title', 'id')
+                                ->toArray())
                             ->searchable()
                             ->preload()
-                            ->helperText('Select an event to export invitees from one event only. Leave empty to export all invitees.'),
+                            ->required(fn (): bool => ! (auth()->user()?->isSuperAdmin() ?? false))
+                            ->helperText('Super Admin may leave this empty to export all invitees. Event Admin must select one owned event.'),
                     ])
                     ->action(function (array $data) {
-                        $eventId = $data['event_id'] ?? null;
+                        $eventId = filled($data['event_id'] ?? null) ? (int) $data['event_id'] : null;
+
+                        if (! self::currentUserCanAccessEvent($eventId)) {
+                            Notification::make()
+                                ->title('Export not allowed')
+                                ->body('Please select an event you are allowed to access.')
+                                ->danger()
+                                ->send();
+
+                            return null;
+                        }
 
                         $fileName = $eventId
                             ? 'event-' . $eventId . '-invitees-' . now()->format('Y-m-d-His') . '.xlsx'
@@ -649,19 +830,33 @@ class InviteeResource extends Resource
                     }),
 
                 Tables\Actions\Action::make('export_attendance_report')
+                    ->visible(fn (): bool => self::currentUserCanViewReports())
                     ->label('Export Attendance Excel')
                     ->icon('heroicon-o-document-arrow-down')
                     ->color('info')
                     ->form([
                         Forms\Components\Select::make('event_id')
                             ->label('Event')
-                            ->relationship('event', 'title')
+                            ->options(fn (): array => self::visibleEventsQuery()
+                                ->pluck('title', 'id')
+                                ->toArray())
                             ->searchable()
                             ->preload()
-                            ->helperText('Select an event to export attendance from one event only. Leave empty to export all attendance.'),
+                            ->required(fn (): bool => ! (auth()->user()?->isSuperAdmin() ?? false))
+                            ->helperText('Super Admin may leave this empty to export all attendance. Event Admin must select one owned event.'),
                     ])
                     ->action(function (array $data) {
-                        $eventId = $data['event_id'] ?? null;
+                        $eventId = filled($data['event_id'] ?? null) ? (int) $data['event_id'] : null;
+
+                        if (! self::currentUserCanAccessEvent($eventId)) {
+                            Notification::make()
+                                ->title('Export not allowed')
+                                ->body('Please select an event you are allowed to access.')
+                                ->danger()
+                                ->send();
+
+                            return null;
+                        }
 
                         $fileName = $eventId
                             ? 'event-' . $eventId . '-attendance-' . now()->format('Y-m-d-His') . '.xlsx'
@@ -675,12 +870,14 @@ class InviteeResource extends Resource
             ])
             ->actions([
                 Tables\Actions\Action::make('open_invitation_page')
+                    ->visible(fn (Invitee $record): bool => self::currentUserCanAccessInvitee($record))
                     ->label('Invitation')
                     ->icon('heroicon-o-eye')
                     ->color('gray')
                     ->url(fn (Invitee $record): string => $record->private_invitation_url, shouldOpenInNewTab: true),
 
                 Tables\Actions\Action::make('open_rsvp_link')
+                    ->visible(fn (Invitee $record): bool => self::currentUserCanAccessInvitee($record))
                     ->label('RSVP')
                     ->icon('heroicon-o-link')
                     ->color('gray')
@@ -740,6 +937,7 @@ class InviteeResource extends Resource
                     ->label('Card')
                     ->icon('heroicon-o-photo')
                     ->color('info')
+                    ->visible(fn (): bool => self::currentUserCanGenerateCards())
                     ->button(),
 
                 Tables\Actions\ActionGroup::make([
@@ -834,6 +1032,7 @@ class InviteeResource extends Resource
                     ->label('SMS')
                     ->icon('heroicon-o-chat-bubble-left-right')
                     ->color('success')
+                    ->visible(fn (): bool => self::currentUserCanSendMessages())
                     ->button(),
 
                 Tables\Actions\Action::make('check_in')
@@ -841,7 +1040,7 @@ class InviteeResource extends Resource
                     ->icon('heroicon-o-qr-code')
                     ->button()
                     ->color('success')
-                    ->visible(fn (Invitee $record): bool => $record->remaining_guests > 0)
+                    ->visible(fn (Invitee $record): bool => self::currentUserCanScanGuests() && self::currentUserCanAccessInvitee($record) && $record->remaining_guests > 0)
                     ->form([
                         Forms\Components\TextInput::make('guests_to_check_in')
                             ->label('Number of Guests Entering')
@@ -947,7 +1146,7 @@ class InviteeResource extends Resource
                     ->icon('heroicon-o-qr-code')
                     ->button()
                     ->color('info')
-                    ->visible(fn (Invitee $record): bool => blank($record->qr_code_path))
+                    ->visible(fn (Invitee $record): bool => self::currentUserCanManageInvitees() && self::currentUserCanAccessInvitee($record) && blank($record->qr_code_path))
                     ->action(function (Invitee $record) {
                         $record->generateQrCode();
 
@@ -959,14 +1158,17 @@ class InviteeResource extends Resource
                     }),
 
                 Tables\Actions\EditAction::make()
+                    ->visible(fn (Invitee $record): bool => self::currentUserCanAccessInvitee($record))
                     ->label('Edit'),
 
                 Tables\Actions\DeleteAction::make()
+                    ->visible(fn (Invitee $record): bool => self::currentUserCanAccessInvitee($record))
                     ->label('Delete'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\BulkAction::make('generate_cards')
+                        ->visible(fn (): bool => self::currentUserCanGenerateCards())
                         ->label('Generate Cards')
                         ->icon('heroicon-o-photo')
                         ->color('success')
@@ -1002,6 +1204,7 @@ class InviteeResource extends Resource
                         }),
 
                     Tables\Actions\BulkAction::make('export_selected_invitees')
+                        ->visible(fn (): bool => self::currentUserCanViewReports())
                         ->label('Export Selected Invitees')
                         ->icon('heroicon-o-arrow-down-tray')
                         ->color('success')
@@ -1013,6 +1216,7 @@ class InviteeResource extends Resource
                         }),
 
                     Tables\Actions\BulkAction::make('export_selected_attendance')
+                        ->visible(fn (): bool => self::currentUserCanViewReports())
                         ->label('Export Selected Attendance')
                         ->icon('heroicon-o-document-arrow-down')
                         ->color('info')
@@ -1024,6 +1228,7 @@ class InviteeResource extends Resource
                         }),
 
                     Tables\Actions\BulkAction::make('send_sms_bulk')
+                        ->visible(fn (): bool => self::currentUserCanSendMessages())
                         ->label('Send SMS Invitations')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('warning')
@@ -1052,6 +1257,7 @@ class InviteeResource extends Resource
                         }),
 
                     Tables\Actions\BulkAction::make('send_rsvp_reminder_sms_bulk')
+                        ->visible(fn (): bool => self::currentUserCanSendMessages())
                         ->label('Send RSVP Reminder SMS')
                         ->icon('heroicon-o-bell-alert')
                         ->color('info')
@@ -1071,6 +1277,7 @@ class InviteeResource extends Resource
                         }),
 
                     Tables\Actions\BulkAction::make('send_attending_reminder_sms_bulk')
+                        ->visible(fn (): bool => self::currentUserCanSendMessages())
                         ->label('Send One Day Reminder SMS')
                         ->icon('heroicon-o-calendar-days')
                         ->color('success')
@@ -1090,6 +1297,7 @@ class InviteeResource extends Resource
                         }),
 
                     Tables\Actions\BulkAction::make('send_event_day_sms_bulk')
+                        ->visible(fn (): bool => self::currentUserCanSendMessages())
                         ->label('Send Event Day SMS')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
@@ -1108,7 +1316,8 @@ class InviteeResource extends Resource
                                 ->send();
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => self::currentUserCanManageInvitees()),
                 ]),
             ])
             ->defaultSort('created_at', 'desc');

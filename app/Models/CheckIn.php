@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -56,6 +57,28 @@ class CheckIn extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | Boot
+    |--------------------------------------------------------------------------
+    */
+
+    protected static function booted(): void
+    {
+        static::creating(function (CheckIn $checkIn): void {
+            $checkIn->status ??= self::STATUS_SUCCESS;
+            $checkIn->checkin_method ??= self::METHOD_QR;
+            $checkIn->guests_checked_in ??= 1;
+            $checkIn->previous_checked_in_count ??= 0;
+            $checkIn->remaining_guests ??= 0;
+            $checkIn->checked_in_at ??= now();
+
+            if (auth()->check() && blank($checkIn->checked_in_by)) {
+                $checkIn->checked_in_by = auth()->id();
+            }
+        });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Relationships
     |--------------------------------------------------------------------------
     */
@@ -77,7 +100,7 @@ class CheckIn extends Model
 
     /*
     |--------------------------------------------------------------------------
-    | Status Options
+    | Options
     |--------------------------------------------------------------------------
     */
 
@@ -103,6 +126,100 @@ class CheckIn extends Model
             self::METHOD_NAME => 'Name Search',
             self::METHOD_GATE_SCANNER => 'Gate Scanner',
         ];
+    }
+
+    public static function successfulStatuses(): array
+    {
+        return [
+            self::STATUS_SUCCESS,
+        ];
+    }
+
+    public static function failedStatuses(): array
+    {
+        return [
+            self::STATUS_FAILED,
+            self::STATUS_DUPLICATE,
+            self::STATUS_BLOCKED,
+            self::STATUS_CANCELLED,
+        ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Query Scopes
+    |--------------------------------------------------------------------------
+    */
+
+    public function scopeForEvent(Builder $query, Event|int|null $event): Builder
+    {
+        $eventId = $event instanceof Event ? $event->id : $event;
+
+        if (! $eventId) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('event_id', $eventId);
+    }
+
+    public function scopeSuccessful(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::successfulStatuses());
+    }
+
+    public function scopeFailed(Builder $query): Builder
+    {
+        return $query->whereIn('status', self::failedStatuses());
+    }
+
+    public function scopeToday(Builder $query): Builder
+    {
+        return $query->whereDate('checked_in_at', today());
+    }
+
+    public function scopeByMethod(Builder $query, ?string $method): Builder
+    {
+        if (blank($method)) {
+            return $query;
+        }
+
+        return $query->where('checkin_method', $method);
+    }
+
+    public function scopeCheckedInByUser(Builder $query, User|int|null $user): Builder
+    {
+        $userId = $user instanceof User ? $user->id : $user;
+
+        if (! $userId) {
+            return $query;
+        }
+
+        return $query->where('checked_in_by', $userId);
+    }
+
+    public function scopeVisibleTo(Builder $query, ?User $user = null): Builder
+    {
+        $user ??= auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->whereHas('event', function (Builder $eventQuery) use ($user): void {
+                $eventQuery->where('user_id', $user->id);
+            });
+        }
+
+        if ($user->isCheckInOfficer()) {
+            return $query;
+        }
+
+        return $query->whereRaw('1 = 0');
     }
 
     /*
@@ -164,21 +281,51 @@ class CheckIn extends Model
 
     public function statusLabel(): string
     {
-        return self::statuses()[$this->status] ?? ucfirst(str_replace('_', ' ', (string) $this->status));
+        return self::statuses()[$this->status] ?? str((string) $this->status)
+            ->replace('_', ' ')
+            ->title()
+            ->toString();
     }
 
     public function methodLabel(): string
     {
-        return self::methods()[$this->checkin_method] ?? ucfirst(str_replace('_', ' ', (string) $this->checkin_method));
+        return self::methods()[$this->checkin_method] ?? str((string) $this->checkin_method)
+            ->replace('_', ' ')
+            ->title()
+            ->toString();
     }
 
     public function guestsLabel(): string
     {
-        return $this->guests_checked_in . ' guest(s)';
+        $guests = max(0, (int) ($this->guests_checked_in ?? 0));
+
+        return $guests . ' guest' . ($guests === 1 ? '' : 's');
+    }
+
+    public function remainingGuestsLabel(): string
+    {
+        $remaining = max(0, (int) ($this->remaining_guests ?? 0));
+
+        return $remaining . ' remaining';
     }
 
     public function checkedInTimeLabel(): string
     {
         return $this->checked_in_at?->format('d M Y, H:i') ?? 'N/A';
+    }
+
+    public function inviteeName(): string
+    {
+        return $this->invitee?->name ?? 'Unknown invitee';
+    }
+
+    public function inviteePhone(): string
+    {
+        return $this->invitee?->phone ?? '-';
+    }
+
+    public function serialNumber(): string
+    {
+        return $this->invitee?->serial_number ?? '-';
     }
 }

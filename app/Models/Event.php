@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Support\EliveMessagePlaceholders;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
 
@@ -122,6 +123,14 @@ class Event extends Model
         ];
     }
 
+    public static function eventAssignmentRoles(): array
+    {
+        return [
+            'event_admin' => 'Event Admin',
+            'check_in_officer' => 'Check-in Officer',
+        ];
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Relationships
@@ -146,6 +155,36 @@ class Event extends Model
     public function inviteeUploads(): HasMany
     {
         return $this->hasMany(InviteeUpload::class);
+    }
+
+    public function assignedUsers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'event_user')
+            ->withPivot([
+                'role',
+                'is_active',
+            ])
+            ->withTimestamps();
+    }
+
+    public function activeAssignedUsers(): BelongsToMany
+    {
+        return $this->assignedUsers()
+            ->wherePivot('is_active', true);
+    }
+
+    public function checkInOfficers(): BelongsToMany
+    {
+        return $this->assignedUsers()
+            ->wherePivot('role', 'check_in_officer')
+            ->wherePivot('is_active', true);
+    }
+
+    public function eventAdmins(): BelongsToMany
+    {
+        return $this->assignedUsers()
+            ->wherePivot('role', 'event_admin')
+            ->wherePivot('is_active', true);
     }
 
     public function cardTemplates(): HasMany
@@ -230,6 +269,123 @@ class Event extends Model
     public function scopeWelcomeSmsEnabled($query)
     {
         return $query->where('welcome_sms_enabled', true);
+    }
+
+    public function scopeOwnedBy($query, User|int|null $user)
+    {
+        $userId = $user instanceof User ? $user->id : $user;
+
+        if (! $userId) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('user_id', $userId);
+    }
+
+    public function scopeVisibleTo($query, ?User $user = null)
+    {
+        $user ??= auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where(function ($query) use ($user): void {
+            $query
+                ->where('user_id', $user->id)
+                ->orWhereHas('assignedUsers', function ($query) use ($user): void {
+                    $query
+                        ->where('users.id', $user->id)
+                        ->where('event_user.is_active', true);
+                });
+        });
+    }
+
+    public function scopeCheckInVisibleTo($query, ?User $user = null)
+    {
+        $user ??= auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where(function ($query) use ($user): void {
+            $query
+                ->where('user_id', $user->id)
+                ->orWhereHas('assignedUsers', function ($query) use ($user): void {
+                    $query
+                        ->where('users.id', $user->id)
+                        ->where('event_user.is_active', true)
+                        ->whereIn('event_user.role', [
+                            'event_admin',
+                            'check_in_officer',
+                        ]);
+                });
+        });
+    }
+
+    public function isAssignedTo(User|int|null $user, ?string $role = null): bool
+    {
+        $userId = $user instanceof User ? $user->id : $user;
+
+        if (! $userId) {
+            return false;
+        }
+
+        return $this->assignedUsers()
+            ->where('users.id', $userId)
+            ->where('event_user.is_active', true)
+            ->when($role, fn ($query) => $query->where('event_user.role', $role))
+            ->exists();
+    }
+
+    public function canBeManagedBy(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($this->user_id === $user->id) {
+            return true;
+        }
+
+        return $this->isAssignedTo($user, 'event_admin');
+    }
+
+    public function canBeCheckedInBy(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($this->user_id === $user->id) {
+            return true;
+        }
+
+        return $this->assignedUsers()
+            ->where('users.id', $user->id)
+            ->where('event_user.is_active', true)
+            ->whereIn('event_user.role', [
+                'event_admin',
+                'check_in_officer',
+            ])
+            ->exists();
     }
 
     /*
@@ -391,16 +547,32 @@ class Event extends Model
 
     public function getCoverImageUrlAttribute(): ?string
     {
-        if (! filled($this->cover_image)) {
+        $coverImage = $this->cover_image;
+
+        if (is_array($coverImage)) {
+            $coverImage = collect($coverImage)->first();
+        }
+
+        if (! filled($coverImage)) {
             return null;
         }
 
-        if (filter_var($this->cover_image, FILTER_VALIDATE_URL)) {
-            return $this->cover_image;
+        $coverImage = trim((string) $coverImage);
+
+        if (filter_var($coverImage, FILTER_VALIDATE_URL)) {
+            return $coverImage;
         }
 
-        return Storage::disk('public')->exists($this->cover_image)
-            ? Storage::disk('public')->url($this->cover_image)
+        $coverImage = ltrim($coverImage, '/');
+
+        foreach (['storage/', 'public/'] as $prefix) {
+            if (str_starts_with($coverImage, $prefix)) {
+                $coverImage = substr($coverImage, strlen($prefix));
+            }
+        }
+
+        return Storage::disk('public')->exists($coverImage)
+            ? Storage::disk('public')->url($coverImage)
             : null;
     }
 
@@ -575,21 +747,21 @@ class Event extends Model
     public function getPendingInviteeUploadsCountAttribute(): int
     {
         return $this->inviteeUploads()
-            ->where('status', InviteeUpload::STATUS_PENDING)
+            ->where('status', 'pending')
             ->count();
     }
 
     public function getApprovedInviteeUploadsCountAttribute(): int
     {
         return $this->inviteeUploads()
-            ->where('status', InviteeUpload::STATUS_APPROVED)
+            ->where('status', 'approved')
             ->count();
     }
 
     public function getRejectedInviteeUploadsCountAttribute(): int
     {
         return $this->inviteeUploads()
-            ->where('status', InviteeUpload::STATUS_REJECTED)
+            ->where('status', 'rejected')
             ->count();
     }
 

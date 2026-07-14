@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource\RelationManagers;
 use App\Models\Event;
+use App\Models\User;
 use App\Support\EliveMessagePlaceholders;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -13,6 +14,7 @@ use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class EventResource extends Resource
 {
@@ -32,6 +34,42 @@ class EventResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    public static function canViewAny(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->canManageEvents() ?? false;
+    }
+
+    public static function canEdit($record): bool
+    {
+        return auth()->user()?->canManageEvent($record) ?? false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return auth()->user()?->isSuperAdmin() ?? false;
+    }
+
+    public static function canView($record): bool
+    {
+        return auth()->user()?->canAccessEvent($record) ?? false;
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->visibleTo(auth()->user());
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -41,10 +79,21 @@ class EventResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('user_id')
                             ->label('Event Owner')
-                            ->relationship('user', 'name')
+                            ->options(fn (): array => User::query()
+                                ->whereIn('role', [
+                                    User::ROLE_SUPER_ADMIN,
+                                    User::ROLE_EVENT_ADMIN,
+                                ])
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                                ->toArray())
                             ->searchable()
                             ->preload()
-                            ->required(),
+                            ->default(fn (): ?int => auth()->user()?->isEventAdmin() ? auth()->id() : null)
+                            ->disabled(fn (): bool => ! (auth()->user()?->isSuperAdmin() ?? false))
+                            ->dehydrated()
+                            ->required()
+                            ->helperText('Super Admin can assign the event owner. Event Admin owns their created events automatically.'),
 
                         Forms\Components\TextInput::make('title')
                             ->label('Event Name')
@@ -310,6 +359,13 @@ class EventResource extends Resource
                                     ->weight('bold')
                                     ->size('lg')
                                     ->icon('heroicon-o-sparkles'),
+
+                                Infolists\Components\TextEntry::make('user.name')
+                                    ->label('Event Owner')
+                                    ->badge()
+                                    ->color('primary')
+                                    ->icon('heroicon-o-user')
+                                    ->placeholder('Not assigned'),
 
                                 Infolists\Components\TextEntry::make('event_type_display')
                                     ->label('Event Type')
@@ -591,7 +647,8 @@ class EventResource extends Resource
                     ->label('Owner')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
 
                 Tables\Columns\TextColumn::make('event_type_display')
                     ->label('Type')
@@ -693,40 +750,49 @@ class EventResource extends Resource
                     ->icon('heroicon-o-folder-open'),
 
                 Tables\Actions\EditAction::make()
-                    ->label('Edit'),
+                    ->label('Edit')
+                    ->visible(fn (Event $record): bool => auth()->user()?->canManageEvent($record) ?? false),
 
                 Tables\Actions\Action::make('message_center')
                     ->label('Message Center')
                     ->icon('heroicon-o-envelope')
                     ->color('primary')
+                    ->visible(fn (Event $record): bool =>
+                        (auth()->user()?->canSendMessages() ?? false)
+                        && (auth()->user()?->canManageEvent($record) ?? false)
+                    )
                     ->url(fn (Event $record): string => static::getUrl('send-message', [
                         'record' => $record,
                     ])),
 
                 Tables\Actions\DeleteAction::make()
-                    ->label('Delete'),
+                    ->label('Delete')
+                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
                 ]),
             ]);
     }
 
     public static function getRelations(): array
-{
-    return [
-        RelationManagers\CardTypesRelationManager::class,
-        RelationManagers\InviteesRelationManager::class,
-        RelationManagers\InviteeUploadsRelationManager::class,
-        RelationManagers\CardTemplatesRelationManager::class,
-        RelationManagers\GeneratedCardsRelationManager::class,
-        RelationManagers\MessageTemplatesRelationManager::class,
-        RelationManagers\MessageLogsRelationManager::class,
-        RelationManagers\SmsLogsRelationManager::class,
-        RelationManagers\CheckInsRelationManager::class,
-    ];
-}
+    {
+        return [
+            RelationManagers\AssignedUsersRelationManager::class,
+            RelationManagers\CardTypesRelationManager::class,
+            RelationManagers\InviteesRelationManager::class,
+            RelationManagers\InviteeUploadsRelationManager::class,
+            RelationManagers\CardTemplatesRelationManager::class,
+            RelationManagers\GeneratedCardsRelationManager::class,
+            RelationManagers\MessageTemplatesRelationManager::class,
+            RelationManagers\MessageLogsRelationManager::class,
+            RelationManagers\SmsLogsRelationManager::class,
+            RelationManagers\CheckInsRelationManager::class,
+        ];
+    }
+
     public static function getPages(): array
     {
         return [

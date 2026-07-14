@@ -10,6 +10,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -23,9 +24,39 @@ class CardTemplatesRelationManager extends RelationManager
 
     protected static ?string $pluralModelLabel = 'Card Templates';
 
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::canAccessOwnerRecord($ownerRecord);
+    }
+
+    protected static function canAccessOwnerRecord(Model $ownerRecord): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected function canManageCardTemplates(): bool
+    {
+        return static::canAccessOwnerRecord($this->getOwnerRecord())
+            && (auth()->user()?->canManageCardDesigns() ?? false);
+    }
+
     public function isReadOnly(): bool
     {
-        return false;
+        return ! $this->canManageCardTemplates();
     }
 
     public function form(Form $form): Form
@@ -66,7 +97,7 @@ class CardTemplatesRelationManager extends RelationManager
                                 'image/png',
                                 'image/webp',
                             ])
-                            ->maxSize(25600) // 25MB
+                            ->maxSize(25600)
                             ->maxFiles(1)
                             ->imagePreviewHeight('350')
                             ->loadingIndicatorPosition('left')
@@ -188,6 +219,7 @@ class CardTemplatesRelationManager extends RelationManager
                     ->icon('heroicon-o-arrow-up-tray')
                     ->modalHeading('Upload Card Template')
                     ->modalSubmitActionLabel('Save Template')
+                    ->visible(fn (): bool => $this->canManageCardTemplates())
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['event_id'] = $this->getOwnerRecord()->id;
 
@@ -212,6 +244,7 @@ class CardTemplatesRelationManager extends RelationManager
                     Tables\Actions\EditAction::make()
                         ->label('Edit Template')
                         ->icon('heroicon-o-pencil-square')
+                        ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->mutateFormDataUsing(function (array $data, CardTemplate $record): array {
                             $this->setImageDimensions($data);
 
@@ -238,7 +271,8 @@ class CardTemplatesRelationManager extends RelationManager
                         ->icon('heroicon-o-cursor-arrow-rays')
                         ->color('primary')
                         ->url(fn (CardTemplate $record): string => route('card-templates.designer', $record))
-                        ->openUrlInNewTab(),
+                        ->openUrlInNewTab()
+                        ->visible(fn (): bool => $this->canManageCardTemplates()),
 
                     Tables\Actions\Action::make('set_active')
                         ->label('Set Active')
@@ -247,7 +281,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->modalHeading('Set Template as Active')
                         ->modalDescription('This will make this template active for card generation. Other templates for this event will be changed to draft.')
-                        ->visible(fn (CardTemplate $record): bool => $record->status !== CardTemplate::STATUS_ACTIVE)
+                        ->visible(fn (CardTemplate $record): bool => $this->canManageCardTemplates() && $record->status !== CardTemplate::STATUS_ACTIVE)
                         ->action(function (CardTemplate $record): void {
                             CardTemplate::where('event_id', $record->event_id)
                                 ->where('id', '!=', $record->id)
@@ -274,6 +308,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->modalHeading('Add Starter Placeholders')
                         ->modalDescription('This will add common placeholders: Invitee Name, Card Type, Allowed Guests, QR Code, Serial Number, and Table Number.')
+                        ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->action(function (CardTemplate $record): void {
                             $starterPlaceholders = [
                                 [
@@ -397,7 +432,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->modalHeading('Delete All Placeholders')
                         ->modalDescription('This will delete all placeholders for this template. The template image will not be deleted.')
-                        ->visible(fn (CardTemplate $record): bool => $record->placeholders()->exists())
+                        ->visible(fn (CardTemplate $record): bool => $this->canManageCardTemplates() && $record->placeholders()->exists())
                         ->action(function (CardTemplate $record): void {
                             $record->placeholders()->delete();
 
@@ -412,7 +447,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->icon('heroicon-o-archive-box')
                         ->color('gray')
                         ->requiresConfirmation()
-                        ->visible(fn (CardTemplate $record): bool => $record->status !== CardTemplate::STATUS_ARCHIVED)
+                        ->visible(fn (CardTemplate $record): bool => $this->canManageCardTemplates() && $record->status !== CardTemplate::STATUS_ARCHIVED)
                         ->action(function (CardTemplate $record): void {
                             $record->update([
                                 'status' => CardTemplate::STATUS_ARCHIVED,
@@ -431,6 +466,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->modalHeading('Delete Card Template')
                         ->modalDescription('Use this only for test templates. If cards were already generated, archive the template instead.')
+                        ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->action(function (CardTemplate $record): void {
                             if ($record->generatedCards()->exists()) {
                                 Notification::make()
@@ -469,6 +505,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->icon('heroicon-o-archive-box')
                         ->color('gray')
                         ->requiresConfirmation()
+                        ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->action(function ($records): void {
                             $records->each(function (CardTemplate $record): void {
                                 $record->update([
@@ -536,5 +573,4 @@ class CardTemplatesRelationManager extends RelationManager
 
         return filled($path) ? $path : null;
     }
-
 }

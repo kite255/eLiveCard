@@ -11,6 +11,7 @@ use Filament\Support\Enums\FontWeight;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 
@@ -23,6 +24,67 @@ class InviteeUploadsRelationManager extends RelationManager
     protected static ?string $modelLabel = 'Wish / Photo';
 
     protected static ?string $pluralModelLabel = 'Wishes & Photos';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        return static::canAccessOwnerRecord($ownerRecord);
+    }
+
+    protected static function canAccessOwnerRecord(Model $ownerRecord): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        }
+
+        return false;
+    }
+
+    protected function canManageSubmissions(): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if (! static::canAccessOwnerRecord($this->getOwnerRecord())) {
+            return false;
+        }
+
+        return $user->isSuperAdmin()
+            || $user->isEventAdmin()
+            || ($user->canManageInvitees() ?? false);
+    }
+
+    public function isReadOnly(): bool
+    {
+        return ! $this->canManageSubmissions();
+    }
+
+    protected function canCreate(): bool
+    {
+        return $this->canManageSubmissions();
+    }
+
+    protected function canEdit($record): bool
+    {
+        return $this->canManageSubmissions();
+    }
+
+    protected function canDelete($record): bool
+    {
+        return $this->canManageSubmissions();
+    }
 
     public function form(Form $form): Form
     {
@@ -110,6 +172,10 @@ class InviteeUploadsRelationManager extends RelationManager
         return $table
             ->heading('Invitee Wishes & Photos')
             ->description('Approve or reject wishes and uploaded photos for this event.')
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query
+                ->with(['invitee', 'approvedBy'])
+                ->where('event_id', $this->getOwnerRecord()->id)
+            )
             ->defaultSort('created_at', 'desc')
             ->columns([
                 Tables\Columns\ImageColumn::make('file_path')
@@ -205,6 +271,7 @@ class InviteeUploadsRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\CreateAction::make()
                     ->label('Add Wish / Photo')
+                    ->visible(fn (): bool => $this->canManageSubmissions())
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['event_id'] = $this->getOwnerRecord()->id;
 
@@ -230,7 +297,7 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->modalHeading('Approve Submission')
                     ->modalDescription('This wish or photo will become visible on the invitee page.')
                     ->modalSubmitActionLabel('Approve')
-                    ->visible(fn (InviteeUpload $record): bool => $record->status !== InviteeUpload::STATUS_APPROVED)
+                    ->visible(fn (InviteeUpload $record): bool => $this->canManageSubmissions() && $record->status !== InviteeUpload::STATUS_APPROVED)
                     ->action(function (InviteeUpload $record): void {
                         $record->approve(Auth::id());
 
@@ -256,7 +323,7 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->modalHeading('Reject Submission')
                     ->modalDescription('This wish or photo will not appear publicly.')
                     ->modalSubmitActionLabel('Reject')
-                    ->visible(fn (InviteeUpload $record): bool => $record->status !== InviteeUpload::STATUS_REJECTED)
+                    ->visible(fn (InviteeUpload $record): bool => $this->canManageSubmissions() && $record->status !== InviteeUpload::STATUS_REJECTED)
                     ->action(function (InviteeUpload $record, array $data): void {
                         $record->reject(Auth::id(), $data['admin_note'] ?? null);
 
@@ -272,7 +339,7 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->icon('heroicon-o-clock')
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->visible(fn (InviteeUpload $record): bool => $record->status !== InviteeUpload::STATUS_PENDING)
+                    ->visible(fn (InviteeUpload $record): bool => $this->canManageSubmissions() && $record->status !== InviteeUpload::STATUS_PENDING)
                     ->action(function (InviteeUpload $record): void {
                         $record->markPending();
 
@@ -284,10 +351,12 @@ class InviteeUploadsRelationManager extends RelationManager
 
                 Tables\Actions\EditAction::make()
                     ->label('Edit')
-                    ->color('gray'),
+                    ->color('gray')
+                    ->visible(fn (): bool => $this->canManageSubmissions()),
 
                 Tables\Actions\DeleteAction::make()
-                    ->label('Delete'),
+                    ->label('Delete')
+                    ->visible(fn (): bool => $this->canManageSubmissions()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -296,6 +365,7 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
+                        ->visible(fn (): bool => $this->canManageSubmissions())
                         ->action(function ($records): void {
                             $records->each(fn (InviteeUpload $record) => $record->approve(Auth::id()));
 
@@ -310,6 +380,7 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->requiresConfirmation()
+                        ->visible(fn (): bool => $this->canManageSubmissions())
                         ->action(function ($records): void {
                             $records->each(fn (InviteeUpload $record) => $record->reject(Auth::id()));
 
@@ -319,7 +390,8 @@ class InviteeUploadsRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => $this->canManageSubmissions()),
                 ]),
             ]);
     }
