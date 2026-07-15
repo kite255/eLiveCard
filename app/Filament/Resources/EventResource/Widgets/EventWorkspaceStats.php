@@ -6,6 +6,8 @@ use App\Models\Event;
 use App\Models\MessageLog;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema;
 
 class EventWorkspaceStats extends StatsOverviewWidget
 {
@@ -26,139 +28,332 @@ class EventWorkspaceStats extends StatsOverviewWidget
 
         $eventId = $event->getKey();
 
-        $inviteesCount = $this->safeCount($event, 'invitees');
-        $generatedCardsCount = $this->safeCount($event, 'generatedCards');
-        $checkInsCount = $this->safeCount($event, 'checkIns');
+        $inviteesCount = $this->relationshipCount($event, 'invitees');
+        $generatedCardsCount = $this->generatedCardsCount($event);
+        $checkedInInvitees = $this->checkedInInviteesCount($event);
 
-        $smsSentCount = $this->messageLogCount($eventId, 'sms', ['sent', 'delivered', 'read', 'accepted', 'logged']);
-        $smsFailedCount = $this->messageLogCount($eventId, 'sms', ['failed', 'rejected']);
+        $rsvpAttendingCount = $this->inviteeStatusCount(
+            $event,
+            ['attending', 'confirmed', 'yes'],
+        );
 
-        $whatsappSentCount = $this->messageLogCount($eventId, 'whatsapp', ['sent', 'delivered', 'read', 'accepted', 'logged']);
-        $whatsappFailedCount = $this->messageLogCount($eventId, 'whatsapp', ['failed', 'rejected']);
+        $rsvpNotAttendingCount = $this->inviteeStatusCount(
+            $event,
+            ['not_attending', 'declined', 'no'],
+        );
 
-        $communicationFailedCount = $smsFailedCount + $whatsappFailedCount;
+        $respondedCount = $rsvpAttendingCount + $rsvpNotAttendingCount;
+        $rsvpPendingCount = max($inviteesCount - $respondedCount, 0);
 
-        $rsvpAttendingCount = $this->inviteeStatusCount($event, 'rsvp_status', ['attending', 'confirmed']);
-        $rsvpNotAttendingCount = $this->inviteeStatusCount($event, 'rsvp_status', ['not_attending', 'declined']);
-        $rsvpPendingCount = max($inviteesCount - ($rsvpAttendingCount + $rsvpNotAttendingCount), 0);
+        $responseRate = $inviteesCount > 0
+            ? round(($respondedCount / $inviteesCount) * 100)
+            : 0;
 
-        $notCheckedInCount = max($inviteesCount - $checkInsCount, 0);
+        $checkInRate = $inviteesCount > 0
+            ? round(($checkedInInvitees / $inviteesCount) * 100)
+            : 0;
 
-        $totalAllowedGuests = $this->inviteeSum($event, 'allowed_guests');
-        $checkedInGuests = $this->checkInSum($event, 'guests_checked_in');
+        $totalAllowedGuests = $this->totalAllowedGuests($event);
+        $checkedInGuests = $this->checkedInGuests($event);
+
+        $smsSentCount = $this->messageLogCount(
+            $eventId,
+            'sms',
+            ['sent', 'delivered', 'read', 'accepted', 'logged', 'submitted', 'success'],
+        );
+
+        $smsFailedCount = $this->messageLogCount(
+            $eventId,
+            'sms',
+            ['failed', 'rejected', 'error'],
+        );
+
+        $whatsAppSentCount = $this->messageLogCount(
+            $eventId,
+            'whatsapp',
+            ['sent', 'delivered', 'read', 'accepted', 'logged', 'replied', 'success'],
+        );
+
+        $whatsAppFailedCount = $this->messageLogCount(
+            $eventId,
+            'whatsapp',
+            ['failed', 'rejected', 'error'],
+        );
+
+        $communicationFailedCount = $smsFailedCount + $whatsAppFailedCount;
 
         return [
             Stat::make('Invitees', number_format($inviteesCount))
-                ->description('Total invited guests')
+                ->description(number_format($totalAllowedGuests).' allowed guests')
                 ->descriptionIcon('heroicon-m-users')
                 ->color('primary'),
 
-            Stat::make('Generated Cards', number_format($generatedCardsCount))
-                ->description('Personalized invitation cards')
-                ->descriptionIcon('heroicon-m-identification')
-                ->color('warning'),
-
             Stat::make('RSVP Attending', number_format($rsvpAttendingCount))
-                ->description(number_format($rsvpPendingCount) . ' pending responses')
+                ->description(number_format($rsvpPendingCount).' pending responses')
                 ->descriptionIcon('heroicon-m-check-circle')
                 ->color('success'),
 
-            Stat::make('Not Attending', number_format($rsvpNotAttendingCount))
-                ->description('Declined invitation')
-                ->descriptionIcon('heroicon-m-x-circle')
-                ->color($rsvpNotAttendingCount > 0 ? 'danger' : 'gray'),
+            Stat::make('RSVP Response Rate', $responseRate.'%')
+                ->description(number_format($respondedCount).' of '.number_format($inviteesCount).' responded')
+                ->descriptionIcon('heroicon-m-chart-pie')
+                ->color($responseRate >= 70 ? 'success' : ($responseRate >= 40 ? 'warning' : 'gray')),
 
-            Stat::make('Checked In', number_format($checkInsCount))
-                ->description(number_format($notCheckedInCount) . ' not checked in')
+            Stat::make('Cards Ready', number_format($generatedCardsCount))
+                ->description(
+                    number_format(max($inviteesCount - $generatedCardsCount, 0))
+                    .' invitees without cards'
+                )
+                ->descriptionIcon('heroicon-m-identification')
+                ->color($generatedCardsCount >= $inviteesCount && $inviteesCount > 0 ? 'success' : 'warning'),
+
+            Stat::make('Checked-In Invitees', number_format($checkedInInvitees))
+                ->description($checkInRate.'% check-in progress')
                 ->descriptionIcon('heroicon-m-qr-code')
-                ->color('info'),
+                ->color($checkedInInvitees > 0 ? 'info' : 'gray'),
 
-            Stat::make('Guest Capacity', number_format($totalAllowedGuests))
-                ->description(number_format($checkedInGuests) . ' guests checked in')
+            Stat::make('Guests Checked In', number_format($checkedInGuests))
+                ->description(number_format(max($totalAllowedGuests - $checkedInGuests, 0)).' remaining capacity')
                 ->descriptionIcon('heroicon-m-user-group')
-                ->color('primary'),
+                ->color($checkedInGuests > 0 ? 'primary' : 'gray'),
 
-            Stat::make('SMS Sent', number_format($smsSentCount))
-                ->description(number_format($smsFailedCount) . ' failed SMS')
-                ->descriptionIcon('heroicon-m-envelope')
-                ->color($smsFailedCount > 0 ? 'warning' : 'success'),
-
-            Stat::make('WhatsApp Sent', number_format($whatsappSentCount))
-                ->description(number_format($whatsappFailedCount) . ' failed WhatsApp')
+            Stat::make('Messages Sent', number_format($smsSentCount + $whatsAppSentCount))
+                ->description(
+                    number_format($smsSentCount).' SMS • '
+                    .number_format($whatsAppSentCount).' WhatsApp'
+                )
                 ->descriptionIcon('heroicon-m-paper-airplane')
-                ->color($whatsappFailedCount > 0 ? 'warning' : 'success'),
+                ->color('success'),
 
-            Stat::make('Failed Messages', number_format($communicationFailedCount))
-                ->description('SMS or WhatsApp failures')
-                ->descriptionIcon('heroicon-m-exclamation-triangle')
-                ->color($communicationFailedCount > 0 ? 'danger' : 'gray'),
-
-            Stat::make('Event Status', ucfirst((string) ($event->status ?? 'draft')))
-                ->description($this->eventScheduleDescription($event))
-                ->descriptionIcon('heroicon-m-calendar-days')
-                ->color(match ($event->status) {
-                    Event::STATUS_ACTIVE => 'success',
-                    Event::STATUS_COMPLETED => 'info',
-                    Event::STATUS_CANCELLED => 'danger',
-                    default => 'gray',
-                }),
+            Stat::make('Attention Required', number_format($communicationFailedCount))
+                ->description(
+                    $communicationFailedCount > 0
+                        ? 'Failed SMS or WhatsApp messages'
+                        : $this->eventScheduleDescription($event)
+                )
+                ->descriptionIcon(
+                    $communicationFailedCount > 0
+                        ? 'heroicon-m-exclamation-triangle'
+                        : 'heroicon-m-calendar-days'
+                )
+                ->color($communicationFailedCount > 0 ? 'danger' : $this->eventStatusColor($event)),
         ];
     }
 
-    private function safeCount(Event $event, string $relationship): int
+    private function relationshipCount(Event $event, string $relationship): int
     {
         if (! method_exists($event, $relationship)) {
             return 0;
         }
 
-        return (int) $event->{$relationship}()->count();
+        try {
+            return (int) $event->{$relationship}()->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
     }
 
-    private function inviteeStatusCount(Event $event, string $column, array $statuses): int
+    private function generatedCardsCount(Event $event): int
+    {
+        if (! method_exists($event, 'generatedCards')) {
+            return 0;
+        }
+
+        try {
+            $query = $event->generatedCards();
+
+            if (Schema::hasColumn('generated_cards', 'status')) {
+                $query->whereIn('status', [
+                    'generated',
+                    'sent',
+                ]);
+            }
+
+            return (int) $query->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
+    }
+
+    private function inviteeStatusCount(
+        Event $event,
+        array $statuses,
+    ): int {
+        if (
+            ! method_exists($event, 'invitees')
+            || ! Schema::hasTable('invitees')
+            || ! Schema::hasColumn('invitees', 'rsvp_status')
+        ) {
+            return 0;
+        }
+
+        try {
+            return (int) $event->invitees()
+                ->whereIn('rsvp_status', $statuses)
+                ->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
+    }
+
+    private function checkedInInviteesCount(Event $event): int
     {
         if (! method_exists($event, 'invitees')) {
+            return $this->relationshipCount($event, 'checkIns');
+        }
+
+        try {
+            $query = $event->invitees();
+
+            if (Schema::hasColumn('invitees', 'checked_in_count')) {
+                return (int) $query
+                    ->where('checked_in_count', '>', 0)
+                    ->count();
+            }
+
+            if (Schema::hasColumn('invitees', 'check_in_status')) {
+                return (int) $query
+                    ->whereIn('check_in_status', [
+                        'checked_in',
+                        'partial',
+                    ])
+                    ->count();
+            }
+
+            if (Schema::hasColumn('invitees', 'checked_in_at')) {
+                return (int) $query
+                    ->whereNotNull('checked_in_at')
+                    ->count();
+            }
+
+            return $this->relationshipCount($event, 'checkIns');
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
+    }
+
+    private function totalAllowedGuests(Event $event): int
+    {
+        if (
+            ! method_exists($event, 'invitees')
+            || ! Schema::hasTable('invitees')
+        ) {
             return 0;
         }
 
-        return (int) $event->invitees()
-            ->whereIn($column, $statuses)
-            ->count();
+        try {
+            foreach (['allowed_guests', 'guest_limit', 'allowed_people'] as $column) {
+                if (Schema::hasColumn('invitees', $column)) {
+                    return (int) $event->invitees()->sum($column);
+                }
+            }
+
+            return (int) $event->invitees()->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
     }
 
-    private function inviteeSum(Event $event, string $column): int
+    private function checkedInGuests(Event $event): int
     {
-        if (! method_exists($event, 'invitees')) {
+        if (
+            method_exists($event, 'invitees')
+            && Schema::hasTable('invitees')
+        ) {
+            try {
+                foreach (['checked_in_count', 'checked_in_guests'] as $column) {
+                    if (Schema::hasColumn('invitees', $column)) {
+                        return (int) $event->invitees()->sum($column);
+                    }
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        if (
+            ! method_exists($event, 'checkIns')
+            || ! Schema::hasTable('check_ins')
+        ) {
             return 0;
         }
 
-        return (int) $event->invitees()->sum($column);
+        try {
+            $query = $event->checkIns();
+
+            foreach ([
+                'guests_checked_in',
+                'guest_count',
+                'guests_count',
+                'checked_in_count',
+                'quantity',
+            ] as $column) {
+                if (Schema::hasColumn('check_ins', $column)) {
+                    return (int) $query->sum($column);
+                }
+            }
+
+            return (int) $query->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
     }
 
-    private function checkInSum(Event $event, string $column): int
-    {
-        if (! method_exists($event, 'checkIns')) {
+    private function messageLogCount(
+        int|string $eventId,
+        string $channel,
+        array $statuses,
+    ): int {
+        if (! Schema::hasTable('message_logs')) {
             return 0;
         }
 
-        return (int) $event->checkIns()->sum($column);
-    }
+        try {
+            return (int) MessageLog::query()
+                ->when(
+                    Schema::hasColumn('message_logs', 'event_id'),
+                    fn (Builder $query): Builder => $query
+                        ->where('event_id', $eventId),
+                )
+                ->when(
+                    Schema::hasColumn('message_logs', 'channel'),
+                    fn (Builder $query): Builder => $query
+                        ->where('channel', $channel),
+                )
+                ->when(
+                    Schema::hasColumn('message_logs', 'status'),
+                    fn (Builder $query): Builder => $query
+                        ->whereIn('status', $statuses),
+                )
+                ->count();
+        } catch (\Throwable $e) {
+            report($e);
 
-    private function messageLogCount(int|string $eventId, string $channel, array $statuses): int
-    {
-        return (int) MessageLog::query()
-            ->where('event_id', $eventId)
-            ->where('channel', $channel)
-            ->whereIn('status', $statuses)
-            ->count();
+            return 0;
+        }
     }
 
     private function eventScheduleDescription(Event $event): string
     {
-        $date = $event->event_date_display ?? null;
-        $time = $event->time_display ?? null;
+        $date = $event->event_date_display
+            ?? ($event->event_date?->format('d M Y') ?? null);
+
+        $time = $event->time_display
+            ?? ($event->start_time ?? null);
 
         if ($date && $time) {
-            return $date . ' • ' . $time;
+            return $date.' • '.$time;
         }
 
         if ($date) {
@@ -170,5 +365,15 @@ class EventWorkspaceStats extends StatsOverviewWidget
         }
 
         return 'Schedule not set';
+    }
+
+    private function eventStatusColor(Event $event): string
+    {
+        return match ($event->status) {
+            Event::STATUS_ACTIVE => 'success',
+            Event::STATUS_COMPLETED => 'info',
+            Event::STATUS_CANCELLED => 'danger',
+            default => 'gray',
+        };
     }
 }

@@ -177,6 +177,9 @@
     $logoUrl = asset('images/elive-card-logo.png');
     $canSubmitWish = Route::has('invitee.wish');
     $canSubmitPhoto = Route::has('invitee.photo');
+
+    $approvedWishes = collect($approvedWishes ?? []);
+    $approvedPhotos = collect($approvedPhotos ?? []);
 @endphp
 
 <!DOCTYPE html>
@@ -411,6 +414,44 @@
                 grid-column: span 2;
             }
         }
+
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.85rem;
+        }
+
+        .gallery-card {
+            overflow: hidden;
+            border-radius: 22px;
+            border: 1px solid #E5E7EB;
+            background: #FFFFFF;
+        }
+
+        .gallery-card img {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.25s ease;
+        }
+
+        .gallery-card:hover img {
+            transform: scale(1.035);
+        }
+
+        .wish-card {
+            border-radius: 22px;
+            border: 1px solid #EEF2F7;
+            background: #F8FAFC;
+            padding: 1rem;
+        }
+
+        @media (min-width: 640px) {
+            .gallery-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
     </style>
 </head>
 
@@ -491,6 +532,12 @@
         @if (session('info'))
             <div class="rounded-3xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800">
                 {{ session('info') }}
+            </div>
+        @endif
+
+        @if (session('warning'))
+            <div class="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                {{ session('warning') }}
             </div>
         @endif
 
@@ -903,6 +950,51 @@
         </section>
     @endif
 
+    {{-- Approved Wishes --}}
+    @if ($showWishes && $approvedWishes->isNotEmpty())
+        <section class="soft-card mt-4 rounded-[28px] p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                        Messages from Guests
+                    </p>
+
+                    <h2 class="section-title mt-1">
+                        Approved Wishes
+                    </h2>
+
+                    <p class="mt-1 text-sm muted">
+                        Wishes reviewed and approved by the event organizer.
+                    </p>
+                </div>
+
+                <span class="shrink-0 rounded-full bg-[#213B73]/10 px-3 py-1 text-xs font-black text-[#213B73]">
+                    {{ $approvedWishes->count() }}
+                </span>
+            </div>
+
+            <div class="mt-5 space-y-3">
+                @foreach ($approvedWishes as $wish)
+                    <article class="wish-card">
+                        <p class="whitespace-pre-line text-sm font-semibold leading-7 text-slate-700">
+                            “{{ $wish->message }}”
+                        </p>
+
+                        <div class="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
+                            <span class="font-black text-[#213B73]">
+                                {{ $wish->display_name ?? $wish->invitee?->name ?? 'Guest' }}
+                            </span>
+
+                            <span class="text-xs font-semibold text-slate-400">
+                                {{ optional($wish->created_at)->format('d M Y') }}
+                            </span>
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
+
     {{-- Photo Upload --}}
     @if ($showPhotoUpload)
         <section class="soft-card mt-4 rounded-[28px] p-5">
@@ -964,6 +1056,70 @@
                     Photo upload will be enabled soon.
                 </div>
             @endif
+        </section>
+    @endif
+
+    {{-- Approved Photo Gallery --}}
+    @if ($showPhotoUpload && $approvedPhotos->isNotEmpty())
+        <section class="soft-card mt-4 rounded-[28px] p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                        Shared Memories
+                    </p>
+
+                    <h2 class="section-title mt-1">
+                        Photo Gallery
+                    </h2>
+
+                    <p class="mt-1 text-sm muted">
+                        Photos reviewed and approved by the event organizer.
+                    </p>
+                </div>
+
+                <span class="shrink-0 rounded-full bg-[#213B73]/10 px-3 py-1 text-xs font-black text-[#213B73]">
+                    {{ $approvedPhotos->count() }}
+                </span>
+            </div>
+
+            <div class="gallery-grid mt-5">
+                @foreach ($approvedPhotos as $photo)
+                    <article class="gallery-card">
+                        <a
+                            href="{{ $photo->file_url }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="block overflow-hidden bg-slate-100"
+                        >
+                            <img
+                                src="{{ $photo->file_url }}"
+                                alt="{{ $photo->message ?: 'Approved event photo' }}"
+                                loading="lazy"
+                            >
+                        </a>
+
+                        @if (filled($photo->message) || filled($photo->display_name ?? null))
+                            <div class="p-3">
+                                @if (filled($photo->message))
+                                    <p class="text-sm font-semibold leading-5 text-slate-700">
+                                        {{ $photo->message }}
+                                    </p>
+                                @endif
+
+                                <div class="mt-2 flex items-center justify-between gap-2">
+                                    <span class="text-xs font-black text-[#213B73]">
+                                        {{ $photo->display_name ?? $photo->invitee?->name ?? 'Guest' }}
+                                    </span>
+
+                                    <span class="text-[11px] font-semibold text-slate-400">
+                                        {{ optional($photo->created_at)->format('d M Y') }}
+                                    </span>
+                                </div>
+                            </div>
+                        @endif
+                    </article>
+                @endforeach
+            </div>
         </section>
     @endif
 

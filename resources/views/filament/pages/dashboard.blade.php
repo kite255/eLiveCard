@@ -25,14 +25,14 @@
 
         .elive-content {
             width: 100%;
-            max-width: 1360px;
+            max-width: 1600px;
             margin: 0 auto;
-            padding: 24px 28px 36px;
+            padding: 14px 20px 20px;
         }
 
         .elive-hero {
-            border-radius: 22px;
-            padding: 24px 30px;
+            border-radius: 18px;
+            padding: 16px 22px;
             color: #FFFFFF;
             background: #213B73;
             box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
@@ -40,14 +40,14 @@
 
         .elive-hero-grid {
             display: grid;
-            grid-template-columns: 72px minmax(0, 1fr) minmax(250px, 340px);
-            gap: 22px;
+            grid-template-columns: 56px minmax(0, 1fr) minmax(250px, 340px);
+            gap: 10px;
             align-items: center;
         }
 
         .elive-hero-icon {
-            width: 66px;
-            height: 66px;
+            width: 52px;
+            height: 52px;
             display: grid;
             place-items: center;
             border-radius: 22px;
@@ -56,21 +56,21 @@
         }
 
         .elive-hero-icon svg {
-            width: 34px;
-            height: 34px;
+            width: 28px;
+            height: 28px;
         }
 
         .elive-hero h1 {
             margin: 0;
             max-width: 720px;
-            font-size: 27px;
+            font-size: 22px;
             line-height: 1.15;
             font-weight: 900;
             letter-spacing: -.03em;
         }
 
         .elive-hero p {
-            margin: 10px 0 0;
+            margin: 5px 0 0;
             max-width: 680px;
             color: #E5EDFF;
             font-size: 14px;
@@ -82,7 +82,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
-            margin-top: 18px;
+            margin-top: 12px;
         }
 
         .elive-btn {
@@ -130,7 +130,7 @@
         }
 
         .elive-hero-number {
-            font-size: 25px;
+            font-size: 20px;
             font-weight: 900;
         }
 
@@ -152,16 +152,16 @@
         .elive-kpis {
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 16px;
-            margin-top: 18px;
+            gap: 10px;
+            margin-top: 12px;
             align-items: stretch;
         }
 
         .elive-kpi {
-            min-height: 112px;
+            min-height: 84px;
             display: flex;
             align-items: center;
-            padding: 18px;
+            padding: 12px;
         }
 
         .elive-kpi-inner {
@@ -173,8 +173,8 @@
         }
 
         .elive-icon {
-            width: 48px;
-            height: 48px;
+            width: 40px;
+            height: 40px;
             display: grid;
             place-items: center;
             border-radius: 14px;
@@ -182,8 +182,8 @@
         }
 
         .elive-icon svg {
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
         }
 
         .blue {
@@ -219,7 +219,7 @@
 
         .elive-kpi-value {
             margin-top: 5px;
-            font-size: 25px;
+            font-size: 20px;
             line-height: 1;
             font-weight: 900;
             color: #111827;
@@ -236,9 +236,9 @@
 
         .elive-main-grid {
             display: grid;
-            grid-template-columns: minmax(350px, 1.12fr) minmax(440px, 1.38fr) minmax(280px, .9fr);
+            grid-template-columns: minmax(330px, 1.05fr) minmax(420px, 1.35fr) minmax(260px, .8fr);
             gap: 18px;
-            margin-top: 18px;
+            margin-top: 12px;
             align-items: start;
         }
 
@@ -252,7 +252,7 @@
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
             gap: 18px;
-            margin-top: 18px;
+            margin-top: 12px;
             align-items: stretch;
         }
 
@@ -654,6 +654,380 @@
             font-weight: 700;
         }
 
+
+        .elive-filter-card {
+            margin-top: 12px;
+            padding: 18px 20px;
+        }
+
+        .elive-filter-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+        }
+
+        .elive-filter-copy {
+            min-width: 0;
+        }
+
+        .elive-filter-title {
+            font-size: 15px;
+            font-weight: 900;
+            color: #111827;
+        }
+
+        .elive-filter-subtitle {
+            margin-top: 4px;
+            font-size: 12px;
+            font-weight: 650;
+            color: #64748B;
+        }
+
+        .elive-filter-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: min(100%, 430px);
+        }
+
+        .elive-select {
+            width: 100%;
+            min-width: 0;
+            height: 44px;
+            padding: 0 46px 0 14px;
+            border-radius: 12px;
+            border: 1px solid #CBD5E1;
+            color: #111827;
+            font-size: 13px;
+            font-weight: 750;
+            outline: none;
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-color: #FFFFFF;
+            background-image:
+                linear-gradient(45deg, transparent 50%, #64748B 50%),
+                linear-gradient(135deg, #64748B 50%, transparent 50%);
+            background-position:
+                calc(100% - 20px) 18px,
+                calc(100% - 14px) 18px;
+            background-size: 6px 6px, 6px 6px;
+            background-repeat: no-repeat;
+        }
+
+        .elive-select:focus {
+            border-color: #213B73;
+            box-shadow: 0 0 0 3px rgba(33, 59, 115, .12);
+        }
+
+        .elive-clear-btn {
+            height: 44px;
+            padding: 0 14px;
+            border: 1px solid #CBD5E1;
+            border-radius: 12px;
+            background: #FFFFFF;
+            color: #475569;
+            font-size: 12px;
+            font-weight: 850;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .elive-selected-event {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #E5E7EB;
+        }
+
+        .elive-selected-label {
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            color: #94A3B8;
+        }
+
+        .elive-selected-value {
+            margin-top: 5px;
+            font-size: 13px;
+            font-weight: 850;
+            color: #111827;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+
+        .elive-rsvp-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .elive-rsvp-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 9px;
+            margin-top: 14px;
+        }
+
+        .elive-channel-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .elive-channel {
+            padding: 14px;
+            border: 1px solid #E5E7EB;
+            border-radius: 16px;
+            background: #F8FAFC;
+        }
+
+        .elive-channel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .elive-channel-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #111827;
+            font-size: 13px;
+            font-weight: 900;
+        }
+
+        .elive-channel-total {
+            color: #213B73;
+            font-size: 18px;
+            font-weight: 900;
+        }
+
+        .elive-channel-stats {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .elive-channel-stat {
+            padding: 10px;
+            border-radius: 12px;
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+        }
+
+        .elive-channel-stat-label {
+            color: #64748B;
+            font-size: 10px;
+            font-weight: 850;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .elive-channel-stat-value {
+            margin-top: 4px;
+            color: #111827;
+            font-size: 18px;
+            font-weight: 900;
+        }
+
+        .elive-operations-grid {
+            display: grid;
+            grid-template-columns: minmax(280px, .8fr) minmax(460px, 1.45fr) minmax(280px, .85fr);
+            gap: 18px;
+            margin-top: 12px;
+            align-items: stretch;
+        }
+
+        .elive-attendance-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .elive-attendance-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding-bottom: 11px;
+            border-bottom: 1px solid #EEF2F7;
+        }
+
+        .elive-attendance-row:last-child {
+            padding-bottom: 0;
+            border-bottom: 0;
+        }
+
+        .elive-attendance-label {
+            color: #64748B;
+            font-size: 12px;
+            font-weight: 750;
+        }
+
+        .elive-attendance-value {
+            color: #111827;
+            font-size: 14px;
+            font-weight: 900;
+        }
+
+        .elive-checkin-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .elive-checkin-table th {
+            padding: 10px 9px;
+            color: #64748B;
+            background: #F8FAFC;
+            font-size: 10px;
+            font-weight: 900;
+            text-align: left;
+        }
+
+        .elive-checkin-table td {
+            padding: 10px 9px;
+            border-top: 1px solid #EEF2F7;
+            color: #334155;
+            font-size: 11px;
+            font-weight: 650;
+        }
+
+        .elive-alert-list {
+            display: grid;
+            gap: 9px;
+        }
+
+        .elive-alert {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 11px;
+            border: 1px solid #E5E7EB;
+            border-radius: 13px;
+            background: #FFFFFF;
+            text-decoration: none;
+        }
+
+        .elive-alert-dot {
+            width: 10px;
+            height: 10px;
+            margin-top: 4px;
+            border-radius: 999px;
+            flex-shrink: 0;
+        }
+
+        .alert-danger .elive-alert-dot {
+            background: #DC2626;
+        }
+
+        .alert-warning .elive-alert-dot {
+            background: #FD9618;
+        }
+
+        .alert-info .elive-alert-dot {
+            background: #2563EB;
+        }
+
+        .alert-success .elive-alert-dot {
+            background: #16A34A;
+        }
+
+        .elive-alert-title {
+            color: #111827;
+            font-size: 12px;
+            font-weight: 900;
+        }
+
+        .elive-alert-description {
+            margin-top: 3px;
+            color: #64748B;
+            font-size: 10px;
+            font-weight: 650;
+            line-height: 1.4;
+        }
+
+
+        .elive-events-snapshot {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .elive-event-snapshot {
+            display: grid;
+            grid-template-columns: 44px minmax(0, 1fr) auto;
+            gap: 12px;
+            align-items: center;
+            padding: 13px 14px;
+        }
+
+        .elive-event-snapshot-icon {
+            width: 44px;
+            height: 44px;
+            display: grid;
+            place-items: center;
+            border-radius: 13px;
+        }
+
+        .elive-event-snapshot-icon svg {
+            width: 22px;
+            height: 22px;
+        }
+
+        .elive-event-snapshot-title {
+            color: #111827;
+            font-size: 13px;
+            font-weight: 900;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .elive-event-snapshot-meta {
+            margin-top: 4px;
+            color: #64748B;
+            font-size: 11px;
+            font-weight: 650;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .elive-event-snapshot-side {
+            min-width: 110px;
+            text-align: right;
+        }
+
+        .elive-event-snapshot-label {
+            display: inline-flex;
+            padding: 5px 8px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 900;
+        }
+
+        .elive-event-snapshot-date {
+            margin-top: 6px;
+            color: #213B73;
+            font-size: 11px;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .snapshot-active { color: #15803D; background: #DCFCE7; }
+        .snapshot-upcoming { color: #C2410C; background: #FFEDD5; }
+
         @media (max-width: 1280px) {
             .elive-hero-grid {
                 grid-template-columns: 1fr;
@@ -669,7 +1043,8 @@
         }
 
         @media (max-width: 1200px) {
-            .elive-main-grid {
+            .elive-main-grid,
+            .elive-operations-grid {
                 grid-template-columns: 1fr;
             }
 
@@ -703,14 +1078,31 @@
 
             .elive-hero-stats,
             .elive-kpis,
+            .elive-events-snapshot,
             .elive-rsvp-layout,
             .elive-message-grid,
-            .elive-event-item {
+            .elive-event-item,
+            .elive-channel-grid,
+            .elive-rsvp-summary {
                 grid-template-columns: 1fr;
             }
 
             .elive-donut {
                 margin: 0 auto;
+            }
+
+
+            .elive-filter-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .elive-filter-controls {
+                width: 100%;
+            }
+
+            .elive-selected-event {
+                grid-template-columns: 1fr 1fr;
             }
 
             .elive-section-header {
@@ -760,7 +1152,7 @@
 
                         <div class="elive-hero-stat">
                             <div class="elive-hero-number">{{ number_format($totalInvitees) }}</div>
-                            <div class="elive-hero-label">Invitees</div>
+                            <div class="elive-hero-label">{{ $selectedEventId ? 'Event Invitees' : 'Invitees' }}</div>
                         </div>
 
                         <div class="elive-hero-stat">
@@ -770,6 +1162,159 @@
                     </div>
                 </div>
             </section>
+
+
+            <section class="elive-card elive-filter-card">
+                <div class="elive-filter-row">
+                    <div class="elive-filter-copy">
+                        <div class="elive-filter-title">Event Dashboard Filter</div>
+                        <div class="elive-filter-subtitle">
+                            Select one event to filter invitees, RSVP responses, SMS activity and check-ins.
+                        </div>
+                    </div>
+
+                    <div class="elive-filter-controls">
+                        <select
+                            wire:model.live="selectedEventId"
+                            class="elive-select"
+                            aria-label="Select event"
+                        >
+                            <option value="">All Events</option>
+
+                            @foreach ($eventOptions as $eventId => $eventName)
+                                <option value="{{ $eventId }}">
+                                    {{ $eventName }}
+                                </option>
+                            @endforeach
+                        </select>
+
+                        @if ($selectedEventId)
+                            <button
+                                type="button"
+                                wire:click="clearEventFilter"
+                                class="elive-clear-btn"
+                            >
+                                Clear
+                            </button>
+                        @endif
+                    </div>
+                </div>
+
+                @if ($selectedEvent)
+                    @php
+                        $selectedEventDate = $selectedEvent->event_date
+                            ?? $selectedEvent->date
+                            ?? null;
+
+                        $selectedEventName = $selectedEvent->title
+                            ?? $selectedEvent->name
+                            ?? $selectedEvent->event_name
+                            ?? 'Event';
+
+                        $selectedEventVenue = $selectedEvent->venue_name
+                            ?? $selectedEvent->venue
+                            ?? 'Not set';
+                    @endphp
+
+                    <div class="elive-selected-event">
+                        <div>
+                            <div class="elive-selected-label">Event</div>
+                            <div class="elive-selected-value">{{ $selectedEventName }}</div>
+                        </div>
+
+                        <div>
+                            <div class="elive-selected-label">Date</div>
+                            <div class="elive-selected-value">
+                                {{ $selectedEventDate
+                                    ? \Illuminate\Support\Carbon::parse($selectedEventDate)->format('d M Y')
+                                    : 'Not set' }}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="elive-selected-label">Venue</div>
+                            <div class="elive-selected-value">{{ $selectedEventVenue }}</div>
+                        </div>
+
+                        <div>
+                            <div class="elive-selected-label">Status</div>
+                            <div class="elive-selected-value">
+                                {{ str($selectedEvent->status ?? 'draft')->replace('_', ' ')->title() }}
+                            </div>
+                        </div>
+                    </div>
+                @endif
+            </section>
+
+
+            <section class="elive-events-snapshot">
+                <div class="elive-card elive-event-snapshot">
+                    <div class="elive-event-snapshot-icon green">
+                        <x-heroicon-o-bolt />
+                    </div>
+
+                    <div>
+                        <div class="elive-event-snapshot-title">
+                            {{ $activeEvent?->title ?? $activeEvent?->name ?? $activeEvent?->event_name ?? 'No active event' }}
+                        </div>
+                        <div class="elive-event-snapshot-meta">
+                            @if ($activeEvent)
+                                {{ $activeEvent->venue_name ?? $activeEvent->venue ?? 'Venue not set' }}
+                                @if ($activeEvent->start_time ?? null)
+                                    • {{ $activeEvent->start_time }}
+                                @endif
+                            @else
+                                No active event is currently available.
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="elive-event-snapshot-side">
+                        <span class="elive-event-snapshot-label snapshot-active">Active Event</span>
+                        <div class="elive-event-snapshot-date">
+                            @if ($activeEvent?->event_date ?? $activeEvent?->date ?? null)
+                                {{ \Illuminate\Support\Carbon::parse($activeEvent->event_date ?? $activeEvent->date)->format('d M Y') }}
+                            @else
+                                Not scheduled
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
+                <div class="elive-card elive-event-snapshot">
+                    <div class="elive-event-snapshot-icon orange">
+                        <x-heroicon-o-calendar-days />
+                    </div>
+
+                    <div>
+                        <div class="elive-event-snapshot-title">
+                            {{ $upcomingEvent?->title ?? $upcomingEvent?->name ?? $upcomingEvent?->event_name ?? 'No upcoming event' }}
+                        </div>
+                        <div class="elive-event-snapshot-meta">
+                            @if ($upcomingEvent)
+                                {{ $upcomingEvent->venue_name ?? $upcomingEvent->venue ?? 'Venue not set' }}
+                                @if ($upcomingEvent->start_time ?? null)
+                                    • {{ $upcomingEvent->start_time }}
+                                @endif
+                            @else
+                                No future event is currently scheduled.
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="elive-event-snapshot-side">
+                        <span class="elive-event-snapshot-label snapshot-upcoming">Upcoming Event</span>
+                        <div class="elive-event-snapshot-date">
+                            @if ($upcomingEvent?->event_date ?? $upcomingEvent?->date ?? null)
+                                {{ \Illuminate\Support\Carbon::parse($upcomingEvent->event_date ?? $upcomingEvent->date)->format('d M Y') }}
+                            @else
+                                Not scheduled
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </section>
+
 
             <section class="elive-kpis">
                 <div class="elive-card elive-kpi">
@@ -843,7 +1388,7 @@
                     <div class="elive-section-header">
                         <div>
                             <div class="elive-section-title">RSVP Overview</div>
-                            <div class="elive-section-subtitle">Invitee attendance responses</div>
+                            <div class="elive-section-subtitle">{{ $selectedEventId ? 'Selected event attendance responses' : 'Invitee attendance responses' }}</div>
                         </div>
                         <a href="{{ url('/admin/rsvp-report') }}" class="elive-link">View RSVP Reports</a>
                     </div>
@@ -897,56 +1442,105 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="elive-rsvp-summary">
+                        <div class="elive-mini-card">
+                            <div class="elive-mini-label">Responded</div>
+                            <div class="elive-mini-value">{{ number_format($respondedInvitees) }}</div>
+                        </div>
+
+                        <div class="elive-mini-card">
+                            <div class="elive-mini-label">Confirmed Guests</div>
+                            <div class="elive-mini-value">{{ number_format($confirmedGuests) }}</div>
+                        </div>
+
+                        <div class="elive-mini-card">
+                            <div class="elive-mini-label">RSVP Progress</div>
+                            <div class="elive-mini-value" style="color:#213B73;">{{ $rsvpProgress }}%</div>
+                        </div>
+                    </div>
+
+                    <div class="elive-rsvp-actions">
+                        <a href="{{ url('/admin/rsvp-report?status=pending') }}" class="elive-link">
+                            View Pending
+                        </a>
+
+                        <a href="{{ url('/admin/events') }}" class="elive-link" style="background:#FFF3E4;color:#C2410C;">
+                            Send RSVP Reminder
+                        </a>
+
+                        <a href="{{ url('/admin/rsvp-report') }}" class="elive-link">
+                            Export RSVP Report
+                        </a>
+                    </div>
                 </div>
 
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
-                            <div class="elive-section-title">Message Overview</div>
-                            <div class="elive-section-subtitle">SMS invitation, reminder, and delivery summary</div>
+                            <div class="elive-section-title">WhatsApp & SMS Overview</div>
+                            <div class="elive-section-subtitle">{{ $selectedEventId ? 'Selected event communication summary' : 'Combined message delivery and response summary' }}</div>
                         </div>
                         <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View SMS Reports</a>
                     </div>
 
-                    <div class="elive-message-grid">
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">Total SMS</div>
-                            <div class="elive-mini-value">{{ number_format($smsTotal) }}</div>
+                    <div class="elive-channel-grid">
+                        <div class="elive-channel">
+                            <div class="elive-channel-header">
+                                <div class="elive-channel-name">
+                                    <x-heroicon-o-chat-bubble-left-right style="width:20px;height:20px;color:#2563EB;" />
+                                    SMS
+                                </div>
+                                <div class="elive-channel-total">{{ number_format($smsTotal) }}</div>
+                            </div>
+
+                            <div class="elive-channel-stats">
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Sent</div>
+                                    <div class="elive-channel-stat-value" style="color:#16A34A;">{{ number_format($smsSent) }}</div>
+                                </div>
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Delivered</div>
+                                    <div class="elive-channel-stat-value">{{ number_format($smsDelivered) }}</div>
+                                </div>
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Pending</div>
+                                    <div class="elive-channel-stat-value" style="color:#FD9618;">{{ number_format($smsPending) }}</div>
+                                </div>
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Failed</div>
+                                    <div class="elive-channel-stat-value" style="color:#DC2626;">{{ number_format($smsFailed) }}</div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">Sent</div>
-                            <div class="elive-mini-value" style="color: #16A34A;">{{ number_format($smsSent) }}</div>
-                        </div>
+                        <div class="elive-channel">
+                            <div class="elive-channel-header">
+                                <div class="elive-channel-name">
+                                    <x-heroicon-o-chat-bubble-oval-left-ellipsis style="width:20px;height:20px;color:#16A34A;" />
+                                    WhatsApp
+                                </div>
+                                <div class="elive-channel-total">{{ number_format($whatsAppTotal) }}</div>
+                            </div>
 
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">Failed</div>
-                            <div class="elive-mini-value" style="color: #DC2626;">{{ number_format($smsFailed) }}</div>
-                        </div>
-
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">Pending</div>
-                            <div class="elive-mini-value" style="color: #FD9618;">{{ number_format($smsPending) }}</div>
-                        </div>
-
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">Invitation SMS</div>
-                            <div class="elive-mini-value">{{ number_format($invitationSms) }}</div>
-                        </div>
-
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">RSVP Reminders</div>
-                            <div class="elive-mini-value">{{ number_format($rsvpReminders) }}</div>
-                        </div>
-
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">One Day Before</div>
-                            <div class="elive-mini-value">{{ number_format($oneDayBeforeSms) }}</div>
-                        </div>
-
-                        <div class="elive-mini-card">
-                            <div class="elive-mini-label">Event Day SMS</div>
-                            <div class="elive-mini-value">{{ number_format($eventDaySms) }}</div>
+                            <div class="elive-channel-stats">
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Sent</div>
+                                    <div class="elive-channel-stat-value" style="color:#16A34A;">{{ number_format($whatsAppSent) }}</div>
+                                </div>
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Delivered</div>
+                                    <div class="elive-channel-stat-value">{{ number_format($whatsAppDelivered) }}</div>
+                                </div>
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Read / Replied</div>
+                                    <div class="elive-channel-stat-value">{{ number_format($whatsAppRead + $whatsAppReplied) }}</div>
+                                </div>
+                                <div class="elive-channel-stat">
+                                    <div class="elive-channel-stat-label">Failed</div>
+                                    <div class="elive-channel-stat-value" style="color:#DC2626;">{{ number_format($whatsAppFailed) }}</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1028,109 +1622,96 @@
                 </div>
             </section>
 
-            <section class="elive-bottom-grid">
+
+            <section class="elive-operations-grid">
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
-                            <div class="elive-section-title">Upcoming Events</div>
-                            <div class="elive-section-subtitle">Next social events to manage</div>
+                            <div class="elive-section-title">Guest Attendance</div>
+                            <div class="elive-section-subtitle">Confirmed and checked-in guest progress</div>
                         </div>
-                        <a href="{{ url('/admin/events') }}" class="elive-link">View All Events</a>
                     </div>
 
-                    <div class="elive-event-list">
-                        @forelse ($upcomingEvents as $event)
-                            <div class="elive-event-item">
-                                <div>
-                                    <div class="elive-event-name">
-                                        {{ $event->title ?? $event->name ?? 'Untitled Event' }}
-                                    </div>
+                    <div class="elive-attendance-list">
+                        <div class="elive-attendance-row">
+                            <span class="elive-attendance-label">Allowed Guests</span>
+                            <span class="elive-attendance-value">{{ number_format($totalAllowedGuests) }}</span>
+                        </div>
 
-                                    <div class="elive-event-venue">
-                                        {{ $event->venue_name ?? $event->venue ?? 'Venue not set' }}
-                                    </div>
-                                </div>
+                        <div class="elive-attendance-row">
+                            <span class="elive-attendance-label">Confirmed Guests</span>
+                            <span class="elive-attendance-value">{{ number_format($confirmedGuests) }}</span>
+                        </div>
 
-                                <div>
-                                    <div class="elive-event-date">
-                                        @if (isset($event->event_date))
-                                            {{ \Carbon\Carbon::parse($event->event_date)->format('M d, Y') }}
-                                        @elseif (isset($event->date))
-                                            {{ \Carbon\Carbon::parse($event->date)->format('M d, Y') }}
-                                        @else
-                                            Date not set
-                                        @endif
-                                    </div>
+                        <div class="elive-attendance-row">
+                            <span class="elive-attendance-label">Checked-In Guests</span>
+                            <span class="elive-attendance-value" style="color:#16A34A;">{{ number_format($checkedInGuests) }}</span>
+                        </div>
 
-                                    <div class="elive-event-time">
-                                        {{ $event->start_time ?? '' }}
-                                    </div>
-                                </div>
+                        <div class="elive-attendance-row">
+                            <span class="elive-attendance-label">Remaining Expected</span>
+                            <span class="elive-attendance-value" style="color:#FD9618;">{{ number_format($remainingExpectedGuests) }}</span>
+                        </div>
+                    </div>
 
-                                <span class="elive-badge">
-                                    Upcoming
-                                </span>
-                            </div>
-                        @empty
-                            <div class="elive-empty">
-                                No upcoming events found.
-                            </div>
-                        @endforelse
+                    <div style="margin-top:16px;">
+                        <div class="elive-rsvp-row-top">
+                            <span class="elive-rsvp-label">Guest check-in progress</span>
+                            <span class="elive-rsvp-value">{{ $guestCheckInPercent }}%</span>
+                        </div>
+                        <div class="elive-progress">
+                            <div class="elive-progress-fill" style="width:{{ $guestCheckInPercent }}%;background:#213B73;"></div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
-                            <div class="elive-section-title">Recent SMS Activity</div>
-                            <div class="elive-section-subtitle">Latest invitation and reminder messages</div>
+                            <div class="elive-section-title">Recent Check-Ins</div>
+                            <div class="elive-section-subtitle">Latest guest arrivals recorded at the gate</div>
                         </div>
-                        <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View All Logs</a>
+                        <a href="{{ url('/admin/gate-check-in') }}" class="elive-link">Open Scanner</a>
                     </div>
 
                     <div class="elive-table-wrap">
-                        <table class="elive-table">
+                        <table class="elive-checkin-table">
                             <thead>
                                 <tr>
-                                    <th>Message / Phone</th>
-                                    <th>Type</th>
+                                    <th>Invitee</th>
+                                    <th>Guests</th>
+                                    <th>Method</th>
                                     <th>Status</th>
                                     <th>Time</th>
                                 </tr>
                             </thead>
-
                             <tbody>
-                                @forelse ($recentSmsLogs as $log)
+                                @forelse ($recentCheckIns->take(4) as $checkIn)
                                     @php
-                                        $status = $log->status ?? 'pending';
-
-                                        $pillClass = match ($status) {
-                                            'sent', 'delivered', 'submitted', 'success' => 'pill-green',
-                                            'failed', 'error' => 'pill-red',
-                                            default => 'pill-orange',
-                                        };
-
-                                        $type = $log->sms_type
-                                            ?? $log->message_type
-                                            ?? $log->type
-                                            ?? $log->category
-                                            ?? 'SMS';
+                                        $checkInStatus = strtolower($checkIn->status ?? 'successful');
+                                        $checkInPill = in_array($checkInStatus, ['successful', 'success', 'checked_in'])
+                                            ? 'pill-green'
+                                            : (in_array($checkInStatus, ['failed', 'rejected']) ? 'pill-red' : 'pill-orange');
                                     @endphp
-
                                     <tr>
-                                        <td>{{ $log->phone ?? '-' }}</td>
-                                        <td>{{ str($type)->replace('_', ' ')->title() }}</td>
+                                        <td>{{ $checkIn->invitee_name }}</td>
+                                        <td>{{ number_format($checkIn->guest_count) }}</td>
+                                        <td>{{ str($checkIn->method)->replace('_', ' ')->title() }}</td>
                                         <td>
-                                            <span class="elive-pill {{ $pillClass }}">
-                                                {{ str($status)->replace('_', ' ')->title() }}
+                                            <span class="elive-pill {{ $checkInPill }}">
+                                                {{ str($checkInStatus)->replace('_', ' ')->title() }}
                                             </span>
                                         </td>
-                                        <td>{{ optional($log->created_at)->diffForHumans() }}</td>
+                                        <td>
+                                            {{ $checkIn->checked_in_at
+                                                ? \Illuminate\Support\Carbon::parse($checkIn->checked_in_at)->format('H:i')
+                                                : '-' }}
+                                        </td>
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="4" style="text-align: center; padding: 30px;">
-                                            No SMS activity yet.
+                                        <td colspan="5" style="padding:28px;text-align:center;color:#64748B;">
+                                            No check-ins recorded yet.
                                         </td>
                                     </tr>
                                 @endforelse
@@ -1138,7 +1719,57 @@
                         </table>
                     </div>
                 </div>
+
+                <div class="elive-card elive-section">
+                    <div class="elive-section-header">
+                        <div>
+                            <div class="elive-section-title">System Alerts</div>
+                            <div class="elive-section-subtitle">Issues and pending actions requiring attention</div>
+                        </div>
+                    </div>
+
+                    <div class="elive-alert-list">
+                        @foreach (array_slice($systemAlerts, 0, 4) as $alert)
+                            @php
+                                $alertClass = 'alert-'.($alert['level'] ?? 'info');
+                            @endphp
+
+                            @if (! empty($alert['url']))
+                                <a href="{{ $alert['url'] }}" class="elive-alert {{ $alertClass }}">
+                            @else
+                                <div class="elive-alert {{ $alertClass }}">
+                            @endif
+                                    <span class="elive-alert-dot"></span>
+                                    <span>
+                                        <span class="elive-alert-title">{{ $alert['title'] }}</span>
+                                        <span class="elive-alert-description">{{ $alert['description'] }}</span>
+                                    </span>
+                            @if (! empty($alert['url']))
+                                </a>
+                            @else
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+
+                    <div class="elive-rsvp-summary" style="grid-template-columns:repeat(2,minmax(0,1fr));">
+                        <div class="elive-mini-card">
+                            <div class="elive-mini-label">Pending Photos</div>
+                            <div class="elive-mini-value">{{ number_format($pendingPhotos) }}</div>
+                        </div>
+                        <div class="elive-mini-card">
+                            <div class="elive-mini-label">Pending Wishes</div>
+                            <div class="elive-mini-value">{{ number_format($pendingWishes) }}</div>
+                        </div>
+                    </div>
+                </div>
             </section>
+
+            <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <a href="{{ url('/admin/events') }}" class="elive-link">View All Events</a>
+                <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View Message Logs</a>
+                <a href="{{ url('/admin/rsvp-report') }}" class="elive-link">Open Reports</a>
+            </div>
         </div>
     </div>
 </x-filament-panels::page>

@@ -17,13 +17,15 @@ use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -41,6 +43,23 @@ class InviteesRelationManager extends RelationManager
     protected static ?string $modelLabel = 'Invitee';
 
     protected static ?string $pluralModelLabel = 'Invitees';
+
+    protected static ?string $recordTitleAttribute = 'name';
+
+    private const RSVP_OPTIONS = [
+        Invitee::RSVP_PENDING => 'Pending',
+        Invitee::RSVP_ATTENDING => 'Attending',
+        Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
+        Invitee::RSVP_MAYBE => 'Maybe',
+    ];
+
+    private const CARD_STATUS_OPTIONS = [
+        Invitee::CARD_STATUS_PENDING => 'Pending',
+        Invitee::CARD_STATUS_ACTIVE => 'Active',
+        Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
+        Invitee::CARD_STATUS_BLOCKED => 'Blocked',
+        Invitee::CARD_STATUS_USED => 'Used',
+    ];
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {
@@ -66,7 +85,11 @@ class InviteesRelationManager extends RelationManager
             return true;
         }
 
-        return false;
+        if (method_exists($user, 'canAccessEvent')) {
+            return (bool) $user->canAccessEvent($ownerRecord);
+        }
+
+        return $user->can('view', $ownerRecord);
     }
 
     protected static function userCanManageInvitees($user): bool
@@ -209,12 +232,7 @@ class InviteesRelationManager extends RelationManager
                     ->schema([
                         Forms\Components\Select::make('rsvp_status')
                             ->label('RSVP Status')
-                            ->options([
-                                Invitee::RSVP_PENDING => 'Pending',
-                                Invitee::RSVP_ATTENDING => 'Attending',
-                                Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
-                                Invitee::RSVP_MAYBE => 'Maybe',
-                            ])
+                            ->options(self::RSVP_OPTIONS)
                             ->default(Invitee::RSVP_PENDING)
                             ->required(),
 
@@ -226,13 +244,7 @@ class InviteesRelationManager extends RelationManager
 
                         Forms\Components\Select::make('card_status')
                             ->label('Card Status')
-                            ->options([
-                                Invitee::CARD_STATUS_PENDING => 'Pending',
-                                Invitee::CARD_STATUS_ACTIVE => 'Active',
-                                Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
-                                Invitee::CARD_STATUS_BLOCKED => 'Blocked',
-                                Invitee::CARD_STATUS_USED => 'Used',
-                            ])
+                            ->options(self::CARD_STATUS_OPTIONS)
                             ->default(Invitee::CARD_STATUS_ACTIVE)
                             ->required(),
                     ])
@@ -276,21 +288,42 @@ class InviteesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('name')
+            ->searchPlaceholder('Search name, phone, serial, short code, email, table, category, status, or card type')
+            ->searchDebounce('500ms')
+            ->striped()
+            ->paginated([10, 25, 50])
+            ->defaultPaginationPageOption(10)
             ->emptyStateHeading('No invitees yet')
             ->emptyStateDescription('Add invitees manually or import them from Excel for this event.')
             ->emptyStateIcon('heroicon-o-users')
             ->defaultSort('created_at', 'desc')
-            ->modifyQueryUsing(fn ($query) => $query->with([
-                'cardType',
-                'latestGeneratedCard',
-            ]))
+            ->modifyQueryUsing(
+                fn (Builder $query): Builder => $query->with([
+                    'cardType',
+                    'latestGeneratedCard',
+                ])
+            )
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Invitee')
-                    ->searchable()
+                    ->searchable(query: function (Builder $query, string $search): Builder {
+                        return $this->applyInviteeTableSearch($query, $search);
+                    })
                     ->sortable()
                     ->weight('bold')
-                    ->description(fn ($record): ?string => $record->phone),
+                    ->description(fn (Invitee $record): ?string => collect([
+                        $record->phone,
+                        $record->email,
+                    ])->filter()->implode(' • ') ?: null)
+                    ->wrap(),
+
+                Tables\Columns\TextColumn::make('phone')
+                    ->label('Phone')
+                    ->copyable()
+                    ->copyMessage('Phone number copied')
+                    ->copyMessageDuration(1500)
+                    ->toggleable(isToggledHiddenByDefault: true),
+
 
                 Tables\Columns\TextColumn::make('cardType.name')
                     ->label('Card Type')
@@ -299,25 +332,45 @@ class InviteesRelationManager extends RelationManager
                     ->placeholder('-')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('allowed_guests')
-                    ->label('Allowed')
-                    ->alignCenter()
-                    ->sortable(),
+                Tables\Columns\TextColumn::make('guest_summary')
+                    ->label('Guests')
+                    ->state(function (Invitee $record): string {
+                        $allowed = max(1, (int) $record->allowed_guests);
+                        $confirmed = min(
+                            $allowed,
+                            max(0, (int) $record->confirmed_guests),
+                        );
 
-                Tables\Columns\TextColumn::make('confirmed_guests')
-                    ->label('Confirmed')
-                    ->alignCenter()
-                    ->sortable(),
+                        return "{$confirmed} / {$allowed}";
+                    })
+                    ->description(function (Invitee $record): string {
+                        $allowed = max(1, (int) $record->allowed_guests);
+                        $confirmed = min(
+                            $allowed,
+                            max(0, (int) $record->confirmed_guests),
+                        );
+                        $remaining = max(0, $allowed - $confirmed);
 
-                Tables\Columns\TextColumn::make('remaining_guests')
-                    ->label('Remaining')
-                    ->alignCenter()
-                    ->sortable(),
+                        return "{$remaining} remaining";
+                    })
+                    ->badge()
+                    ->color(function (Invitee $record): string {
+                        $allowed = max(1, (int) $record->allowed_guests);
+                        $confirmed = min(
+                            $allowed,
+                            max(0, (int) $record->confirmed_guests),
+                        );
+
+                        return ($allowed - $confirmed) === 0
+                            ? 'success'
+                            : 'gray';
+                    })
+                    ->alignCenter(),
 
                 Tables\Columns\TextColumn::make('category')
                     ->label('Category')
                     ->placeholder('-')
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('table_number')
                     ->label('Table')
@@ -326,11 +379,26 @@ class InviteesRelationManager extends RelationManager
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('serial_number')
-                    ->label('Serial')
-                    ->searchable()
+                    ->label('Serial Number')
+                    ->sortable()
                     ->copyable()
+                    ->copyMessage('Serial number copied')
+                    ->copyMessageDuration(1500)
                     ->placeholder('-')
                     ->toggleable(),
+
+                Tables\Columns\IconColumn::make('qr_ready')
+                    ->label('QR')
+                    ->state(fn (Invitee $record): bool => filled(
+                        $record->qr_code_path ?: $record->qr_code
+                    ))
+                    ->boolean()
+                    ->trueIcon('heroicon-o-qr-code')
+                    ->falseIcon('heroicon-o-exclamation-triangle')
+                    ->trueColor('success')
+                    ->falseColor('warning')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('rsvp_status')
                     ->label('RSVP')
@@ -352,7 +420,7 @@ class InviteesRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('card_status')
-                    ->label('Card')
+                    ->label('Card Status')
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         Invitee::CARD_STATUS_PENDING => 'Pending',
@@ -360,20 +428,20 @@ class InviteesRelationManager extends RelationManager
                         Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
                         Invitee::CARD_STATUS_BLOCKED => 'Blocked',
                         Invitee::CARD_STATUS_USED => 'Used',
-                        default => ucfirst((string) $state),
+                        default => 'Invalid Status',
                     })
                     ->color(fn (?string $state): string => match ($state) {
                         Invitee::CARD_STATUS_ACTIVE => 'success',
                         Invitee::CARD_STATUS_PENDING => 'warning',
-                        Invitee::CARD_STATUS_CANCELLED => 'danger',
+                        Invitee::CARD_STATUS_CANCELLED,
                         Invitee::CARD_STATUS_BLOCKED => 'danger',
                         Invitee::CARD_STATUS_USED => 'info',
-                        default => 'gray',
+                        default => 'danger',
                     })
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('latestGeneratedCard.status')
-                    ->label('Card Gen')
+                    ->label('Card Generation')
                     ->badge()
                     ->default('Not Generated')
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
@@ -406,13 +474,55 @@ class InviteesRelationManager extends RelationManager
                     ->label('Checked In')
                     ->alignCenter()
                     ->badge()
+                    ->description(fn (Invitee $record): ?string =>
+                        $record->checked_in_at
+                            ? Carbon::parse($record->checked_in_at)->format('d M, H:i')
+                            : null
+                    )
                     ->color(fn ($state): string => (int) $state > 0 ? 'success' : 'gray')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('sms_status')
-                    ->label('SMS')
+                Tables\Columns\TextColumn::make('message_status_summary')
+                    ->label('Message Status')
+                    ->state(function (Invitee $record): string {
+                        $sms = match ($record->sms_status) {
+                            Invitee::SMS_STATUS_SENT => 'Sent',
+                            Invitee::SMS_STATUS_DELIVERED => 'Delivered',
+                            Invitee::SMS_STATUS_FAILED => 'Failed',
+                            Invitee::SMS_STATUS_PENDING => 'Pending',
+                            default => 'Not Sent',
+                        };
+
+                        return 'SMS: '.$sms;
+                    })
+                    ->description(function (Invitee $record): string {
+                        $whatsapp = match ($record->whatsapp_status) {
+                            'sending' => 'Sending',
+                            'sent' => 'Sent',
+                            'delivered' => 'Delivered',
+                            'read' => 'Read',
+                            'failed' => 'Failed',
+                            default => 'Not Sent',
+                        };
+
+                        return 'WhatsApp: '.$whatsapp;
+                    })
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => ucfirst(str_replace('_', ' ', $state ?: 'not_sent')))
+                    ->color(fn (Invitee $record): string => match ($record->sms_status) {
+                        Invitee::SMS_STATUS_SENT,
+                        Invitee::SMS_STATUS_DELIVERED => 'success',
+                        Invitee::SMS_STATUS_FAILED => 'danger',
+                        Invitee::SMS_STATUS_PENDING => 'warning',
+                        default => 'gray',
+                    })
+                    ->wrap(),
+
+                Tables\Columns\TextColumn::make('sms_status')
+                    ->label('SMS Status')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string =>
+                        ucfirst(str_replace('_', ' ', $state ?: 'not_sent'))
+                    )
                     ->color(fn (?string $state): string => match ($state) {
                         Invitee::SMS_STATUS_SENT,
                         Invitee::SMS_STATUS_DELIVERED => 'success',
@@ -420,12 +530,11 @@ class InviteesRelationManager extends RelationManager
                         Invitee::SMS_STATUS_PENDING => 'warning',
                         default => 'gray',
                     })
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('whatsapp_status')
-                    ->label('WhatsApp')
+                    ->label('WhatsApp Status')
                     ->badge()
-                    ->default('not_sent')
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'not_sent', null, '' => 'Not Sent',
                         'sending' => 'Sending',
@@ -442,7 +551,7 @@ class InviteesRelationManager extends RelationManager
                         default => 'gray',
                     })
                     ->sortable()
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('last_message_channel')
                     ->label('Last Channel')
@@ -489,22 +598,49 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Filters\SelectFilter::make('rsvp_status')
                     ->label('RSVP Status')
-                    ->options([
-                        Invitee::RSVP_PENDING => 'Pending',
-                        Invitee::RSVP_ATTENDING => 'Attending',
-                        Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
-                        Invitee::RSVP_MAYBE => 'Maybe',
-                    ]),
+                    ->options(self::RSVP_OPTIONS),
 
                 Tables\Filters\SelectFilter::make('card_status')
                     ->label('Card Status')
-                    ->options([
-                        Invitee::CARD_STATUS_PENDING => 'Pending',
-                        Invitee::CARD_STATUS_ACTIVE => 'Active',
-                        Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
-                        Invitee::CARD_STATUS_BLOCKED => 'Blocked',
-                        Invitee::CARD_STATUS_USED => 'Used',
-                    ]),
+                    ->options(self::CARD_STATUS_OPTIONS),
+
+                Tables\Filters\SelectFilter::make('category')
+                    ->label('Category')
+                    ->options(fn (): array => Invitee::query()
+                        ->where('event_id', $this->getOwnerRecord()->getKey())
+                        ->whereNotNull('category')
+                        ->where('category', '!=', '')
+                        ->distinct()
+                        ->orderBy('category')
+                        ->pluck('category', 'category')
+                        ->toArray())
+                    ->searchable()
+                    ->preload(),
+
+                Tables\Filters\SelectFilter::make('table_number')
+                    ->label('Table Number')
+                    ->options(fn (): array => Invitee::query()
+                        ->where('event_id', $this->getOwnerRecord()->getKey())
+                        ->whereNotNull('table_number')
+                        ->where('table_number', '!=', '')
+                        ->distinct()
+                        ->orderBy('table_number')
+                        ->pluck('table_number', 'table_number')
+                        ->toArray())
+                    ->searchable()
+                    ->preload(),
+
+                Tables\Filters\TernaryFilter::make('has_phone')
+                    ->label('Valid Phone')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query
+                            ->whereNotNull('phone')
+                            ->where('phone', '!=', ''),
+                        false: fn (Builder $query): Builder => $query
+                            ->where(function (Builder $query): void {
+                                $query->whereNull('phone')->orWhere('phone', '');
+                            }),
+                    ),
 
                 Tables\Filters\SelectFilter::make('generated_card_status')
                     ->label('Generated Card')
@@ -552,6 +688,7 @@ class InviteesRelationManager extends RelationManager
                             ->orWhere('checked_in_count', 0);
                     })),
             ])
+            ->filtersFormColumns(3)
             ->headerActions([
                 Tables\Actions\Action::make('add_manual_invitee')
                     ->label('Add Invitee')
@@ -628,24 +765,13 @@ class InviteesRelationManager extends RelationManager
                             ->schema([
                                 Forms\Components\Select::make('rsvp_status')
                                     ->label('RSVP Status')
-                                    ->options([
-                                        Invitee::RSVP_PENDING => 'Pending',
-                                        Invitee::RSVP_ATTENDING => 'Attending',
-                                        Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
-                                        Invitee::RSVP_MAYBE => 'Maybe',
-                                    ])
+                                    ->options(self::RSVP_OPTIONS)
                                     ->default(Invitee::RSVP_PENDING)
                                     ->required(),
 
                                 Forms\Components\Select::make('card_status')
                                     ->label('Card Status')
-                                    ->options([
-                                        Invitee::CARD_STATUS_PENDING => 'Pending',
-                                        Invitee::CARD_STATUS_ACTIVE => 'Active',
-                                        Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
-                                        Invitee::CARD_STATUS_BLOCKED => 'Blocked',
-                                        Invitee::CARD_STATUS_USED => 'Used',
-                                    ])
+                                    ->options(self::CARD_STATUS_OPTIONS)
                                     ->default(Invitee::CARD_STATUS_ACTIVE)
                                     ->required(),
 
@@ -660,6 +786,7 @@ class InviteesRelationManager extends RelationManager
                     ])
                     ->action(function (array $data): void {
                         $this->validateNoDuplicateInviteeName($data['name'] ?? null);
+                        $this->validateNoDuplicateInviteePhone($data['phone'] ?? null);
 
                         $preparedData = $this->prepareInviteeData($data);
 
@@ -756,38 +883,6 @@ class InviteesRelationManager extends RelationManager
                     ])
                     ->action(function (array $data): void {
                         $this->importInviteesFromExcel($data['excel_file']);
-                    }),
-
-                Tables\Actions\Action::make('export_invitees')
-                    ->label('Export Invitees')
-                    ->visible(fn (): bool => $this->canViewReportsForOwner())
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
-                    ->action(function () {
-                        $event = $this->getOwnerRecord();
-
-                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
-
-                        return Excel::download(
-                            new EventInviteesExport((int) $event->id),
-                            $eventName . '-invitees-report.xlsx'
-                        );
-                    }),
-
-                Tables\Actions\Action::make('export_rsvp')
-                    ->label('Export RSVP')
-                    ->visible(fn (): bool => $this->canViewReportsForOwner())
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->color('warning')
-                    ->action(function () {
-                        $event = $this->getOwnerRecord();
-
-                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
-
-                        return Excel::download(
-                            new EventRsvpExport((int) $event->id),
-                            $eventName . '-rsvp-report.xlsx'
-                        );
                     }),
 
                 Tables\Actions\ActionGroup::make([
@@ -989,6 +1084,38 @@ class InviteesRelationManager extends RelationManager
                     ->color('success'),
 
                 Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('export_invitees')
+                    ->label('Export Invitees')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->action(function () {
+                        $event = $this->getOwnerRecord();
+
+                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        return Excel::download(
+                            new EventInviteesExport((int) $event->id),
+                            $eventName . '-invitees-report.xlsx'
+                        );
+                    }),
+
+                    Tables\Actions\Action::make('export_rsvp')
+                    ->label('Export RSVP')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('warning')
+                    ->action(function () {
+                        $event = $this->getOwnerRecord();
+
+                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        return Excel::download(
+                            new EventRsvpExport((int) $event->id),
+                            $eventName . '-rsvp-report.xlsx'
+                        );
+                    }),
+
                     Tables\Actions\Action::make('refresh_status')
                         ->label('Refresh Status')
                         ->icon('heroicon-o-arrow-path')
@@ -1013,6 +1140,7 @@ class InviteesRelationManager extends RelationManager
                     ->button()
                     ->color('gray'),
             ])
+            ->actionsPosition(Tables\Enums\ActionsPosition::AfterColumns)
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make()
@@ -1125,6 +1253,7 @@ class InviteesRelationManager extends RelationManager
                         ])
                         ->action(function (Invitee $record, array $data): void {
                             $this->validateNoDuplicateInviteeName($data['name'] ?? null, $record->id);
+                            $this->validateNoDuplicateInviteePhone($data['phone'] ?? null, $record->id);
 
                             $data['phone'] = $this->normalizePhone($data['phone'] ?? null);
 
@@ -1177,12 +1306,12 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('generate_card')
-                        ->label(fn (Invitee $record): string => $record->latestGeneratedCard ? 'Regenerate Card' : 'Generate Card')
+                        ->label('Generate / Regenerate Card')
                         ->visible(fn (): bool => $this->canGenerateCardsForOwner())
                         ->icon('heroicon-o-photo')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->modalHeading(fn (Invitee $record): string => $record->latestGeneratedCard ? 'Regenerate invitation card' : 'Generate invitation card')
+                        ->modalHeading('Generate or regenerate invitation card')
                         ->modalDescription('This will generate the personalized card in the background.')
                         ->action(function (Invitee $record): void {
                             if ($record->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING) {
@@ -1417,11 +1546,11 @@ class InviteesRelationManager extends RelationManager
                             }
                         }),
                 ])
-                    ->label('Actions')
-                    ->icon('heroicon-m-ellipsis-vertical')
-                    ->size('sm')
-                    ->color('gray')
-                    ->button(),
+                    ->label('Manage invitee')
+                    ->icon('heroicon-m-ellipsis-horizontal')
+                    ->color('primary')
+                    ->iconButton()
+                    ->tooltip('Manage invitee'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -1866,6 +1995,205 @@ class InviteesRelationManager extends RelationManager
             ]);
     }
 
+
+
+    protected function applyInviteeTableSearch(Builder $query, string $search): Builder
+    {
+        $search = trim(preg_replace('/\s+/', ' ', $search) ?? '');
+
+        if ($search === '') {
+            return $query;
+        }
+
+        $lowerSearch = mb_strtolower($search);
+        $likeSearch = '%'.$this->escapeLikeValue($search).'%';
+
+        $phoneDigits = preg_replace('/\D+/', '', $search) ?? '';
+        $phoneCandidates = $this->phoneSearchCandidates($phoneDigits);
+
+        $serialCompact = strtoupper(
+            preg_replace('/[^A-Za-z0-9]+/', '', $search) ?? ''
+        );
+        $serialCandidates = $this->serialSearchCandidates($serialCompact);
+
+        $statusCandidates = $this->statusSearchCandidates($lowerSearch);
+
+        return $query->where(function (Builder $query) use (
+            $likeSearch,
+            $phoneCandidates,
+            $serialCandidates,
+            $statusCandidates,
+        ): void {
+            $query
+                ->whereRaw('name ILIKE ?', [$likeSearch])
+                ->orWhereRaw("COALESCE(email, '') ILIKE ?", [$likeSearch])
+                ->orWhereRaw("COALESCE(category, '') ILIKE ?", [$likeSearch])
+                ->orWhereRaw("COALESCE(table_number, '') ILIKE ?", [$likeSearch])
+                ->orWhereRaw("COALESCE(short_code, '') ILIKE ?", [$likeSearch])
+                ->orWhereHas('cardType', function (Builder $cardTypeQuery) use ($likeSearch): void {
+                    $cardTypeQuery->whereRaw('name ILIKE ?', [$likeSearch]);
+                });
+
+            foreach ($phoneCandidates as $phoneCandidate) {
+                $query->orWhere('phone', 'like', '%'.$phoneCandidate.'%');
+            }
+
+            foreach ($serialCandidates as $serialCandidate) {
+                $query->orWhere('serial_number', 'like', '%'.$serialCandidate.'%');
+            }
+
+            foreach ($statusCandidates as $column => $values) {
+                if (! empty($values)) {
+                    $query->orWhereIn($column, $values);
+                }
+            }
+        });
+    }
+
+    protected function escapeLikeValue(string $value): string
+    {
+        return str_replace(
+            ['\\', '%', '_'],
+            ['\\\\', '\\%', '\\_'],
+            $value,
+        );
+    }
+
+    protected function phoneSearchCandidates(string $digits): array
+    {
+        if ($digits === '') {
+            return [];
+        }
+
+        $candidates = [$digits];
+
+        if (str_starts_with($digits, '00255')) {
+            $candidates[] = '255'.substr($digits, 5);
+        }
+
+        if (str_starts_with($digits, '0') && strlen($digits) >= 10) {
+            $local = substr($digits, 1);
+            $candidates[] = $local;
+            $candidates[] = '255'.$local;
+        }
+
+        if (strlen($digits) === 9 && preg_match('/^[67]/', $digits)) {
+            $candidates[] = '255'.$digits;
+            $candidates[] = '0'.$digits;
+        }
+
+        if (str_starts_with($digits, '255') && strlen($digits) >= 12) {
+            $local = substr($digits, 3);
+            $candidates[] = $local;
+            $candidates[] = '0'.$local;
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
+    }
+
+    protected function serialSearchCandidates(string $serialCompact): array
+    {
+        if ($serialCompact === '') {
+            return [];
+        }
+
+        $candidates = [$serialCompact];
+
+        if (preg_match('/^\d{6}$/', $serialCompact)) {
+            $candidates[] = 'ELV-'.$serialCompact;
+            $candidates[] = 'ELV'.$serialCompact;
+        }
+
+        if (preg_match('/^ELV(\d{6})$/', $serialCompact, $matches)) {
+            $candidates[] = $matches[1];
+            $candidates[] = 'ELV-'.$matches[1];
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    protected function statusSearchCandidates(string $search): array
+    {
+        $search = str_replace(['-', '_'], ' ', $search);
+
+        $matches = [
+            'rsvp_status' => [],
+            'card_status' => [],
+            'sms_status' => [],
+            'whatsapp_status' => [],
+        ];
+
+        $map = [
+            'pending' => [
+                'rsvp_status' => [Invitee::RSVP_PENDING],
+                'card_status' => [Invitee::CARD_STATUS_PENDING],
+                'sms_status' => [Invitee::SMS_STATUS_PENDING],
+                'whatsapp_status' => ['sending'],
+            ],
+            'attending' => [
+                'rsvp_status' => [Invitee::RSVP_ATTENDING],
+            ],
+            'not attending' => [
+                'rsvp_status' => [Invitee::RSVP_NOT_ATTENDING],
+            ],
+            'maybe' => [
+                'rsvp_status' => [Invitee::RSVP_MAYBE],
+            ],
+            'active' => [
+                'card_status' => [Invitee::CARD_STATUS_ACTIVE],
+            ],
+            'cancelled' => [
+                'card_status' => [Invitee::CARD_STATUS_CANCELLED],
+            ],
+            'canceled' => [
+                'card_status' => [Invitee::CARD_STATUS_CANCELLED],
+            ],
+            'blocked' => [
+                'card_status' => [Invitee::CARD_STATUS_BLOCKED],
+            ],
+            'used' => [
+                'card_status' => [Invitee::CARD_STATUS_USED],
+            ],
+            'not sent' => [
+                'sms_status' => [Invitee::SMS_STATUS_NOT_SENT],
+                'whatsapp_status' => ['not_sent'],
+            ],
+            'sent' => [
+                'sms_status' => [Invitee::SMS_STATUS_SENT],
+                'whatsapp_status' => ['sent'],
+            ],
+            'delivered' => [
+                'sms_status' => [Invitee::SMS_STATUS_DELIVERED],
+                'whatsapp_status' => ['delivered'],
+            ],
+            'read' => [
+                'whatsapp_status' => ['read'],
+            ],
+            'failed' => [
+                'sms_status' => [Invitee::SMS_STATUS_FAILED],
+                'whatsapp_status' => ['failed'],
+            ],
+            'sending' => [
+                'whatsapp_status' => ['sending'],
+            ],
+        ];
+
+        foreach ($map as $keyword => $groups) {
+            if (! str_contains($search, $keyword)) {
+                continue;
+            }
+
+            foreach ($groups as $column => $values) {
+                $matches[$column] = array_merge($matches[$column], $values);
+            }
+        }
+
+        foreach ($matches as $column => $values) {
+            $matches[$column] = array_values(array_unique($values));
+        }
+
+        return $matches;
+    }
 
 
     protected function sendEventMessagesFromToolbar(
@@ -3146,13 +3474,18 @@ class InviteesRelationManager extends RelationManager
 
             $namesInFile[] = $normalizedName;
 
-            $alreadyExists = Invitee::where('event_id', $eventId)
-                ->whereRaw('LOWER(TRIM(name)) = ?', [$normalizedName])
-                ->exists();
+            $existingInvitee = Invitee::query()
+                ->where('event_id', $eventId)
+                ->where(function (Builder $query) use ($normalizedName, $phone): void {
+                    $query
+                        ->whereRaw('LOWER(TRIM(name)) = ?', [$normalizedName])
+                        ->orWhere('phone', $phone);
+                })
+                ->first();
 
-            if ($alreadyExists) {
+            if ($existingInvitee) {
                 $skipped++;
-                $errors[] = "Row {$rowNumber}: invitee name '{$name}' already exists for this event.";
+                $errors[] = "Row {$rowNumber}: invitee name or phone already exists for this event.";
                 continue;
             }
 
@@ -3348,7 +3681,9 @@ class InviteesRelationManager extends RelationManager
             }
         }
 
-        $data['serial_number'] = $data['serial_number'] ?? $this->generateUniqueSerialNumber();
+        $data['serial_number'] = filled($data['serial_number'] ?? null)
+            ? $this->normalizeSerialNumber($data['serial_number'])
+            : $this->generateUniqueSerialNumber();
         $data['short_code'] = $data['short_code'] ?? $this->generateUniqueShortCode();
 
         if (empty($data['qr_token'])) {
@@ -3394,6 +3729,33 @@ class InviteesRelationManager extends RelationManager
         if ($exists) {
             throw ValidationException::withMessages([
                 'name' => "Invitee name '{$name}' already exists for this event.",
+            ]);
+        }
+    }
+
+    protected function validateNoDuplicateInviteePhone(
+        ?string $phone,
+        ?int $ignoreInviteeId = null,
+    ): void {
+        $normalizedPhone = $this->normalizePhone($phone);
+
+        if (blank($normalizedPhone)) {
+            return;
+        }
+
+        $exists = Invitee::query()
+            ->where('event_id', $this->getOwnerRecord()->getKey())
+            ->when(
+                $ignoreInviteeId,
+                fn (Builder $query): Builder =>
+                    $query->whereKeyNot($ignoreInviteeId)
+            )
+            ->where('phone', $normalizedPhone)
+            ->exists();
+
+        if ($exists) {
+            throw ValidationException::withMessages([
+                'phone' => 'This phone number already belongs to another invitee in this event.',
             ]);
         }
     }

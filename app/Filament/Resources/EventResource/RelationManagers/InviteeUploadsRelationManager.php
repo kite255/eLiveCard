@@ -38,15 +38,23 @@ class InviteeUploadsRelationManager extends RelationManager
             return false;
         }
 
-        if ($user->isSuperAdmin()) {
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
             return true;
         }
 
-        if ($user->isEventAdmin()) {
-            return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
+        if (
+            method_exists($user, 'isEventAdmin')
+            && $user->isEventAdmin()
+            && (int) ($ownerRecord->user_id ?? 0) === (int) $user->id
+        ) {
+            return true;
         }
 
-        return false;
+        if (method_exists($user, 'canAccessEvent')) {
+            return (bool) $user->canAccessEvent($ownerRecord);
+        }
+
+        return $user->can('view', $ownerRecord);
     }
 
     protected function canManageSubmissions(): bool
@@ -61,9 +69,16 @@ class InviteeUploadsRelationManager extends RelationManager
             return false;
         }
 
-        return $user->isSuperAdmin()
-            || $user->isEventAdmin()
-            || ($user->canManageInvitees() ?? false);
+        return (
+            method_exists($user, 'isSuperAdmin')
+            && $user->isSuperAdmin()
+        ) || (
+            method_exists($user, 'isEventAdmin')
+            && $user->isEventAdmin()
+        ) || (
+            method_exists($user, 'canManageInvitees')
+            && $user->canManageInvitees()
+        );
     }
 
     public function isReadOnly(): bool
@@ -171,7 +186,15 @@ class InviteeUploadsRelationManager extends RelationManager
     {
         return $table
             ->heading('Invitee Wishes & Photos')
-            ->description('Approve or reject wishes and uploaded photos for this event.')
+            ->description('Review, approve, reject, and manage wishes and photos submitted for this event.')
+            ->searchPlaceholder('Search invitee, phone, wish, caption, status, or type')
+            ->searchDebounce('500ms')
+            ->striped()
+            ->paginated([10, 25, 50])
+            ->defaultPaginationPageOption(10)
+            ->emptyStateIcon('heroicon-o-photo')
+            ->emptyStateHeading('No wishes or photos yet')
+            ->emptyStateDescription('Invitee submissions will appear here after they send a wish or upload a photo.')
             ->modifyQueryUsing(fn (Builder $query): Builder => $query
                 ->with(['invitee', 'approvedBy'])
                 ->where('event_id', $this->getOwnerRecord()->id)
@@ -183,7 +206,8 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->disk('public')
                     ->height(56)
                     ->width(56)
-                    ->square(),
+                    ->square()
+                    ->defaultImageUrl(url('/images/photo-placeholder.png')),
 
                 Tables\Columns\TextColumn::make('type')
                     ->label('Type')
@@ -211,6 +235,9 @@ class InviteeUploadsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('invitee.phone')
                     ->label('Phone')
                     ->searchable()
+                    ->copyable()
+                    ->copyMessage('Phone number copied')
+                    ->copyMessageDuration(1500)
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('message')
@@ -241,11 +268,25 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->label('Reviewed By')
                     ->placeholder('-')
                     ->toggleable(),
+                Tables\Columns\TextColumn::make('admin_note')
+                    ->label('Admin Note')
+                    ->limit(50)
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('reviewed_at')
+                    ->label('Reviewed At')
+                    ->state(fn (InviteeUpload $record) => $record->approved_at ?? $record->rejected_at)
+                    ->dateTime('d M Y, h:i A')
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Submitted')
                     ->dateTime('d M Y, h:i A')
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('type')
@@ -278,8 +319,10 @@ class InviteeUploadsRelationManager extends RelationManager
                         return $data;
                     }),
             ])
+            ->actionsPosition(Tables\Enums\ActionsPosition::AfterColumns)
             ->actions([
-                Tables\Actions\Action::make('open_photo')
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('open_photo')
                     ->label('Open Photo')
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->color('gray')
@@ -287,7 +330,9 @@ class InviteeUploadsRelationManager extends RelationManager
                         ? Storage::disk('public')->url($record->file_path)
                         : null)
                     ->openUrlInNewTab()
-                    ->visible(fn (InviteeUpload $record): bool => $record->type === InviteeUpload::TYPE_PHOTO && filled($record->file_path)),
+                    ->visible(fn (InviteeUpload $record): bool =>
+                        $record->isPhoto() && $record->hasStoredFile()
+                    ),
 
                 Tables\Actions\Action::make('approve')
                     ->label('Approve')
@@ -354,9 +399,20 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->color('gray')
                     ->visible(fn (): bool => $this->canManageSubmissions()),
 
-                Tables\Actions\DeleteAction::make()
-                    ->label('Delete')
-                    ->visible(fn (): bool => $this->canManageSubmissions()),
+                    Tables\Actions\DeleteAction::make()
+                        ->label('Delete')
+                        ->visible(fn (): bool => $this->canManageSubmissions())
+                        ->before(function (InviteeUpload $record): void {
+                            if ($record->isPhoto()) {
+                                $record->deleteStoredFile();
+                            }
+                        }),
+                ])
+                    ->label('Manage')
+                    ->icon('heroicon-m-ellipsis-horizontal')
+                    ->color('primary')
+                    ->iconButton()
+                    ->tooltip('Manage submission'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -366,6 +422,7 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->color('success')
                         ->requiresConfirmation()
                         ->visible(fn (): bool => $this->canManageSubmissions())
+                        ->deselectRecordsAfterCompletion()
                         ->action(function ($records): void {
                             $records->each(fn (InviteeUpload $record) => $record->approve(Auth::id()));
 
@@ -381,6 +438,7 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->color('danger')
                         ->requiresConfirmation()
                         ->visible(fn (): bool => $this->canManageSubmissions())
+                        ->deselectRecordsAfterCompletion()
                         ->action(function ($records): void {
                             $records->each(fn (InviteeUpload $record) => $record->reject(Auth::id()));
 
@@ -391,7 +449,14 @@ class InviteeUploadsRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn (): bool => $this->canManageSubmissions()),
+                        ->visible(fn (): bool => $this->canManageSubmissions())
+                        ->before(function ($records): void {
+                            $records->each(function (InviteeUpload $record): void {
+                                if ($record->isPhoto()) {
+                                    $record->deleteStoredFile();
+                                }
+                            });
+                        }),
                 ]),
             ]);
     }

@@ -15,6 +15,7 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 
 class EventResource extends Resource
 {
@@ -33,6 +34,17 @@ class EventResource extends Resource
     protected static ?string $pluralModelLabel = 'Events';
 
     protected static ?int $navigationSort = 1;
+
+    private const RELATION_ASSIGNED_USERS = 0;
+    private const RELATION_CARD_TYPES = 1;
+    private const RELATION_INVITEES = 2;
+    private const RELATION_INVITEE_UPLOADS = 3;
+    private const RELATION_CARD_TEMPLATES = 4;
+    private const RELATION_GENERATED_CARDS = 5;
+    private const RELATION_MESSAGE_TEMPLATES = 6;
+    private const RELATION_MESSAGE_LOGS = 7;
+    private const RELATION_SMS_LOGS = 8;
+    private const RELATION_CHECK_INS = 9;
 
     public static function shouldRegisterNavigation(): bool
     {
@@ -89,7 +101,7 @@ class EventResource extends Resource
                                 ->toArray())
                             ->searchable()
                             ->preload()
-                            ->default(fn (): ?int => auth()->user()?->isEventAdmin() ? auth()->id() : null)
+                            ->default(fn (): ?int => auth()->id())
                             ->disabled(fn (): bool => ! (auth()->user()?->isSuperAdmin() ?? false))
                             ->dehydrated()
                             ->required()
@@ -104,15 +116,18 @@ class EventResource extends Resource
                         Forms\Components\Select::make('event_type')
                             ->label('Event Type')
                             ->options(Event::eventTypes())
+                            ->required()
                             ->searchable()
                             ->preload(),
 
                         Forms\Components\DatePicker::make('event_date')
                             ->label('Event Date')
+                            ->required()
                             ->native(false),
 
                         Forms\Components\TimePicker::make('start_time')
                             ->label('Start Time')
+                            ->required()
                             ->seconds(false),
 
                         Forms\Components\TimePicker::make('end_time')
@@ -145,11 +160,13 @@ class EventResource extends Resource
                             ->rows(3)
                             ->columnSpanFull(),
 
-                        Forms\Components\Textarea::make('google_maps_link')
+                        Forms\Components\TextInput::make('google_maps_link')
                             ->label('Google Maps Link')
-                            ->rows(2)
+                            ->url()
+                            ->maxLength(2048)
                             ->columnSpanFull()
-                            ->placeholder('https://maps.app.goo.gl/...'),
+                            ->placeholder('https://maps.app.goo.gl/...')
+                            ->helperText('Paste the Google Maps location link for the event venue.'),
 
                         Forms\Components\Textarea::make('program')
                             ->label('Program')
@@ -636,107 +653,279 @@ class EventResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(
+                fn (Builder $query): Builder => $query
+                    ->with('user')
+                    ->withCount([
+                        'invitees',
+                        'generatedCards',
+                        'checkIns',
+                        'invitees as rsvp_attending_count' => fn (Builder $query): Builder =>
+                            $query->where('rsvp_status', 'attending'),
+                        'invitees as rsvp_pending_count' => fn (Builder $query): Builder =>
+                            $query->where(function (Builder $query): void {
+                                $query
+                                    ->whereNull('rsvp_status')
+                                    ->orWhere('rsvp_status', 'pending');
+                            }),
+                        'generatedCards as generated_cards_ready_count' => fn (Builder $query): Builder =>
+                            $query->whereIn('status', ['generated', 'sent']),
+                        'inviteeUploads as pending_invitee_uploads_count' => fn (Builder $query): Builder =>
+                            $query->where('status', 'pending'),
+                        'messageLogs as sms_sent_count' => fn (Builder $query): Builder =>
+                            $query
+                                ->where('channel', 'sms')
+                                ->whereIn('status', ['sent', 'delivered']),
+                        'messageLogs as whatsapp_sent_count' => fn (Builder $query): Builder =>
+                            $query
+                                ->where('channel', 'whatsapp')
+                                ->whereIn('status', ['sent', 'delivered', 'read']),
+                    ])
+            )
             ->defaultSort('event_date', 'desc')
+            ->striped()
+            ->paginated([10, 25, 50])
+            ->defaultPaginationPageOption(10)
+            ->emptyStateHeading('No events created yet')
+            ->emptyStateDescription('Create your first social event and begin managing invitees, cards, RSVP, messaging, and check-in.')
+            ->emptyStateIcon('heroicon-o-calendar-days')
             ->columns([
                 Tables\Columns\TextColumn::make('title')
                     ->label('Event')
+                    ->description(fn (Event $record): string =>
+                        collect([
+                            $record->venue_name,
+                            $record->start_time
+                                ? Carbon::parse($record->start_time)->format('h:i A')
+                                : null,
+                        ])->filter()->implode(' • ')
+                    )
+                    ->icon('heroicon-o-calendar-days')
+                    ->weight('bold')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->wrap(),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Owner')
+                    ->icon('heroicon-o-user-circle')
                     ->searchable()
                     ->sortable()
                     ->toggleable()
                     ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
 
-                Tables\Columns\TextColumn::make('event_type_display')
+                Tables\Columns\TextColumn::make('event_type')
                     ->label('Type')
+                    ->formatStateUsing(
+                        fn (?string $state): string =>
+                            Event::eventTypes()[$state] ?? str($state ?? 'Not set')->headline()->toString()
+                    )
                     ->badge()
                     ->color('gray')
-                    ->searchable(query: fn ($query, string $search) => $query->where('event_type', 'like', "%{$search}%")),
+                    ->icon('heroicon-o-tag')
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('event_date')
                     ->label('Date')
                     ->date('d M Y')
+                    ->description(fn (Event $record): ?string =>
+                        $record->event_date
+                            ? Carbon::parse($record->event_date)->diffForHumans()
+                            : null
+                    )
+                    ->icon('heroicon-o-calendar')
                     ->sortable(),
-
-                Tables\Columns\TextColumn::make('start_time')
-                    ->label('Start')
-                    ->time('H:i')
-                    ->placeholder('-'),
-
-                Tables\Columns\TextColumn::make('venue_display')
-                    ->label('Venue')
-                    ->searchable(query: function ($query, string $search) {
-                        return $query
-                            ->where('venue_name', 'like', "%{$search}%")
-                            ->orWhere('venue_address', 'like', "%{$search}%");
-                    }),
 
                 Tables\Columns\TextColumn::make('invitees_count')
                     ->label('Invitees')
+                    ->numeric()
                     ->alignCenter()
+                    ->icon('heroicon-o-users')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('generated_cards_count')
+                Tables\Columns\TextColumn::make('rsvp_progress')
+                    ->label('RSVP')
+                    ->state(function (Event $record): string {
+                        $total = max((int) $record->invitees_count, 0);
+                        $attending = max((int) $record->rsvp_attending_count, 0);
+
+                        if ($total === 0) {
+                            return '0 / 0';
+                        }
+
+                        $percentage = (int) round(($attending / $total) * 100);
+
+                        return "{$attending} / {$total} ({$percentage}%)";
+                    })
+                    ->description(fn (Event $record): string =>
+                        ((int) $record->rsvp_pending_count) . ' pending'
+                    )
+                    ->badge()
+                    ->color(function (Event $record): string {
+                        $total = (int) $record->invitees_count;
+                        $attending = (int) $record->rsvp_attending_count;
+
+                        if ($total === 0) {
+                            return 'gray';
+                        }
+
+                        $percentage = ($attending / $total) * 100;
+
+                        return match (true) {
+                            $percentage >= 75 => 'success',
+                            $percentage >= 40 => 'warning',
+                            default => 'gray',
+                        };
+                    })
+                    ->icon('heroicon-o-hand-thumb-up')
+                    ->alignCenter(),
+
+                Tables\Columns\TextColumn::make('card_progress')
                     ->label('Cards')
-                    ->alignCenter()
-                    ->sortable(),
+                    ->state(function (Event $record): string {
+                        $total = max((int) $record->invitees_count, 0);
+                        $generated = max((int) $record->generated_cards_ready_count, 0);
 
-                Tables\Columns\TextColumn::make('rsvp_attending_count')
-                    ->label('Attending')
-                    ->alignCenter()
-                    ->sortable(),
+                        if ($total === 0) {
+                            return '0 / 0';
+                        }
 
-                Tables\Columns\TextColumn::make('check_ins_count')
-                    ->label('Checked In')
-                    ->alignCenter()
-                    ->sortable(),
+                        $percentage = (int) round(($generated / $total) * 100);
 
-                Tables\Columns\TextColumn::make('sms_sent_count')
-                    ->label('SMS')
-                    ->alignCenter()
-                    ->sortable(),
+                        return "{$generated} / {$total} ({$percentage}%)";
+                    })
+                    ->badge()
+                    ->color(function (Event $record): string {
+                        $total = (int) $record->invitees_count;
+                        $generated = (int) $record->generated_cards_ready_count;
 
-                Tables\Columns\TextColumn::make('whatsapp_sent_count')
-                    ->label('WhatsApp')
-                    ->alignCenter()
-                    ->sortable(),
+                        if ($total === 0) {
+                            return 'gray';
+                        }
 
-                Tables\Columns\TextColumn::make('welcome_sms_sent_count')
-                    ->label('Welcome SMS')
+                        $percentage = ($generated / $total) * 100;
+
+                        return match (true) {
+                            $percentage >= 100 => 'success',
+                            $percentage >= 50 => 'warning',
+                            default => 'gray',
+                        };
+                    })
+                    ->icon('heroicon-o-identification')
+                    ->alignCenter(),
+
+                Tables\Columns\TextColumn::make('check_in_progress')
+                    ->label('Check-in')
+                    ->state(function (Event $record): string {
+                        $total = max((int) $record->invitees_count, 0);
+                        $checkedIn = max((int) $record->check_ins_count, 0);
+
+                        if ($total === 0) {
+                            return '0 / 0';
+                        }
+
+                        $percentage = (int) round(($checkedIn / $total) * 100);
+
+                        return "{$checkedIn} / {$total} ({$percentage}%)";
+                    })
+                    ->badge()
+                    ->color(fn (Event $record): string =>
+                        (int) $record->check_ins_count > 0 ? 'success' : 'gray'
+                    )
+                    ->icon('heroicon-o-qr-code')
+                    ->alignCenter(),
+
+                Tables\Columns\TextColumn::make('message_summary')
+                    ->label('Messages')
+                    ->state(fn (Event $record): string =>
+                        ((int) $record->sms_sent_count) . ' SMS • ' .
+                        ((int) $record->whatsapp_sent_count) . ' WhatsApp'
+                    )
+                    ->icon('heroicon-o-paper-airplane')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\IconColumn::make('auto_sms_reminders_enabled')
+                    ->label('Reminders')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-bell-alert')
+                    ->falseIcon('heroicon-o-bell-slash')
+                    ->trueColor('success')
+                    ->falseColor('gray')
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('pending_invitee_uploads_count')
+                    ->label('Pending Reviews')
+                    ->numeric()
+                    ->badge()
+                    ->color(fn ($state): string => (int) $state > 0 ? 'warning' : 'gray')
+                    ->icon('heroicon-o-photo')
                     ->alignCenter()
                     ->sortable()
-                    ->toggleable(),
-
-                Tables\Columns\IconColumn::make('welcome_sms_enabled')
-                    ->label('Welcome Enabled')
-                    ->boolean()
-                    ->alignCenter()
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => Event::statuses()[$state] ?? ucfirst((string) $state))
-                    ->color(fn (?string $state): string => match ($state) {
-                        Event::STATUS_ACTIVE => 'success',
-                        Event::STATUS_COMPLETED => 'info',
-                        Event::STATUS_CANCELLED => 'danger',
-                        Event::STATUS_DRAFT => 'gray',
-                        default => 'gray',
-                    })
+                    ->formatStateUsing(fn (?string $state): string => self::statusLabel($state))
+                    ->color(fn (?string $state): string => self::statusColor($state))
+                    ->icon(fn (?string $state): string => self::statusIcon($state))
                     ->sortable(),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
-                    ->label('Status')
-                    ->options(Event::statuses()),
+                    ->label('Event Status')
+                    ->options(Event::statuses())
+                    ->multiple()
+                    ->preload(),
 
                 Tables\Filters\SelectFilter::make('event_type')
                     ->label('Event Type')
-                    ->options(Event::eventTypes()),
+                    ->options(Event::eventTypes())
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
+
+                Tables\Filters\Filter::make('upcoming')
+                    ->label('Upcoming Events')
+                    ->query(
+                        fn (Builder $query): Builder =>
+                            $query->whereDate('event_date', '>=', now()->toDateString())
+                    )
+                    ->toggle(),
+
+                Tables\Filters\Filter::make('past')
+                    ->label('Past Events')
+                    ->query(
+                        fn (Builder $query): Builder =>
+                            $query->whereDate('event_date', '<', now()->toDateString())
+                    )
+                    ->toggle(),
+
+                Tables\Filters\Filter::make('event_date')
+                    ->form([
+                        Forms\Components\DatePicker::make('from')
+                            ->label('From Date')
+                            ->native(false),
+
+                        Forms\Components\DatePicker::make('until')
+                            ->label('To Date')
+                            ->native(false),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['from'] ?? null,
+                                fn (Builder $query, $date): Builder =>
+                                    $query->whereDate('event_date', '>=', $date)
+                            )
+                            ->when(
+                                $data['until'] ?? null,
+                                fn (Builder $query, $date): Builder =>
+                                    $query->whereDate('event_date', '<=', $date)
+                            );
+                    }),
 
                 Tables\Filters\TernaryFilter::make('auto_sms_reminders_enabled')
                     ->label('Automatic SMS Reminders'),
@@ -744,19 +933,40 @@ class EventResource extends Resource
                 Tables\Filters\TernaryFilter::make('welcome_sms_enabled')
                     ->label('Welcome SMS'),
             ])
+            ->filtersFormColumns(2)
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->label('Open Workspace')
-                    ->icon('heroicon-o-folder-open'),
+                    ->icon('heroicon-o-folder-open')
+                    ->color('primary'),
 
-                Tables\Actions\EditAction::make()
-                    ->label('Edit')
-                    ->visible(fn (Event $record): bool => auth()->user()?->canManageEvent($record) ?? false),
+                Tables\Actions\Action::make('manage_invitees')
+                    ->label('Manage Invitees')
+                    ->icon('heroicon-o-users')
+                    ->color('gray')
+                    ->url(fn (Event $record): string => static::getUrl('view', [
+                        'record' => $record,
+                        'activeRelationManager' => self::RELATION_INVITEES,
+                    ])),
+
+                Tables\Actions\Action::make('wishes_photos')
+                    ->label('Wishes & Photos')
+                    ->icon('heroicon-o-photo')
+                    ->color('info')
+                    ->badge(fn (Event $record): ?string =>
+                        (int) $record->pending_invitee_uploads_count > 0
+                            ? (string) $record->pending_invitee_uploads_count
+                            : null
+                    )
+                    ->url(fn (Event $record): string => static::getUrl('view', [
+                        'record' => $record,
+                        'activeRelationManager' => self::RELATION_INVITEE_UPLOADS,
+                    ])),
 
                 Tables\Actions\Action::make('message_center')
                     ->label('Message Center')
                     ->icon('heroicon-o-envelope')
-                    ->color('primary')
+                    ->color('warning')
                     ->visible(fn (Event $record): bool =>
                         (auth()->user()?->canSendMessages() ?? false)
                         && (auth()->user()?->canManageEvent($record) ?? false)
@@ -765,31 +975,100 @@ class EventResource extends Resource
                         'record' => $record,
                     ])),
 
+                Tables\Actions\Action::make('invitee_responses')
+                    ->label('RSVP Responses')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->color('success')
+                    ->url(fn (Event $record): string => static::getUrl('invitee-responses', [
+                        'record' => $record,
+                    ])),
+
+                Tables\Actions\Action::make('gate_check_in')
+                    ->label('Gate Check-in')
+                    ->icon('heroicon-o-qr-code')
+                    ->color('warning')
+                    ->url(fn (Event $record): string => route('gate.check-in.show', $record))
+                    ->openUrlInNewTab(),
+
+                Tables\Actions\Action::make('reports')
+                    ->label('Reports')
+                    ->icon('heroicon-o-chart-bar-square')
+                    ->color('gray')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canAccessEvent($record) ?? false
+                    )
+                    ->url(fn (Event $record): string => url(
+                        '/admin/reports?event_id='.$record->getKey()
+                    ))
+                    ->openUrlInNewTab(),
+
+                Tables\Actions\EditAction::make()
+                    ->label('Edit Event')
+                    ->icon('heroicon-o-pencil-square')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canManageEvent($record) ?? false
+                    ),
+
                 Tables\Actions\DeleteAction::make()
-                    ->label('Delete')
-                    ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
+                    ->label('Delete Event')
+                    ->icon('heroicon-o-trash')
+                    ->visible(fn (): bool =>
+                        auth()->user()?->isSuperAdmin() ?? false
+                    ),
             ])
+            ->actionsPosition(Tables\Enums\ActionsPosition::BeforeColumns)
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn (): bool => auth()->user()?->isSuperAdmin() ?? false),
+                        ->visible(fn (): bool =>
+                            auth()->user()?->isSuperAdmin() ?? false
+                        ),
                 ]),
             ]);
     }
 
+    private static function statusLabel(?string $state): string
+    {
+        return Event::statuses()[$state]
+            ?? str($state ?? Event::STATUS_DRAFT)->headline()->toString();
+    }
+
+    private static function statusColor(?string $state): string
+    {
+        return match ($state) {
+            Event::STATUS_ACTIVE => 'success',
+            Event::STATUS_COMPLETED => 'info',
+            Event::STATUS_CANCELLED => 'danger',
+            Event::STATUS_DRAFT => 'gray',
+            default => 'warning',
+        };
+    }
+
+    private static function statusIcon(?string $state): string
+    {
+        return match ($state) {
+            Event::STATUS_ACTIVE => 'heroicon-o-play-circle',
+            Event::STATUS_COMPLETED => 'heroicon-o-check-circle',
+            Event::STATUS_CANCELLED => 'heroicon-o-x-circle',
+            Event::STATUS_DRAFT => 'heroicon-o-pencil-square',
+            default => 'heroicon-o-clock',
+        };
+    }
+
     public static function getRelations(): array
     {
+        // Keep this order synchronized with ViewEvent relation index constants.
         return [
-            RelationManagers\AssignedUsersRelationManager::class,
-            RelationManagers\CardTypesRelationManager::class,
-            RelationManagers\InviteesRelationManager::class,
-            RelationManagers\InviteeUploadsRelationManager::class,
-            RelationManagers\CardTemplatesRelationManager::class,
-            RelationManagers\GeneratedCardsRelationManager::class,
-            RelationManagers\MessageTemplatesRelationManager::class,
-            RelationManagers\MessageLogsRelationManager::class,
-            RelationManagers\SmsLogsRelationManager::class,
-            RelationManagers\CheckInsRelationManager::class,
+            RelationManagers\AssignedUsersRelationManager::class,     // 0
+            RelationManagers\CardTypesRelationManager::class,         // 1
+            RelationManagers\InviteesRelationManager::class,          // 2
+            RelationManagers\InviteeUploadsRelationManager::class,    // 3
+            RelationManagers\CardTemplatesRelationManager::class,     // 4
+            RelationManagers\GeneratedCardsRelationManager::class,    // 5
+            RelationManagers\MessageTemplatesRelationManager::class,  // 6
+            RelationManagers\MessageLogsRelationManager::class,       // 7
+            RelationManagers\SmsLogsRelationManager::class,           // 8
+            RelationManagers\CheckInsRelationManager::class,          // 9
         ];
     }
 

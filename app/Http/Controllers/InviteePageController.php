@@ -5,9 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Invitee;
 use App\Models\InviteeUpload;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class InviteePageController extends Controller
@@ -133,20 +133,13 @@ class InviteePageController extends Controller
                 ->with('warning', 'Wishes approval is not enabled yet. Please contact the organizer.');
         }
 
-        $this->createInviteeUpload([
+        InviteeUpload::create([
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
-            'type' => 'wish',
-            'name' => $request->filled('name') ? $request->name : $invitee->name,
-            'message' => $request->message,
+            'type' => InviteeUpload::TYPE_WISH,
+            'message' => trim((string) $request->message),
             'file_path' => null,
-            'status' => 'pending',
-            'approved_by' => null,
-            'approved_at' => null,
-            'rejected_at' => null,
-            'admin_note' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'status' => InviteeUpload::STATUS_PENDING,
         ]);
 
         return redirect()
@@ -182,26 +175,32 @@ class InviteePageController extends Controller
                 ->with('warning', 'Photo approval is not enabled yet. Please contact the organizer.');
         }
 
-        $path = $request->file('photo')->store(
-            'events/' . $invitee->event_id . '/invitee-uploads',
-            'public'
+        $photo = $request->file('photo');
+        $extension = strtolower((string) $photo->getClientOriginalExtension());
+        $filename = Str::uuid().'.'.$extension;
+
+        $path = $photo->storeAs(
+            'events/'.$invitee->event_id.'/invitee-uploads',
+            $filename,
+            'public',
         );
 
-        $this->createInviteeUpload([
-            'event_id' => $invitee->event_id,
-            'invitee_id' => $invitee->id,
-            'type' => 'photo',
-            'name' => $invitee->name,
-            'message' => $request->caption,
-            'file_path' => $path,
-            'status' => 'pending',
-            'approved_by' => null,
-            'approved_at' => null,
-            'rejected_at' => null,
-            'admin_note' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        try {
+            InviteeUpload::create([
+                'event_id' => $invitee->event_id,
+                'invitee_id' => $invitee->id,
+                'type' => InviteeUpload::TYPE_PHOTO,
+                'message' => $request->filled('caption')
+                    ? trim((string) $request->caption)
+                    : null,
+                'file_path' => $path,
+                'status' => InviteeUpload::STATUS_PENDING,
+            ]);
+        } catch (\Throwable $e) {
+            Storage::disk('public')->delete($path);
+
+            throw $e;
+        }
 
         return redirect()
             ->route('invitee.page', $invitee->short_code)
@@ -210,27 +209,23 @@ class InviteePageController extends Controller
 
     protected function inviteeUploadsTableIsReady(): bool
     {
-        return Schema::hasTable('invitee_uploads')
-            && Schema::hasColumn('invitee_uploads', 'event_id')
-            && Schema::hasColumn('invitee_uploads', 'invitee_id')
-            && Schema::hasColumn('invitee_uploads', 'type')
-            && Schema::hasColumn('invitee_uploads', 'status');
-    }
+        if (! Schema::hasTable('invitee_uploads')) {
+            return false;
+        }
 
-    protected function createInviteeUpload(array $data): void
-    {
-        $columns = Schema::getColumnListing('invitee_uploads');
+        $requiredColumns = [
+            'event_id',
+            'invitee_id',
+            'type',
+            'message',
+            'file_path',
+            'status',
+        ];
 
-        $safeData = collect($data)
-            ->only($columns)
-            ->all();
-
-        /*
-         * Use DB insert instead of InviteeUpload::create() here.
-         * This avoids production 500 errors when the model fillable contains
-         * a field that is not present in the current database, such as `name`.
-         */
-        DB::table('invitee_uploads')->insert($safeData);
+        return collect($requiredColumns)
+            ->every(fn (string $column): bool =>
+                Schema::hasColumn('invitee_uploads', $column)
+            );
     }
 
     protected function approvedWishes(?int $eventId)
@@ -239,23 +234,20 @@ class InviteePageController extends Controller
             return collect();
         }
 
-        $query = DB::table('invitee_uploads')
-            ->leftJoin('invitees', 'invitee_uploads.invitee_id', '=', 'invitees.id')
-            ->where('invitee_uploads.event_id', $eventId)
-            ->where('invitee_uploads.type', 'wish')
-            ->where('invitee_uploads.status', 'approved');
-
-        $select = ['invitee_uploads.*'];
-
-        $select[] = Schema::hasColumn('invitee_uploads', 'name')
-            ? DB::raw('COALESCE(invitee_uploads.name, invitees.name) as display_name')
-            : DB::raw('invitees.name as display_name');
-
-        return $query
-            ->latest('invitee_uploads.approved_at')
-            ->latest('invitee_uploads.created_at')
-            ->select($select)
-            ->get();
+        return InviteeUpload::query()
+            ->with('invitee:id,name')
+            ->forEvent($eventId)
+            ->wishes()
+            ->approved()
+            ->latest('approved_at')
+            ->latest('created_at')
+            ->get()
+            ->each(function (InviteeUpload $wish): void {
+                $wish->setAttribute(
+                    'display_name',
+                    $wish->invitee?->name ?? 'Guest',
+                );
+            });
     }
 
     protected function approvedPhotos(?int $eventId)
@@ -264,29 +256,25 @@ class InviteePageController extends Controller
             return collect();
         }
 
-        $query = DB::table('invitee_uploads')
-            ->leftJoin('invitees', 'invitee_uploads.invitee_id', '=', 'invitees.id')
-            ->where('invitee_uploads.event_id', $eventId)
-            ->where('invitee_uploads.type', 'photo')
-            ->where('invitee_uploads.status', 'approved')
-            ->whereNotNull('invitee_uploads.file_path');
-
-        $select = ['invitee_uploads.*'];
-
-        $select[] = Schema::hasColumn('invitee_uploads', 'name')
-            ? DB::raw('COALESCE(invitee_uploads.name, invitees.name) as display_name')
-            : DB::raw('invitees.name as display_name');
-
-        return $query
-            ->latest('invitee_uploads.approved_at')
-            ->latest('invitee_uploads.created_at')
-            ->select($select)
+        return InviteeUpload::query()
+            ->with('invitee:id,name')
+            ->forEvent($eventId)
+            ->photos()
+            ->approved()
+            ->whereNotNull('file_path')
+            ->latest('approved_at')
+            ->latest('created_at')
             ->get()
-            ->map(function ($photo) {
-                $photo->file_url = Storage::disk('public')->url($photo->file_path);
-
-                return $photo;
-            });
+            ->filter(fn (InviteeUpload $photo): bool =>
+                $photo->hasStoredFile()
+            )
+            ->each(function (InviteeUpload $photo): void {
+                $photo->setAttribute(
+                    'display_name',
+                    $photo->invitee?->name ?? 'Guest',
+                );
+            })
+            ->values();
     }
 
     protected function allowedGuests(Invitee $invitee): int
