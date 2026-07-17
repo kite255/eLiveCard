@@ -7,17 +7,45 @@ use App\Http\Controllers\GateVerifyController;
 use App\Http\Controllers\InviteeLocationController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
+use App\Http\Controllers\PublicEventController;
 use App\Http\Controllers\RsvpController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use App\Models\CardTemplate;
+use App\Models\Event;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+/*
+|--------------------------------------------------------------------------
+| Public Website
+|--------------------------------------------------------------------------
+|
+| Public marketing and information pages for eLive Card.
+|
+*/
+Route::view('/', 'welcome')
+    ->name('home');
+
+Route::get('/events', [PublicEventController::class, 'index'])
+    ->name('events.index');
+
+Route::get('/events/{event}', [PublicEventController::class, 'show'])
+    ->whereNumber('event')
+    ->name('events.show');
+
+Route::view('/about', 'pages.about')
+    ->name('about');
+
+Route::view('/contact', 'pages.contact')
+    ->name('contact');
+
+Route::view('/privacy-policy', 'pages.privacy-policy')
+    ->name('privacy-policy');
+
+Route::view('/terms', 'pages.terms')
+    ->name('terms');
 
 /*
 |--------------------------------------------------------------------------
@@ -64,9 +92,33 @@ Route::post('/i/{shortCode}/wish', [InviteePageController::class, 'storeWish'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.wish');
 
+Route::put(
+    '/i/{shortCode}/wishes/{wish}',
+    [InviteePageController::class, 'updateWish']
+)
+    ->where('shortCode', '[A-Za-z0-9]+')
+    ->whereNumber('wish')
+    ->name('invitee.wish.update');
+
 Route::post('/i/{shortCode}/photo', [InviteePageController::class, 'storePhoto'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.photo');
+
+Route::put(
+    '/i/{shortCode}/photos/{photo}',
+    [InviteePageController::class, 'updatePhoto']
+)
+    ->where('shortCode', '[A-Za-z0-9]+')
+    ->whereNumber('photo')
+    ->name('invitee.photo.update');
+
+Route::delete(
+    '/i/{shortCode}/photos/{photo}',
+    [InviteePageController::class, 'deletePhoto']
+)
+    ->where('shortCode', '[A-Za-z0-9]+')
+    ->whereNumber('photo')
+    ->name('invitee.photo.delete');
 
 /*
 |--------------------------------------------------------------------------
@@ -211,6 +263,36 @@ Route::middleware(['auth'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
+    | Gate Scanner Entry Route
+    |--------------------------------------------------------------------------
+    |
+    | Opens the selected event scanner when an event ID is supplied.
+    | Without an event ID, redirects to the events page so the user can
+    | choose the correct event before scanning.
+    |
+    */
+    Route::get('/admin/gate-check-in', function () {
+        $eventId = request()->integer('event');
+
+        if ($eventId <= 0) {
+            return redirect('/admin/dashboard')
+                ->with('warning', 'Select an event before opening the gate scanner.');
+        }
+
+        $event = Event::query()->find($eventId);
+
+        if (! $event) {
+            return redirect('/admin/dashboard')
+                ->with('warning', 'The selected event could not be found.');
+        }
+
+        return redirect()->route('gate.check-in.show', [
+            'event' => $event->getKey(),
+        ]);
+    })->name('gate.check-in.entry');
+
+    /*
+    |--------------------------------------------------------------------------
     | Professional Gate Check-in Page
     |--------------------------------------------------------------------------
     |
@@ -231,12 +313,16 @@ Route::middleware(['auth'])->group(function () {
     Route::get(
         '/gate/events/{event}/check-in',
         [GateCheckInController::class, 'show']
-    )->name('gate.check-in.show');
+    )
+        ->whereNumber('event')
+        ->name('gate.check-in.show');
 
     Route::post(
         '/gate/events/{event}/verify',
         [GateCheckInController::class, 'verify']
-    )->name('gate.check-in.verify');
+    )
+        ->whereNumber('event')
+        ->name('gate.check-in.verify');
 
     /*
     |--------------------------------------------------------------------------
@@ -251,12 +337,16 @@ Route::middleware(['auth'])->group(function () {
     Route::post(
         '/gate/events/{event}/manual-search',
         [GateCheckInController::class, 'verify']
-    )->name('gate.manual-search');
+    )
+        ->whereNumber('event')
+        ->name('gate.manual-search');
 
     Route::post(
         '/gate/events/{event}/confirm',
         [GateCheckInController::class, 'confirm']
-    )->name('gate.check-in.confirm');
+    )
+        ->whereNumber('event')
+        ->name('gate.check-in.confirm');
 
     /*
     |--------------------------------------------------------------------------

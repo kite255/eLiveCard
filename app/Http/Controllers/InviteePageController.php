@@ -4,11 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Invitee;
 use App\Models\InviteeUpload;
+use App\Services\AuditLogService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class InviteePageController extends Controller
 {
@@ -25,7 +29,14 @@ class InviteePageController extends Controller
             'This invitation is not active.'
         );
 
+        abort_unless(
+            $invitee->event,
+            404,
+            'The event linked to this invitation was not found.'
+        );
+
         $this->trackInviteeOpen($invitee, $request);
+        $this->auditInvitationOpen($invitee, $request);
 
         $invitee->refresh();
 
@@ -51,8 +62,24 @@ class InviteePageController extends Controller
             'whatsAppOrganizerUrl' => $whatsAppOrganizerUrl,
             'coverImageUrl' => $coverImageUrl,
             'allowedGuests' => $allowedGuests,
-            'approvedWishes' => $this->approvedWishes($event?->id),
-            'approvedPhotos' => $this->approvedPhotos($event?->id),
+            'approvedWishes' => $this->shouldShowWishes($event)
+                ? $this->approvedWishes($event?->id)
+                : collect(),
+            'myWishes' => $this->shouldShowWishes($event)
+                ? $this->inviteeWishes($invitee)
+                : collect(),
+            'approvedPhotos' => $this->shouldShowPhotoUpload($event)
+                ? $this->approvedPhotos($event?->id)
+                : collect(),
+            'myPhotos' => $this->shouldShowPhotoUpload($event)
+                ? $this->inviteePhotos($invitee)
+                : collect(),
+            'showCoverImage' => $this->shouldShowCoverImage($event),
+            'showProgram' => $this->shouldShowProgram($event),
+            'showCountdown' => $this->shouldShowCountdown($event),
+            'showWishes' => $this->shouldShowWishes($event),
+            'showPhotoUpload' => $this->shouldShowPhotoUpload($event),
+            'showOrganizerContact' => $this->shouldShowOrganizerContact($event),
         ]);
     }
 
@@ -92,11 +119,35 @@ class InviteePageController extends Controller
             default => 0,
         };
 
+        $oldValues = [
+            'rsvp_status' => $invitee->rsvp_status,
+            'confirmed_guests' => $invitee->confirmed_guests,
+            'rsvp_confirmed_at' => $invitee->rsvp_confirmed_at,
+        ];
+
         $invitee->update([
             'rsvp_status' => $request->status,
             'confirmed_guests' => $confirmedGuests,
             'rsvp_confirmed_at' => now(),
         ]);
+
+        AuditLogService::record(
+            action: 'rsvp.updated',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'Invitee submitted an RSVP response from the private invitation page.',
+            oldValues: $oldValues,
+            newValues: [
+                'rsvp_status' => $invitee->rsvp_status,
+                'confirmed_guests' => $invitee->confirmed_guests,
+                'rsvp_confirmed_at' => $invitee->rsvp_confirmed_at,
+            ],
+            metadata: [
+                'source' => 'invitee_page',
+                'allowed_guests' => $allowedGuests,
+                'ip_address' => $request->ip(),
+            ],
+        );
 
         $message = match ($request->status) {
             'attending' => 'Thank you. Your attendance has been confirmed for ' . $confirmedGuests . ' guest(s).',
@@ -127,13 +178,25 @@ class InviteePageController extends Controller
             'This invitation is not active.'
         );
 
+        abort_unless(
+            $this->shouldShowWishes($invitee->event),
+            403,
+            'Wish submission is disabled for this event.'
+        );
+
         if (! $this->inviteeUploadsTableIsReady()) {
             return redirect()
                 ->route('invitee.page', $invitee->short_code)
                 ->with('warning', 'Wishes approval is not enabled yet. Please contact the organizer.');
         }
 
-        InviteeUpload::create([
+        $this->ensureSubmissionRateLimit(
+            key: 'wish',
+            invitee: $invitee,
+            request: $request,
+        );
+
+        $wish = InviteeUpload::create([
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
             'type' => InviteeUpload::TYPE_WISH,
@@ -142,9 +205,110 @@ class InviteePageController extends Controller
             'status' => InviteeUpload::STATUS_PENDING,
         ]);
 
+        AuditLogService::created(
+            subject: $wish,
+            eventId: $invitee->event_id,
+            description: 'Invitee submitted a wish for admin approval.',
+            metadata: [
+                'source' => 'invitee_page',
+                'invitee_id' => $invitee->id,
+                'submission_type' => 'wish',
+                'message_length' => mb_strlen((string) $wish->message),
+                'ip_address' => $request->ip(),
+            ],
+        );
+
         return redirect()
             ->route('invitee.page', $invitee->short_code)
             ->with('success', 'Thank you. Your wish has been submitted and is waiting for admin approval.');
+    }
+
+    public function updateWish(
+        Request $request,
+        string $shortCode,
+        InviteeUpload $wish
+    ) {
+        $invitee = Invitee::query()
+            ->with('event')
+            ->where('short_code', $shortCode)
+            ->firstOrFail();
+
+        abort_unless(
+            $this->canOpenInvitation($invitee),
+            403,
+            'This invitation is not active.'
+        );
+
+        abort_unless(
+            $this->shouldShowWishes($invitee->event),
+            403,
+            'Wishes are disabled for this event.'
+        );
+
+        abort_unless(
+            $wish->event_id === $invitee->event_id
+            && $wish->invitee_id === $invitee->id
+            && $wish->type === InviteeUpload::TYPE_WISH,
+            404
+        );
+
+        abort_unless(
+            $wish->status === InviteeUpload::STATUS_PENDING,
+            403,
+            'Only pending wishes can be edited.'
+        );
+
+        $validated = $request->validate([
+            'message' => [
+                'required',
+                'string',
+                'min:3',
+                'max:1000',
+            ],
+        ], [
+            'message.required' => 'Please enter your wish.',
+            'message.min' => 'Your wish must contain at least 3 characters.',
+            'message.max' => 'Your wish cannot exceed 1000 characters.',
+        ]);
+
+        $this->ensureSubmissionRateLimit(
+            key: 'wish-edit',
+            invitee: $invitee,
+            request: $request,
+        );
+
+        $oldValues = [
+            'message' => $wish->message,
+            'status' => $wish->status,
+        ];
+
+        $wish->update([
+            'message' => trim((string) $validated['message']),
+        ]);
+
+        AuditLogService::updated(
+            subject: $wish,
+            eventId: $invitee->event_id,
+            description: 'Invitee edited a pending wish from the private invitation page.',
+            oldValues: $oldValues,
+            newValues: [
+                'message' => $wish->message,
+                'status' => $wish->status,
+            ],
+            metadata: [
+                'source' => 'invitee_page',
+                'invitee_id' => $invitee->id,
+                'submission_type' => 'wish',
+                'ip_address' => $request->ip(),
+            ],
+        );
+
+        return redirect()
+            ->route('invitee.page', $invitee->short_code)
+            ->with(
+                'success',
+                'Your wish has been updated and is still waiting for approval.'
+            );
     }
 
     public function storePhoto(Request $request, string $shortCode)
@@ -169,14 +333,28 @@ class InviteePageController extends Controller
             'This invitation is not active.'
         );
 
+        abort_unless(
+            $this->shouldShowPhotoUpload($invitee->event),
+            403,
+            'Photo uploads are disabled for this event.'
+        );
+
         if (! $this->inviteeUploadsTableIsReady()) {
             return redirect()
                 ->route('invitee.page', $invitee->short_code)
                 ->with('warning', 'Photo approval is not enabled yet. Please contact the organizer.');
         }
 
+        $this->ensureSubmissionRateLimit(
+            key: 'photo',
+            invitee: $invitee,
+            request: $request,
+        );
+
         $photo = $request->file('photo');
-        $extension = strtolower((string) $photo->getClientOriginalExtension());
+        $extension = $this->safeImageExtension(
+            (string) $photo->getMimeType()
+        );
         $filename = Str::uuid().'.'.$extension;
 
         $path = $photo->storeAs(
@@ -186,7 +364,7 @@ class InviteePageController extends Controller
         );
 
         try {
-            InviteeUpload::create([
+            $upload = InviteeUpload::create([
                 'event_id' => $invitee->event_id,
                 'invitee_id' => $invitee->id,
                 'type' => InviteeUpload::TYPE_PHOTO,
@@ -196,15 +374,263 @@ class InviteePageController extends Controller
                 'file_path' => $path,
                 'status' => InviteeUpload::STATUS_PENDING,
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $exception) {
             Storage::disk('public')->delete($path);
 
-            throw $e;
+            AuditLogService::record(
+                action: 'invitee_upload.photo_failed',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Invitee photo upload failed.',
+                metadata: [
+                    'source' => 'invitee_page',
+                    'invitee_id' => $invitee->id,
+                    'error' => $exception->getMessage(),
+                ],
+            );
+
+            throw $exception;
         }
+
+        AuditLogService::created(
+            subject: $upload,
+            eventId: $invitee->event_id,
+            description: 'Invitee submitted a photo for admin approval.',
+            metadata: [
+                'source' => 'invitee_page',
+                'invitee_id' => $invitee->id,
+                'submission_type' => 'photo',
+                'file_path' => $path,
+                'mime_type' => $photo->getMimeType(),
+                'size_bytes' => $photo->getSize(),
+                'ip_address' => $request->ip(),
+            ],
+        );
 
         return redirect()
             ->route('invitee.page', $invitee->short_code)
             ->with('success', 'Thank you. Your photo has been submitted and is waiting for admin approval.');
+    }
+
+    public function updatePhoto(
+        Request $request,
+        string $shortCode,
+        InviteeUpload $photo
+    ) {
+        $invitee = Invitee::query()
+            ->with('event')
+            ->where('short_code', $shortCode)
+            ->firstOrFail();
+
+        abort_unless(
+            $this->canOpenInvitation($invitee),
+            403,
+            'This invitation is not active.'
+        );
+
+        abort_unless(
+            $this->shouldShowPhotoUpload($invitee->event),
+            403,
+            'Photo uploads are disabled for this event.'
+        );
+
+        $this->authorizeInviteePhoto($invitee, $photo);
+
+        abort_unless(
+            $photo->status === InviteeUpload::STATUS_PENDING,
+            403,
+            'Only pending photos can be edited.'
+        );
+
+        $validated = $request->validate([
+            'caption' => ['nullable', 'string', 'max:255'],
+            'photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+        ], [
+            'photo.image' => 'The replacement file must be an image.',
+            'photo.max' => 'The photo must not be larger than 5MB.',
+            'caption.max' => 'The caption cannot exceed 255 characters.',
+        ]);
+
+        $this->ensureSubmissionRateLimit(
+            key: 'photo-edit',
+            invitee: $invitee,
+            request: $request,
+        );
+
+        $oldPath = $photo->file_path;
+        $newPath = null;
+
+        if ($request->hasFile('photo')) {
+            $replacement = $request->file('photo');
+            $extension = $this->safeImageExtension(
+                (string) $replacement->getMimeType()
+            );
+            $filename = Str::uuid().'.'.$extension;
+
+            $newPath = $replacement->storeAs(
+                'events/'.$invitee->event_id.'/invitee-uploads',
+                $filename,
+                'public',
+            );
+        }
+
+        $oldValues = [
+            'message' => $photo->message,
+            'file_path' => $photo->file_path,
+            'status' => $photo->status,
+        ];
+
+        try {
+            $photo->update([
+                'message' => $request->filled('caption')
+                    ? trim((string) $validated['caption'])
+                    : null,
+                'file_path' => $newPath ?: $photo->file_path,
+            ]);
+        } catch (Throwable $exception) {
+            if ($newPath) {
+                Storage::disk('public')->delete($newPath);
+            }
+
+            AuditLogService::record(
+                action: 'invitee_upload.photo_update_failed',
+                subject: $photo,
+                eventId: $invitee->event_id,
+                description: 'Invitee photo update failed.',
+                metadata: [
+                    'source' => 'invitee_page',
+                    'invitee_id' => $invitee->id,
+                    'photo_id' => $photo->id,
+                    'error' => $exception->getMessage(),
+                ],
+            );
+
+            throw $exception;
+        }
+
+        if (
+            $newPath
+            && filled($oldPath)
+            && $oldPath !== $newPath
+            && Storage::disk('public')->exists($oldPath)
+        ) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        $photo->refresh();
+
+        AuditLogService::updated(
+            subject: $photo,
+            eventId: $invitee->event_id,
+            description: $newPath
+                ? 'Invitee replaced a pending photo and updated its caption.'
+                : 'Invitee updated the caption of a pending photo.',
+            oldValues: $oldValues,
+            newValues: [
+                'message' => $photo->message,
+                'file_path' => $photo->file_path,
+                'status' => $photo->status,
+            ],
+            metadata: [
+                'source' => 'invitee_page',
+                'invitee_id' => $invitee->id,
+                'submission_type' => 'photo',
+                'photo_replaced' => (bool) $newPath,
+                'ip_address' => $request->ip(),
+            ],
+        );
+
+        return redirect()
+            ->route('invitee.page', $invitee->short_code)
+            ->with(
+                'success',
+                $newPath
+                    ? 'Your photo has been replaced and is still waiting for approval.'
+                    : 'Your photo caption has been updated.'
+            );
+    }
+
+    public function deletePhoto(
+        Request $request,
+        string $shortCode,
+        InviteeUpload $photo
+    ) {
+        $invitee = Invitee::query()
+            ->with('event')
+            ->where('short_code', $shortCode)
+            ->firstOrFail();
+
+        abort_unless(
+            $this->canOpenInvitation($invitee),
+            403,
+            'This invitation is not active.'
+        );
+
+        abort_unless(
+            $this->shouldShowPhotoUpload($invitee->event),
+            403,
+            'Photo uploads are disabled for this event.'
+        );
+
+        $this->authorizeInviteePhoto($invitee, $photo);
+
+        abort_unless(
+            $photo->status === InviteeUpload::STATUS_PENDING,
+            403,
+            'Only pending photos can be deleted.'
+        );
+
+        $this->ensureSubmissionRateLimit(
+            key: 'photo-delete',
+            invitee: $invitee,
+            request: $request,
+        );
+
+        $snapshot = [
+            'id' => $photo->id,
+            'message' => $photo->message,
+            'file_path' => $photo->file_path,
+            'status' => $photo->status,
+        ];
+
+        AuditLogService::deleted(
+            subject: $photo,
+            eventId: $invitee->event_id,
+            description: 'Invitee deleted a pending photo from the private invitation page.',
+            metadata: [
+                'source' => 'invitee_page',
+                'invitee_id' => $invitee->id,
+                'submission_type' => 'photo',
+                'photo' => $snapshot,
+                'ip_address' => $request->ip(),
+            ],
+        );
+
+        $storedPath = $photo->file_path;
+        $photo->delete();
+
+        if (
+            filled($storedPath)
+            && Storage::disk('public')->exists($storedPath)
+        ) {
+            Storage::disk('public')->delete($storedPath);
+        }
+
+        return redirect()
+            ->route('invitee.page', $invitee->short_code)
+            ->with('success', 'Your pending photo has been deleted.');
+    }
+
+    protected function authorizeInviteePhoto(
+        Invitee $invitee,
+        InviteeUpload $photo
+    ): void {
+        abort_unless(
+            (int) $photo->event_id === (int) $invitee->event_id
+            && (int) $photo->invitee_id === (int) $invitee->id
+            && $photo->type === InviteeUpload::TYPE_PHOTO,
+            404
+        );
     }
 
     protected function inviteeUploadsTableIsReady(): bool
@@ -226,6 +652,39 @@ class InviteePageController extends Controller
             ->every(fn (string $column): bool =>
                 Schema::hasColumn('invitee_uploads', $column)
             );
+    }
+
+    protected function inviteeWishes(Invitee $invitee)
+    {
+        if (! $this->inviteeUploadsTableIsReady()) {
+            return collect();
+        }
+
+        return InviteeUpload::query()
+            ->where('event_id', $invitee->event_id)
+            ->where('invitee_id', $invitee->id)
+            ->where('type', InviteeUpload::TYPE_WISH)
+            ->latest('created_at')
+            ->get();
+    }
+
+    protected function inviteePhotos(Invitee $invitee)
+    {
+        if (! $this->inviteeUploadsTableIsReady()) {
+            return collect();
+        }
+
+        return InviteeUpload::query()
+            ->where('event_id', $invitee->event_id)
+            ->where('invitee_id', $invitee->id)
+            ->where('type', InviteeUpload::TYPE_PHOTO)
+            ->whereNotNull('file_path')
+            ->latest('created_at')
+            ->get()
+            ->filter(fn (InviteeUpload $photo): bool =>
+                $photo->hasStoredFile()
+            )
+            ->values();
     }
 
     protected function approvedWishes(?int $eventId)
@@ -342,7 +801,21 @@ class InviteePageController extends Controller
             $allowedStatuses[] = Invitee::CARD_STATUS_GENERATED;
         }
 
-        return in_array($invitee->card_status, array_unique($allowedStatuses), true);
+        $eventStatus = $invitee->event?->status;
+
+        if (in_array($eventStatus, ['cancelled', 'completed'], true)) {
+            return false;
+        }
+
+        if (in_array($invitee->card_status, ['cancelled', 'revoked', 'blocked', 'disabled'], true)) {
+            return false;
+        }
+
+        return in_array(
+            $invitee->card_status,
+            array_unique($allowedStatuses),
+            true
+        );
     }
 
     protected function generatedCardUrl(Invitee $invitee): ?string
@@ -471,4 +944,113 @@ class InviteePageController extends Controller
             ?? config('services.elive.contact_phone')
             ?? null;
     }
+
+    protected function auditInvitationOpen(
+        Invitee $invitee,
+        Request $request
+    ): void {
+        $key = sprintf(
+            'invitee-page-open-audit:%d:%s:%s',
+            $invitee->id,
+            sha1((string) $request->ip()),
+            now()->format('Y-m-d')
+        );
+
+        if (! Cache::add($key, true, now()->addDay())) {
+            return;
+        }
+
+        AuditLogService::record(
+            action: 'invitee_page.opened',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'Private invitation page was opened.',
+            metadata: [
+                'source' => 'invitee_page',
+                'invitee_id' => $invitee->id,
+                'short_code' => $invitee->short_code,
+                'ip_address' => $request->ip(),
+                'user_agent' => Str::limit(
+                    (string) $request->userAgent(),
+                    500,
+                    ''
+                ),
+            ],
+        );
+    }
+
+    protected function ensureSubmissionRateLimit(
+        string $key,
+        Invitee $invitee,
+        Request $request
+    ): void {
+        $cacheKey = sprintf(
+            'invitee-submission:%s:%d:%s',
+            $key,
+            $invitee->id,
+            sha1((string) $request->ip())
+        );
+
+        if (! Cache::add($cacheKey, true, now()->addSeconds(30))) {
+            throw ValidationException::withMessages([
+                $key === 'photo' ? 'photo' : 'message' =>
+                    'Please wait a moment before submitting again.',
+            ]);
+        }
+    }
+
+    protected function safeImageExtension(string $mimeType): string
+    {
+        return match (strtolower($mimeType)) {
+            'image/jpeg', 'image/jpg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => throw ValidationException::withMessages([
+                'photo' => 'The uploaded image format is not supported.',
+            ]),
+        };
+    }
+
+    protected function shouldShowCoverImage($event): bool
+    {
+        return $event && method_exists($event, 'shouldShowCoverImage')
+            ? $event->shouldShowCoverImage()
+            : (bool) ($event?->show_cover_image ?? true);
+    }
+
+    protected function shouldShowProgram($event): bool
+    {
+        return $event && method_exists($event, 'shouldShowProgram')
+            ? $event->shouldShowProgram()
+            : (bool) ($event?->show_program ?? true);
+    }
+
+    protected function shouldShowCountdown($event): bool
+    {
+        return $event && method_exists($event, 'shouldShowCountdown')
+            ? $event->shouldShowCountdown()
+            : (bool) ($event?->show_countdown ?? true);
+    }
+
+    protected function shouldShowWishes($event): bool
+    {
+        return $event && method_exists($event, 'shouldShowWishes')
+            ? $event->shouldShowWishes()
+            : (bool) ($event?->show_wishes ?? true);
+    }
+
+    protected function shouldShowPhotoUpload($event): bool
+    {
+        return $event && method_exists($event, 'shouldShowPhotoUpload')
+            ? $event->shouldShowPhotoUpload()
+            : (bool) ($event?->show_photo_upload ?? true);
+    }
+
+    protected function shouldShowOrganizerContact($event): bool
+    {
+        return $event && method_exists($event, 'shouldShowOrganizerContact')
+            ? $event->shouldShowOrganizerContact()
+            : (bool) ($event?->show_organizer_contact ?? true);
+    }
+
 }

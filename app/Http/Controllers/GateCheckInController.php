@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CheckIn;
 use App\Models\Event;
 use App\Models\Invitee;
+use App\Services\CheckInService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class GateCheckInController extends Controller
@@ -19,8 +20,9 @@ class GateCheckInController extends Controller
         $recentCheckIns = Invitee::query()
             ->with('cardType')
             ->where('event_id', $event->id)
-            ->where(function ($query) {
-                $query->whereNotNull('checked_in_at')
+            ->where(function ($query): void {
+                $query
+                    ->whereNotNull('checked_in_at')
                     ->orWhere('checked_in_count', '>', 0);
             })
             ->latest('checked_in_at')
@@ -69,10 +71,37 @@ class GateCheckInController extends Controller
         $invitee = $this->findInvitee($event, $searchValue);
 
         if (! $invitee) {
+            $otherEventInvitee = $this->findInviteeInAnotherEvent(
+                currentEvent: $event,
+                searchValue: $searchValue,
+            );
+
+            if ($otherEventInvitee) {
+                return response()->json([
+                    'status' => 'error',
+                    'title' => 'Wrong Event',
+                    'message' => 'This invitation belongs to '
+                        .($otherEventInvitee->event?->title ?? 'another event')
+                        .'. Open the correct event scanner before checking in.',
+                    'other_event' => [
+                        'id' => $otherEventInvitee->event_id,
+                        'title' => $otherEventInvitee->event?->title
+                            ?? $otherEventInvitee->event?->name
+                            ?? 'Another event',
+                        'date' => $otherEventInvitee->event?->event_date
+                            ? $otherEventInvitee->event->event_date->format('d M Y')
+                            : null,
+                        'venue' => $otherEventInvitee->event?->venue_name
+                            ?? $otherEventInvitee->event?->venue
+                            ?? null,
+                    ],
+                ], 422);
+            }
+
             return response()->json([
                 'status' => 'error',
                 'title' => 'Invitee Not Found',
-                'message' => 'No invitee was found for this event using that QR, serial number, phone number, name, or short code.',
+                'message' => 'No matching invitation was found for this event.',
             ], 404);
         }
 
@@ -119,7 +148,13 @@ class GateCheckInController extends Controller
         return response()->json([
             'status' => 'success',
             'title' => 'Valid Card',
-            'message' => 'Invitee found. You can proceed with check-in.',
+            'message' => 'Invitee found for '.$event->title.'. You can proceed with check-in.',
+            'event' => [
+                'id' => $event->id,
+                'title' => $event->title,
+                'date' => $event->event_date?->format('d M Y'),
+                'venue' => $event->venue_name ?? $event->venue ?? null,
+            ],
             'invitee' => $this->inviteePayload(
                 invitee: $invitee,
                 allowedGuests: $allowedGuests,
@@ -134,136 +169,169 @@ class GateCheckInController extends Controller
     /**
      * Confirm invitee check-in and enforce RSVP-based guest limit.
      */
-    public function confirm(Request $request, Event $event): JsonResponse
-    {
+    public function confirm(
+        Request $request,
+        Event $event,
+        CheckInService $checkInService
+    ): JsonResponse {
         $validated = $request->validate([
             'invitee_id' => ['required', 'integer'],
             'guest_count' => ['required', 'integer', 'min:1'],
+            'checkin_method' => [
+                'nullable',
+                'string',
+                'in:qr,manual,serial,phone,name,gate_scanner',
+            ],
         ]);
 
-        return DB::transaction(function () use ($validated, $event) {
-            $invitee = Invitee::query()
-                ->with('cardType')
-                ->where('event_id', $event->id)
-                ->where('id', $validated['invitee_id'])
-                ->lockForUpdate()
-                ->first();
+        $invitee = Invitee::query()
+            ->with(['event', 'cardType'])
+            ->where('event_id', $event->id)
+            ->whereKey($validated['invitee_id'])
+            ->first();
 
-            if (! $invitee) {
-                return response()->json([
-                    'status' => 'error',
-                    'title' => 'Invitee Not Found',
-                    'message' => 'This invitee does not belong to the selected event.',
-                ], 404);
-            }
-
-            $validationMessage = $this->validateInviteeForGate($invitee);
-
-            $allowedGuests = $this->allowedGuests($invitee);
-            $confirmedGuests = $this->confirmedGuests($invitee);
-            $gateLimit = $this->gateGuestLimit($invitee);
-            $checkedInCount = (int) ($invitee->checked_in_count ?? 0);
-            $remainingGuests = max($gateLimit - $checkedInCount, 0);
-            $guestCount = (int) $validated['guest_count'];
-
-            if ($validationMessage) {
-                return response()->json([
-                    'status' => 'error',
-                    'title' => 'Check-in Not Allowed',
-                    'message' => $validationMessage,
-                    'invitee' => $this->inviteePayload(
-                        invitee: $invitee,
-                        allowedGuests: $allowedGuests,
-                        confirmedGuests: $confirmedGuests,
-                        gateLimit: $gateLimit,
-                        checkedInCount: $checkedInCount,
-                        remainingGuests: $remainingGuests
-                    ),
-                ], 422);
-            }
-
-            if ($remainingGuests <= 0) {
-                return response()->json([
-                    'status' => 'warning',
-                    'title' => 'Already Checked In',
-                    'message' => 'This card has already used all allowed guest entries.',
-                    'invitee' => $this->inviteePayload(
-                        invitee: $invitee,
-                        allowedGuests: $allowedGuests,
-                        confirmedGuests: $confirmedGuests,
-                        gateLimit: $gateLimit,
-                        checkedInCount: $checkedInCount,
-                        remainingGuests: $remainingGuests
-                    ),
-                ], 422);
-            }
-
-            if ($guestCount > $remainingGuests) {
-                return response()->json([
-                    'status' => 'error',
-                    'title' => 'Guest Limit Exceeded',
-                    'message' => "Only {$remainingGuests} guest(s) remaining for this card.",
-                    'invitee' => $this->inviteePayload(
-                        invitee: $invitee,
-                        allowedGuests: $allowedGuests,
-                        confirmedGuests: $confirmedGuests,
-                        gateLimit: $gateLimit,
-                        checkedInCount: $checkedInCount,
-                        remainingGuests: $remainingGuests
-                    ),
-                ], 422);
-            }
-
-            $invitee->checked_in_count = $checkedInCount + $guestCount;
-            $invitee->checked_in_at = $invitee->checked_in_at ?? now();
-
-            $newCheckedInCount = (int) $invitee->checked_in_count;
-            $newRemainingGuests = max($gateLimit - $newCheckedInCount, 0);
-
-            if ($this->hasColumn('check_in_status')) {
-                $invitee->check_in_status = $newRemainingGuests <= 0
-                    ? 'checked_in'
-                    : 'partially_checked_in';
-            }
-
-            if ($this->hasColumn('checked_in_by') && auth()->check()) {
-                $invitee->checked_in_by = auth()->id();
-            }
-
-            $invitee->save();
-
-            $inviteePayload = $this->inviteePayload(
-                invitee: $invitee,
-                allowedGuests: $allowedGuests,
-                confirmedGuests: $confirmedGuests,
-                gateLimit: $gateLimit,
-                checkedInCount: $newCheckedInCount,
-                remainingGuests: $newRemainingGuests
-            );
-
+        if (! $invitee) {
             return response()->json([
-                'status' => 'success',
-                'title' => 'Check-in Successful',
-                'message' => "{$invitee->name} has been checked in successfully.",
-                'success_message' => [
-                    'heading' => 'Check-in Successful',
-                    'body' => "{$guestCount} guest(s) checked in successfully.",
-                    'invitee_name' => $invitee->name,
-                    'card_type' => $invitee->cardType?->name ?? 'N/A',
-                    'rsvp_status' => $this->formatStatus($invitee->rsvp_status ?? 'pending'),
-                    'confirmed_guests' => $confirmedGuests,
-                    'guests_checked_in_now' => $guestCount,
-                    'total_checked_in' => $newCheckedInCount,
-                    'allowed_guests' => $allowedGuests,
-                    'gate_limit' => $gateLimit,
-                    'remaining_guests' => $newRemainingGuests,
-                    'table_number' => $invitee->table_number ?? 'N/A',
-                    'category' => $invitee->category ?? 'N/A',
-                    'checked_in_time' => now()->format('d M Y, h:i A'),
-                ],
+                'status' => 'error',
+                'title' => 'Invitee Not Found',
+                'message' => 'This invitee does not belong to the selected event.',
+            ], 404);
+        }
+
+        $validationMessage = $this->validateInviteeForGate($invitee);
+
+        $allowedGuests = $this->allowedGuests($invitee);
+        $confirmedGuests = $this->confirmedGuests($invitee);
+        $gateLimit = $this->gateGuestLimit($invitee);
+        $checkedInCount = (int) ($invitee->checked_in_count ?? 0);
+        $remainingGuests = max($gateLimit - $checkedInCount, 0);
+        $guestCount = (int) $validated['guest_count'];
+
+        if ($validationMessage) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Check-in Not Allowed',
+                'message' => $validationMessage,
+                'invitee' => $this->inviteePayload(
+                    invitee: $invitee,
+                    allowedGuests: $allowedGuests,
+                    confirmedGuests: $confirmedGuests,
+                    gateLimit: $gateLimit,
+                    checkedInCount: $checkedInCount,
+                    remainingGuests: $remainingGuests,
+                ),
+            ], 422);
+        }
+
+        if ($remainingGuests <= 0) {
+            return response()->json([
+                'status' => 'warning',
+                'title' => 'Already Checked In',
+                'message' => 'This card has already used all allowed guest entries.',
+                'invitee' => $this->inviteePayload(
+                    invitee: $invitee,
+                    allowedGuests: $allowedGuests,
+                    confirmedGuests: $confirmedGuests,
+                    gateLimit: $gateLimit,
+                    checkedInCount: $checkedInCount,
+                    remainingGuests: $remainingGuests,
+                ),
+            ], 422);
+        }
+
+        if ($guestCount > $remainingGuests) {
+            return response()->json([
+                'status' => 'error',
+                'title' => 'Guest Limit Exceeded',
+                'message' => "Only {$remainingGuests} guest(s) remaining for this card.",
+                'invitee' => $this->inviteePayload(
+                    invitee: $invitee,
+                    allowedGuests: $allowedGuests,
+                    confirmedGuests: $confirmedGuests,
+                    gateLimit: $gateLimit,
+                    checkedInCount: $checkedInCount,
+                    remainingGuests: $remainingGuests,
+                ),
+            ], 422);
+        }
+
+        $method = $validated['checkin_method'] ?? CheckIn::METHOD_QR;
+
+        $result = $checkInService->checkIn(
+            invitee: $invitee,
+            guestsCount: $guestCount,
+            user: $request->user(),
+            method: $method,
+        );
+
+        $invitee->refresh()->loadMissing('cardType');
+
+        $newCheckedInCount = (int) ($invitee->checked_in_count ?? 0);
+        $newRemainingGuests = max($gateLimit - $newCheckedInCount, 0);
+
+        $inviteePayload = $this->inviteePayload(
+            invitee: $invitee,
+            allowedGuests: $allowedGuests,
+            confirmedGuests: $confirmedGuests,
+            gateLimit: $gateLimit,
+            checkedInCount: $newCheckedInCount,
+            remainingGuests: $newRemainingGuests,
+        );
+
+        if (! ($result['success'] ?? false)) {
+            return response()->json([
+                'status' => $this->responseStatusForServiceResult($result),
+                'title' => $result['title'] ?? 'Check-in Failed',
+                'message' => $result['message'] ?? 'The invitee could not be checked in.',
                 'invitee' => $inviteePayload,
-            ]);
-        });
+            ], $this->responseCodeForServiceResult($result));
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'title' => $result['title'] ?? 'Check-in Successful',
+            'message' => "{$invitee->name} has been checked in successfully.",
+            'check_in_id' => $result['check_in_id'] ?? null,
+            'success_message' => [
+                'heading' => 'Check-in Successful',
+                'body' => "{$guestCount} guest(s) checked in successfully.",
+                'invitee_name' => $invitee->name,
+                'card_type' => $invitee->cardType?->name ?? 'N/A',
+                'rsvp_status' => $this->formatStatus(
+                    $invitee->rsvp_status ?? 'pending',
+                ),
+                'confirmed_guests' => $confirmedGuests,
+                'guests_checked_in_now' => $guestCount,
+                'total_checked_in' => $newCheckedInCount,
+                'allowed_guests' => $allowedGuests,
+                'gate_limit' => $gateLimit,
+                'remaining_guests' => $newRemainingGuests,
+                'table_number' => $invitee->table_number ?? 'N/A',
+                'category' => $invitee->category ?? 'N/A',
+                'checked_in_time' => optional(
+                    $invitee->checked_in_at,
+                )->format('d M Y, h:i A') ?? now()->format('d M Y, h:i A'),
+            ],
+            'invitee' => $inviteePayload,
+        ]);
+    }
+
+    private function responseStatusForServiceResult(array $result): string
+    {
+        $title = strtolower((string) ($result['title'] ?? ''));
+
+        return str_contains($title, 'limit')
+            || str_contains($title, 'already')
+            || str_contains($title, 'duplicate')
+                ? 'warning'
+                : 'error';
+    }
+
+    private function responseCodeForServiceResult(array $result): int
+    {
+        return $this->responseStatusForServiceResult($result) === 'warning'
+            ? 409
+            : 422;
     }
 
     /**
@@ -368,6 +436,37 @@ class GateCheckInController extends Controller
                     $nameLike,
                 ]
             )
+            ->first();
+    }
+
+    /**
+     * Detect an exact invitation identifier that belongs to another event.
+     *
+     * Name and phone are intentionally excluded because one person may
+     * legitimately have invitations for multiple events.
+     */
+    private function findInviteeInAnotherEvent(
+        Event $currentEvent,
+        string $searchValue
+    ): ?Invitee {
+        $searchValue = trim($searchValue);
+
+        if ($searchValue === '') {
+            return null;
+        }
+
+        $tokenHash = hash('sha256', $searchValue);
+
+        return Invitee::query()
+            ->with('event')
+            ->where('event_id', '!=', $currentEvent->id)
+            ->where(function ($query) use ($searchValue, $tokenHash): void {
+                $query
+                    ->where('qr_token', $searchValue)
+                    ->orWhere('qr_token_hash', $tokenHash)
+                    ->orWhere('serial_number', $searchValue)
+                    ->orWhere('short_code', $searchValue);
+            })
             ->first();
     }
 

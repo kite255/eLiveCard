@@ -45,6 +45,7 @@ class EventResource extends Resource
     private const RELATION_MESSAGE_LOGS = 7;
     private const RELATION_SMS_LOGS = 8;
     private const RELATION_CHECK_INS = 9;
+    private const RELATION_AUDIT_LOGS = 10;
 
     public static function shouldRegisterNavigation(): bool
     {
@@ -138,9 +139,56 @@ class EventResource extends Resource
                             ->label('Status')
                             ->options(Event::statuses())
                             ->default(Event::STATUS_DRAFT)
+                            ->live()
                             ->required(),
                     ])
                     ->columns(2),
+
+                Forms\Components\Section::make('Public Event Visibility')
+                    ->description('Control whether this event is listed on the public Events page.')
+                    ->icon('heroicon-o-globe-alt')
+                    ->schema([
+                        Forms\Components\Toggle::make('is_public')
+                            ->label('Show on Public Events Page')
+                            ->helperText(function (Forms\Get $get): string {
+                                if ($get('status') === Event::STATUS_DRAFT) {
+                                    return 'Draft events cannot be published. Change the status before enabling public visibility.';
+                                }
+
+                                if ($get('status') === Event::STATUS_CANCELLED) {
+                                    return 'Cancelled events cannot be published.';
+                                }
+
+                                return 'Enable this only when the event may be visible to everyone.';
+                            })
+                            ->default(false)
+                            ->inline(false)
+                            ->live()
+                            ->disabled(fn (Forms\Get $get): bool => in_array(
+                                $get('status'),
+                                [
+                                    Event::STATUS_DRAFT,
+                                    Event::STATUS_CANCELLED,
+                                ],
+                                true
+                            ))
+                            ->dehydrated()
+                            ->afterStateHydrated(function (Forms\Components\Toggle $component, $state, Forms\Get $get): void {
+                                if (in_array(
+                                    $get('status'),
+                                    [
+                                        Event::STATUS_DRAFT,
+                                        Event::STATUS_CANCELLED,
+                                    ],
+                                    true
+                                )) {
+                                    $component->state(false);
+                                }
+                            })
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(1)
+                    ->collapsible(),
 
                 Forms\Components\Section::make('Venue and Contact Details')
                     ->description('Venue, map, dress code, program, and organizer contacts.')
@@ -403,6 +451,16 @@ class EventResource extends Resource
                                         default => 'gray',
                                     })
                                     ->icon('heroicon-o-signal'),
+
+                                Infolists\Components\TextEntry::make('is_public')
+                                    ->label('Public Visibility')
+                                    ->formatStateUsing(fn ($state): string => $state ? 'Public' : 'Private')
+                                    ->badge()
+                                    ->color(fn ($state): string => $state ? 'success' : 'gray')
+                                    ->icon(fn ($state): string => $state
+                                        ? 'heroicon-o-eye'
+                                        : 'heroicon-o-eye-slash'
+                                    ),
 
                                 Infolists\Components\TextEntry::make('event_date_display')
                                     ->label('Event Date')
@@ -672,6 +730,7 @@ class EventResource extends Resource
                             $query->whereIn('status', ['generated', 'sent']),
                         'inviteeUploads as pending_invitee_uploads_count' => fn (Builder $query): Builder =>
                             $query->where('status', 'pending'),
+                        'auditLogs',
                         'messageLogs as sms_sent_count' => fn (Builder $query): Builder =>
                             $query
                                 ->where('channel', 'sms')
@@ -865,6 +924,27 @@ class EventResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
+                Tables\Columns\TextColumn::make('audit_logs_count')
+                    ->label('Activity')
+                    ->numeric()
+                    ->badge()
+                    ->color(fn ($state): string => (int) $state > 0 ? 'info' : 'gray')
+                    ->icon('heroicon-o-shield-check')
+                    ->alignCenter()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\IconColumn::make('is_public')
+                    ->label('Public')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-eye')
+                    ->falseIcon('heroicon-o-eye-slash')
+                    ->trueColor('success')
+                    ->falseColor('gray')
+                    ->alignCenter()
+                    ->sortable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
@@ -927,6 +1007,12 @@ class EventResource extends Resource
                             );
                     }),
 
+                Tables\Filters\TernaryFilter::make('is_public')
+                    ->label('Public Visibility')
+                    ->trueLabel('Public Events')
+                    ->falseLabel('Private Events')
+                    ->placeholder('All Events'),
+
                 Tables\Filters\TernaryFilter::make('auto_sms_reminders_enabled')
                     ->label('Automatic SMS Reminders'),
 
@@ -961,6 +1047,23 @@ class EventResource extends Resource
                     ->url(fn (Event $record): string => static::getUrl('view', [
                         'record' => $record,
                         'activeRelationManager' => self::RELATION_INVITEE_UPLOADS,
+                    ])),
+
+                Tables\Actions\Action::make('activity_log')
+                    ->label('Activity Log')
+                    ->icon('heroicon-o-shield-check')
+                    ->color('gray')
+                    ->badge(fn (Event $record): ?string =>
+                        (int) $record->audit_logs_count > 0
+                            ? (string) $record->audit_logs_count
+                            : null
+                    )
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canAccessEvent($record) ?? false
+                    )
+                    ->url(fn (Event $record): string => static::getUrl('view', [
+                        'record' => $record,
+                        'activeRelationManager' => self::RELATION_AUDIT_LOGS,
                     ])),
 
                 Tables\Actions\Action::make('message_center')
@@ -1069,6 +1172,7 @@ class EventResource extends Resource
             RelationManagers\MessageLogsRelationManager::class,       // 7
             RelationManagers\SmsLogsRelationManager::class,           // 8
             RelationManagers\CheckInsRelationManager::class,          // 9
+            RelationManagers\AuditLogsRelationManager::class,         // 10
         ];
     }
 

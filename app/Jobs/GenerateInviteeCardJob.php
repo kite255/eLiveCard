@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
+use App\Services\AuditLogService;
 use App\Services\CardGenerationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -31,7 +32,7 @@ class GenerateInviteeCardJob implements ShouldQueue
     public function middleware(): array
     {
         return [
-            (new WithoutOverlapping('generate-invitee-card-' . $this->inviteeId))
+            (new WithoutOverlapping('generate-invitee-card-'.$this->inviteeId))
                 ->releaseAfter(10)
                 ->expireAfter(180),
         ];
@@ -46,6 +47,15 @@ class GenerateInviteeCardJob implements ShouldQueue
         ])->find($this->inviteeId);
 
         if (! $invitee) {
+            AuditLogService::system(
+                action: 'card_generation_invitee_missing',
+                description: 'Card generation stopped because the invitee record could not be found.',
+                metadata: [
+                    'invitee_id' => $this->inviteeId,
+                    'job' => self::class,
+                ],
+            );
+
             return;
         }
 
@@ -62,18 +72,86 @@ class GenerateInviteeCardJob implements ShouldQueue
         | pending / generating / generated / failed / sent
         */
 
+        $securityOldValues = $invitee->only([
+            'serial_number',
+            'short_code',
+            'qr_token_hash',
+            'card_status',
+            'rsvp_status',
+            'confirmed_guests',
+            'checked_in_count',
+            'allowed_guests',
+        ]);
+
         $this->prepareInviteeSecurityFields($invitee);
 
         $invitee->refresh();
+
+        $securityNewValues = $invitee->only([
+            'serial_number',
+            'short_code',
+            'qr_token_hash',
+            'card_status',
+            'rsvp_status',
+            'confirmed_guests',
+            'checked_in_count',
+            'allowed_guests',
+        ]);
+
+        if ($securityOldValues !== $securityNewValues) {
+            AuditLogService::updated(
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Invitee security and card-generation fields were prepared automatically.',
+                oldValues: $securityOldValues,
+                newValues: $securityNewValues,
+                metadata: [
+                    'source' => 'card_generation_job',
+                    'job' => self::class,
+                ],
+            );
+        }
 
         $this->ensureInviteeQrCode($invitee);
 
         $invitee->refresh();
 
-        $generatedCard = $this->prepareGeneratedCard($invitee);
+        try {
+            $generatedCard = $this->prepareGeneratedCard($invitee);
+        } catch (Throwable $exception) {
+            AuditLogService::record(
+                action: 'card_generation.template_missing',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Card generation failed because no card template was available.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'serial_number' => $invitee->serial_number,
+                    'error' => $exception->getMessage(),
+                    'attempt' => $this->attempts(),
+                ],
+            );
+
+            throw $exception;
+        }
 
         try {
             $generatedCard->markAsGenerating();
+
+            AuditLogService::record(
+                action: 'card_generation.started',
+                subject: $generatedCard,
+                eventId: $invitee->event_id,
+                description: 'Invitation card generation started.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'invitee_name' => $invitee->name,
+                    'serial_number' => $invitee->serial_number,
+                    'card_template_id' => $generatedCard->card_template_id,
+                    'attempt' => $this->attempts(),
+                    'job' => self::class,
+                ],
+            );
 
             $cardGenerationService->generateForInvitee(
                 $invitee->fresh([
@@ -82,8 +160,46 @@ class GenerateInviteeCardJob implements ShouldQueue
                     'latestGeneratedCard',
                 ])
             );
+
+            $generatedCard->refresh();
+
+            AuditLogService::record(
+                action: 'card_generation.completed',
+                subject: $generatedCard,
+                eventId: $invitee->event_id,
+                description: 'Invitation card was generated successfully.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'invitee_name' => $invitee->name,
+                    'serial_number' => $invitee->serial_number,
+                    'card_template_id' => $generatedCard->card_template_id,
+                    'status' => $generatedCard->status,
+                    'file_path' => $this->generatedCardFilePath($generatedCard),
+                    'generated_at' => $generatedCard->generated_at,
+                    'attempt' => $this->attempts(),
+                ],
+            );
         } catch (Throwable $exception) {
-            $generatedCard->fresh()?->markAsFailed();
+            $failedCard = $generatedCard->fresh();
+
+            $failedCard?->markAsFailed();
+
+            AuditLogService::record(
+                action: 'card_generation.failed',
+                subject: $failedCard ?? $generatedCard,
+                eventId: $invitee->event_id,
+                description: 'Invitation card generation failed.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'invitee_name' => $invitee->name,
+                    'serial_number' => $invitee->serial_number,
+                    'card_template_id' => $generatedCard->card_template_id,
+                    'attempt' => $this->attempts(),
+                    'max_attempts' => $this->tries,
+                    'error' => $exception->getMessage(),
+                    'exception' => $exception::class,
+                ],
+            );
 
             throw $exception;
         }
@@ -110,8 +226,6 @@ class GenerateInviteeCardJob implements ShouldQueue
         |--------------------------------------------------------------------------
         | qr_token should be the raw secure token.
         | qr_token_hash should be the hashed version used for validation.
-        |
-        | This keeps it consistent with your InviteesRelationManager.php.
         */
 
         if (blank($invitee->qr_token)) {
@@ -123,8 +237,8 @@ class GenerateInviteeCardJob implements ShouldQueue
                 $updates['qr_token_hash'] = hash('sha256', $plainToken);
             }
         } elseif (
-            $this->inviteeHasColumn($invitee, 'qr_token_hash') &&
-            blank($invitee->qr_token_hash)
+            $this->inviteeHasColumn($invitee, 'qr_token_hash')
+            && blank($invitee->qr_token_hash)
         ) {
             $updates['qr_token_hash'] = hash('sha256', $invitee->qr_token);
         }
@@ -146,7 +260,10 @@ class GenerateInviteeCardJob implements ShouldQueue
         }
 
         if (blank($invitee->allowed_guests)) {
-            $updates['allowed_guests'] = max(1, (int) ($invitee->cardType?->allowed_people ?? 1));
+            $updates['allowed_guests'] = max(
+                1,
+                (int) ($invitee->cardType?->allowed_people ?? 1)
+            );
         }
 
         if (! empty($updates)) {
@@ -160,16 +277,40 @@ class GenerateInviteeCardJob implements ShouldQueue
     private function ensureInviteeQrCode(Invitee $invitee): void
     {
         if (method_exists($invitee, 'generateQrCode')) {
+            $oldPath = $invitee->qr_code_path ?: $invitee->qr_code;
+
             $invitee->generateQrCode();
+            $invitee->refresh();
+
+            $newPath = $invitee->qr_code_path ?: $invitee->qr_code;
+
+            if ($oldPath !== $newPath || blank($oldPath)) {
+                AuditLogService::record(
+                    action: 'invitee.qr_prepared',
+                    subject: $invitee,
+                    eventId: $invitee->event_id,
+                    description: 'Invitee QR code was prepared for card generation.',
+                    metadata: [
+                        'old_qr_path' => $oldPath,
+                        'new_qr_path' => $newPath,
+                        'serial_number' => $invitee->serial_number,
+                    ],
+                );
+            }
+
             return;
         }
 
-        /*
-         * Fallback:
-         * If your Invitee model does not have generateQrCode(),
-         * CardGenerationService should still be able to use serial_number,
-         * short_code, or qr_token to generate/embed QR.
-         */
+        AuditLogService::record(
+            action: 'invitee.qr_generator_unavailable',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'The Invitee model has no generateQrCode method; card generation continued using available identifiers.',
+            metadata: [
+                'serial_number' => $invitee->serial_number,
+                'short_code' => $invitee->short_code,
+            ],
+        );
     }
 
     /**
@@ -182,7 +323,9 @@ class GenerateInviteeCardJob implements ShouldQueue
             ->first();
 
         if (! $template) {
-            throw new \Exception('No card template found for this invitee event. Please upload a card template first.');
+            throw new \Exception(
+                'No card template found for this invitee event. Please upload a card template first.'
+            );
         }
 
         return GeneratedCard::updateOrCreate(
@@ -205,7 +348,7 @@ class GenerateInviteeCardJob implements ShouldQueue
     private function generateUniqueSerialNumber(?int $eventId = null): string
     {
         do {
-            $serial = 'ELV-' . now()->year . '-' . strtoupper(Str::random(6));
+            $serial = 'ELV-'.now()->year.'-'.strtoupper(Str::random(6));
 
             $query = Invitee::where('serial_number', $serial);
 
@@ -231,19 +374,71 @@ class GenerateInviteeCardJob implements ShouldQueue
 
     private function inviteeHasColumn(Invitee $invitee, string $column): bool
     {
-        return in_array($column, $invitee->getConnection()
-            ->getSchemaBuilder()
-            ->getColumnListing($invitee->getTable()), true);
+        return in_array(
+            $column,
+            $invitee->getConnection()
+                ->getSchemaBuilder()
+                ->getColumnListing($invitee->getTable()),
+            true
+        );
+    }
+
+    private function generatedCardFilePath(GeneratedCard $generatedCard): ?string
+    {
+        foreach ([
+            'file_path',
+            'card_path',
+            'path',
+            'generated_card_path',
+        ] as $attribute) {
+            $value = $generatedCard->{$attribute} ?? null;
+
+            if (filled($value)) {
+                return (string) $value;
+            }
+        }
+
+        return null;
     }
 
     public function failed(Throwable $exception): void
     {
         $invitee = Invitee::with('latestGeneratedCard')->find($this->inviteeId);
 
-        if (! $invitee?->latestGeneratedCard) {
+        if (! $invitee) {
+            AuditLogService::system(
+                action: 'card_generation_job_failed',
+                description: 'Card generation job failed after all attempts, but the invitee record was unavailable.',
+                metadata: [
+                    'invitee_id' => $this->inviteeId,
+                    'error' => $exception->getMessage(),
+                    'exception' => $exception::class,
+                ],
+            );
+
             return;
         }
 
-        $invitee->latestGeneratedCard->markAsFailed();
+        $generatedCard = $invitee->latestGeneratedCard;
+
+        if ($generatedCard) {
+            $generatedCard->markAsFailed();
+        }
+
+        AuditLogService::record(
+            action: 'card_generation.permanently_failed',
+            subject: $generatedCard ?? $invitee,
+            eventId: $invitee->event_id,
+            description: 'Invitation card generation permanently failed after all queue attempts.',
+            metadata: [
+                'invitee_id' => $invitee->id,
+                'invitee_name' => $invitee->name,
+                'serial_number' => $invitee->serial_number,
+                'generated_card_id' => $generatedCard?->id,
+                'max_attempts' => $this->tries,
+                'error' => $exception->getMessage(),
+                'exception' => $exception::class,
+            ],
+        );
     }
 }

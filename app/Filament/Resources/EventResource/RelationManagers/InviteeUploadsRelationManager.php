@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\EventResource\RelationManagers;
 
 use App\Models\InviteeUpload;
+use App\Services\AuditLogService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -130,6 +131,9 @@ class InviteeUploadsRelationManager extends RelationManager
                             ->label('Status')
                             ->options(InviteeUpload::statuses())
                             ->default(InviteeUpload::STATUS_PENDING)
+                            ->disabled()
+                            ->dehydrated()
+                            ->helperText('Use Approve, Reject, or Mark Pending from the Manage menu to change the review status.')
                             ->required()
                             ->native(false),
                     ])
@@ -201,13 +205,9 @@ class InviteeUploadsRelationManager extends RelationManager
             )
             ->defaultSort('created_at', 'desc')
             ->columns([
-                Tables\Columns\ImageColumn::make('file_path')
-                    ->label('Photo')
-                    ->disk('public')
-                    ->height(56)
-                    ->width(56)
-                    ->square()
-                    ->defaultImageUrl(url('/images/photo-placeholder.png')),
+                Tables\Columns\ViewColumn::make('preview')
+                    ->label('Preview')
+                    ->view('filament.tables.columns.invitee-upload-preview'),
 
                 Tables\Columns\TextColumn::make('type')
                     ->label('Type')
@@ -317,6 +317,18 @@ class InviteeUploadsRelationManager extends RelationManager
                         $data['event_id'] = $this->getOwnerRecord()->id;
 
                         return $data;
+                    })
+                    ->after(function (InviteeUpload $record): void {
+                        AuditLogService::created(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: ucfirst($record->type_label).' was added manually.',
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'type' => $record->type,
+                                'source' => 'admin',
+                            ],
+                        );
                     }),
             ])
             ->actionsPosition(Tables\Enums\ActionsPosition::AfterColumns)
@@ -344,7 +356,33 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->modalSubmitActionLabel('Approve')
                     ->visible(fn (InviteeUpload $record): bool => $this->canManageSubmissions() && $record->status !== InviteeUpload::STATUS_APPROVED)
                     ->action(function (InviteeUpload $record): void {
+                        $oldValues = $record->only([
+                            'status',
+                            'approved_by',
+                            'approved_at',
+                            'rejected_at',
+                            'admin_note',
+                        ]);
+
                         $record->approve(Auth::id());
+
+                        AuditLogService::approved(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: ucfirst($record->type_label).' submission was approved.',
+                            oldValues: $oldValues,
+                            newValues: $record->only([
+                                'status',
+                                'approved_by',
+                                'approved_at',
+                                'rejected_at',
+                                'admin_note',
+                            ]),
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'type' => $record->type,
+                            ],
+                        );
 
                         Notification::make()
                             ->title('Submission approved')
@@ -370,7 +408,34 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->modalSubmitActionLabel('Reject')
                     ->visible(fn (InviteeUpload $record): bool => $this->canManageSubmissions() && $record->status !== InviteeUpload::STATUS_REJECTED)
                     ->action(function (InviteeUpload $record, array $data): void {
+                        $oldValues = $record->only([
+                            'status',
+                            'approved_by',
+                            'approved_at',
+                            'rejected_at',
+                            'admin_note',
+                        ]);
+
                         $record->reject(Auth::id(), $data['admin_note'] ?? null);
+
+                        AuditLogService::rejected(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: ucfirst($record->type_label).' submission was rejected.',
+                            oldValues: $oldValues,
+                            newValues: $record->only([
+                                'status',
+                                'approved_by',
+                                'approved_at',
+                                'rejected_at',
+                                'admin_note',
+                            ]),
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'type' => $record->type,
+                                'reason' => $data['admin_note'] ?? null,
+                            ],
+                        );
 
                         Notification::make()
                             ->title('Submission rejected')
@@ -386,7 +451,34 @@ class InviteeUploadsRelationManager extends RelationManager
                     ->requiresConfirmation()
                     ->visible(fn (InviteeUpload $record): bool => $this->canManageSubmissions() && $record->status !== InviteeUpload::STATUS_PENDING)
                     ->action(function (InviteeUpload $record): void {
+                        $oldValues = $record->only([
+                            'status',
+                            'approved_by',
+                            'approved_at',
+                            'rejected_at',
+                            'admin_note',
+                        ]);
+
                         $record->markPending();
+
+                        AuditLogService::updated(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: ucfirst($record->type_label).' submission was returned to pending.',
+                            oldValues: $oldValues,
+                            newValues: $record->only([
+                                'status',
+                                'approved_by',
+                                'approved_at',
+                                'rejected_at',
+                                'admin_note',
+                            ]),
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'type' => $record->type,
+                                'transition' => 'pending',
+                            ],
+                        );
 
                         Notification::make()
                             ->title('Submission moved to pending')
@@ -396,13 +488,136 @@ class InviteeUploadsRelationManager extends RelationManager
 
                 Tables\Actions\EditAction::make()
                     ->label('Edit')
+                    ->icon('heroicon-o-pencil-square')
                     ->color('gray')
-                    ->visible(fn (): bool => $this->canManageSubmissions()),
+                    ->requiresConfirmation()
+                    ->modalHeading('Edit Submission')
+                    ->modalDescription(
+                        'Approved public content will automatically return to Pending when the wish, caption, photo, type, or invitee is changed.'
+                    )
+                    ->modalSubmitActionLabel('Save Changes')
+                    ->visible(fn (): bool => $this->canManageSubmissions())
+                    ->using(function (InviteeUpload $record, array $data): InviteeUpload {
+                        $oldValues = $record->only([
+                            'invitee_id',
+                            'type',
+                            'message',
+                            'file_path',
+                            'status',
+                            'approved_by',
+                            'approved_at',
+                            'rejected_at',
+                            'admin_note',
+                        ]);
+
+                        $wasApproved = $record->status === InviteeUpload::STATUS_APPROVED;
+
+                        $contentFields = [
+                            'invitee_id',
+                            'type',
+                            'message',
+                            'file_path',
+                        ];
+
+                        $contentChanged = collect($contentFields)
+                            ->contains(function (string $field) use ($record, $data): bool {
+                                if (! array_key_exists($field, $data)) {
+                                    return false;
+                                }
+
+                                $currentValue = $record->getAttribute($field);
+                                $newValue = $data[$field];
+
+                                if (is_array($currentValue) || is_array($newValue)) {
+                                    return json_encode($currentValue) !== json_encode($newValue);
+                                }
+
+                                return (string) $currentValue !== (string) $newValue;
+                            });
+
+                        // Review status must only change through the dedicated,
+                        // audited Approve, Reject, and Mark Pending actions.
+                        unset($data['status']);
+
+                        if ($wasApproved && $contentChanged) {
+                            $data['status'] = InviteeUpload::STATUS_PENDING;
+                            $data['approved_by'] = null;
+                            $data['approved_at'] = null;
+                            $data['rejected_at'] = null;
+                        }
+
+                        $record->update($data);
+                        $record->refresh();
+
+                        $returnedToPending = $wasApproved
+                            && $contentChanged
+                            && $record->status === InviteeUpload::STATUS_PENDING;
+
+                        AuditLogService::updated(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: $returnedToPending
+                                ? ucfirst($record->type_label).' submission was edited and returned to pending approval.'
+                                : ucfirst($record->type_label).' submission was edited.',
+                            oldValues: $oldValues,
+                            newValues: $record->only([
+                                'invitee_id',
+                                'type',
+                                'message',
+                                'file_path',
+                                'status',
+                                'approved_by',
+                                'approved_at',
+                                'rejected_at',
+                                'admin_note',
+                            ]),
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'type' => $record->type,
+                                'content_changed' => $contentChanged,
+                                'was_approved' => $wasApproved,
+                                'returned_to_pending' => $returnedToPending,
+                                'edited_by' => Auth::id(),
+                            ],
+                        );
+
+                        Notification::make()
+                            ->title(
+                                $returnedToPending
+                                    ? 'Changes saved — approval required'
+                                    : 'Submission updated'
+                            )
+                            ->body(
+                                $returnedToPending
+                                    ? 'The approved content changed and has returned to Pending.'
+                                    : 'The submission changes were saved successfully.'
+                            )
+                            ->color($returnedToPending ? 'warning' : 'success')
+                            ->icon(
+                                $returnedToPending
+                                    ? 'heroicon-o-clock'
+                                    : 'heroicon-o-check-circle'
+                            )
+                            ->send();
+
+                        return $record;
+                    }),
 
                     Tables\Actions\DeleteAction::make()
                         ->label('Delete')
                         ->visible(fn (): bool => $this->canManageSubmissions())
                         ->before(function (InviteeUpload $record): void {
+                            AuditLogService::deleted(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: ucfirst($record->type_label).' submission was deleted.',
+                                metadata: [
+                                    'invitee_id' => $record->invitee_id,
+                                    'type' => $record->type,
+                                    'file_path' => $record->file_path,
+                                ],
+                            );
+
                             if ($record->isPhoto()) {
                                 $record->deleteStoredFile();
                             }
@@ -424,7 +639,36 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canManageSubmissions())
                         ->deselectRecordsAfterCompletion()
                         ->action(function ($records): void {
-                            $records->each(fn (InviteeUpload $record) => $record->approve(Auth::id()));
+                            $records->each(function (InviteeUpload $record): void {
+                                $oldValues = $record->only([
+                                    'status',
+                                    'approved_by',
+                                    'approved_at',
+                                    'rejected_at',
+                                    'admin_note',
+                                ]);
+
+                                $record->approve(Auth::id());
+
+                                AuditLogService::approved(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: ucfirst($record->type_label).' submission was approved in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only([
+                                        'status',
+                                        'approved_by',
+                                        'approved_at',
+                                        'rejected_at',
+                                        'admin_note',
+                                    ]),
+                                    metadata: [
+                                        'invitee_id' => $record->invitee_id,
+                                        'type' => $record->type,
+                                        'bulk_action' => true,
+                                    ],
+                                );
+                            });
 
                             Notification::make()
                                 ->title('Selected submissions approved')
@@ -440,7 +684,36 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canManageSubmissions())
                         ->deselectRecordsAfterCompletion()
                         ->action(function ($records): void {
-                            $records->each(fn (InviteeUpload $record) => $record->reject(Auth::id()));
+                            $records->each(function (InviteeUpload $record): void {
+                                $oldValues = $record->only([
+                                    'status',
+                                    'approved_by',
+                                    'approved_at',
+                                    'rejected_at',
+                                    'admin_note',
+                                ]);
+
+                                $record->reject(Auth::id());
+
+                                AuditLogService::rejected(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: ucfirst($record->type_label).' submission was rejected in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only([
+                                        'status',
+                                        'approved_by',
+                                        'approved_at',
+                                        'rejected_at',
+                                        'admin_note',
+                                    ]),
+                                    metadata: [
+                                        'invitee_id' => $record->invitee_id,
+                                        'type' => $record->type,
+                                        'bulk_action' => true,
+                                    ],
+                                );
+                            });
 
                             Notification::make()
                                 ->title('Selected submissions rejected')
@@ -452,6 +725,18 @@ class InviteeUploadsRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canManageSubmissions())
                         ->before(function ($records): void {
                             $records->each(function (InviteeUpload $record): void {
+                                AuditLogService::deleted(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: ucfirst($record->type_label).' submission was deleted in bulk.',
+                                    metadata: [
+                                        'invitee_id' => $record->invitee_id,
+                                        'type' => $record->type,
+                                        'file_path' => $record->file_path,
+                                        'bulk_action' => true,
+                                    ],
+                                );
+
                                 if ($record->isPhoto()) {
                                     $record->deleteStoredFile();
                                 }

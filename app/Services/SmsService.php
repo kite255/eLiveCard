@@ -145,6 +145,33 @@ class SmsService
             throw new \Exception('SMS message is empty.');
         }
 
+        $auditOldValues = $invitee->only([
+            'message_status',
+            'sms_status',
+            'sms_message_id',
+            'sms_sent_at',
+            'sms_error',
+            'invitation_sms_status',
+            'reminder_sms_status',
+            'final_sms_status',
+            'last_message_channel',
+        ]);
+
+        AuditLogService::record(
+            action: 'sms.send_attempted',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'SMS sending was attempted for the invitee.',
+            metadata: [
+                'sms_type' => $type,
+                'recipient' => $phone,
+                'reference' => $reference,
+                'provider' => $this->smsProvider(),
+                'driver' => config('services.sms.driver', env('SMS_DRIVER', 'log')),
+                'message_length' => mb_strlen($message),
+            ],
+        );
+
         try {
             $response = $this->send(
                 phone: $phone,
@@ -178,6 +205,36 @@ class SmsService
                 providerStatus: $response['provider_status'] ?? $status,
             );
 
+            AuditLogService::messageSent(
+                subject: $freshInvitee,
+                eventId: $freshInvitee->event_id,
+                description: $isLogDriver
+                    ? 'SMS was recorded using the log driver.'
+                    : 'SMS was accepted by the provider.',
+                oldValues: $auditOldValues,
+                newValues: $freshInvitee->only([
+                    'message_status',
+                    'sms_status',
+                    'sms_message_id',
+                    'sms_sent_at',
+                    'sms_error',
+                    'invitation_sms_status',
+                    'reminder_sms_status',
+                    'final_sms_status',
+                    'last_message_channel',
+                ]),
+                metadata: [
+                    'sms_type' => $type,
+                    'recipient' => $phone,
+                    'reference' => $reference,
+                    'provider_message_id' => $messageId,
+                    'provider' => $response['provider'] ?? $this->smsProvider(),
+                    'provider_status' => $response['provider_status'] ?? $status,
+                    'driver' => $response['driver'] ?? null,
+                    'logged_only' => $isLogDriver,
+                ],
+            );
+
             return array_merge($response, [
                 'success' => true,
                 'status' => $status,
@@ -205,6 +262,36 @@ class SmsService
                 response: null,
                 provider: $this->smsProvider(),
                 providerStatus: 'failed',
+            );
+
+            $freshInvitee = $invitee->fresh(['event', 'cardType']) ?? $invitee;
+
+            AuditLogService::record(
+                action: 'sms.failed',
+                subject: $freshInvitee,
+                eventId: $freshInvitee->event_id,
+                description: 'SMS sending failed.',
+                oldValues: $auditOldValues,
+                newValues: $freshInvitee->only([
+                    'message_status',
+                    'sms_status',
+                    'sms_message_id',
+                    'sms_sent_at',
+                    'sms_error',
+                    'invitation_sms_status',
+                    'reminder_sms_status',
+                    'final_sms_status',
+                    'last_message_channel',
+                ]),
+                metadata: [
+                    'sms_type' => $type,
+                    'recipient' => $phone,
+                    'reference' => $reference,
+                    'provider' => $this->smsProvider(),
+                    'error' => $e->getMessage(),
+                    'exception' => $e::class,
+                    'failure_category' => $this->classifySmsFailure($e->getMessage()),
+                ],
             );
 
             Log::error('eLive Card SMS failed', [
@@ -244,6 +331,17 @@ class SmsService
                 'message' => $message,
                 'reference' => $reference,
             ]);
+
+            AuditLogService::system(
+                action: 'sms.log_driver_used',
+                description: 'SMS was processed with the log driver and was not sent to a provider.',
+                metadata: [
+                    'recipient' => $phone,
+                    'reference' => $reference,
+                    'provider' => $provider,
+                    'message_length' => mb_strlen($message),
+                ],
+            );
 
             return [
                 'success' => true,
@@ -324,8 +422,38 @@ class SmsService
         }
 
         if (! $this->providerAccepted($data)) {
+            AuditLogService::system(
+                action: 'sms.provider_rejected',
+                description: 'SMS provider rejected the message.',
+                metadata: [
+                    'recipient' => $phone,
+                    'reference' => $reference,
+                    'provider' => $provider,
+                    'http_status' => $response->status(),
+                    'response' => $data,
+                ],
+            );
+
             throw new \Exception('SMS provider rejected the message: ' . Str::limit(json_encode($data), 500));
         }
+
+        AuditLogService::system(
+            action: 'sms.provider_accepted',
+            description: 'SMS provider accepted the message.',
+            metadata: [
+                'recipient' => $phone,
+                'reference' => $reference,
+                'provider' => $provider,
+                'http_status' => $response->status(),
+                'provider_message_id' => data_get($data, 'data.shootId')
+                    ?? data_get($data, 'data.shoot_id')
+                    ?? data_get($data, 'shootId')
+                    ?? data_get($data, 'shoot_id')
+                    ?? data_get($data, 'data.messageId')
+                    ?? data_get($data, 'message_id')
+                    ?? data_get($data, 'id'),
+            ],
+        );
 
         return [
             'success' => true,
@@ -687,6 +815,14 @@ class SmsService
     {
         $shootId = trim($shootId);
 
+        AuditLogService::system(
+            action: 'sms.delivery_report_requested',
+            description: 'SMS delivery report lookup was requested.',
+            metadata: [
+                'shoot_id' => $shootId,
+            ],
+        );
+
         if (blank($shootId)) {
             return [
                 'success' => false,
@@ -733,6 +869,17 @@ class SmsService
                 'error' => $exception->getMessage(),
             ]);
 
+            AuditLogService::system(
+                action: 'sms.delivery_report_failed',
+                description: 'SMS delivery report request failed.',
+                metadata: [
+                    'shoot_id' => $shootId,
+                    'url' => $url,
+                    'error' => $exception->getMessage(),
+                    'exception' => $exception::class,
+                ],
+            );
+
             return [
                 'success' => false,
                 'status' => 0,
@@ -763,6 +910,17 @@ class SmsService
                 'data' => $data,
             ];
         }
+
+        AuditLogService::system(
+            action: 'sms.delivery_report_fetched',
+            description: 'SMS delivery report was fetched successfully.',
+            metadata: [
+                'shoot_id' => $shootId,
+                'url' => $url,
+                'http_status' => $response->status(),
+                'provider_response' => $data,
+            ],
+        );
 
         return [
             'success' => true,
@@ -879,6 +1037,16 @@ class SmsService
         $now = now();
         $encodedResponse = json_encode($response);
 
+        AuditLogService::system(
+            action: 'sms.delivery_report_unavailable',
+            description: 'SMS delivery report was unavailable; the original sent status was preserved.',
+            metadata: [
+                'shoot_id' => $shootId,
+                'message' => $message,
+                'response' => $response,
+            ],
+        );
+
         foreach (['message_logs', 'sms_logs'] as $table) {
             if (! Schema::hasTable($table)) {
                 continue;
@@ -959,6 +1127,20 @@ class SmsService
         $status = $this->normalizeProviderDeliveryStatus($providerStatus, $providerStatusCode);
         $now = now();
         $reportTime = $this->providerReportTime($report) ?? $now;
+
+        AuditLogService::system(
+            action: 'sms.delivery_status_updated',
+            description: 'SMS delivery status was updated from the provider report.',
+            metadata: [
+                'shoot_id' => $shootId,
+                'provider_status' => $providerStatus,
+                'provider_status_code' => $providerStatusCode,
+                'normalized_status' => $status,
+                'mobile' => $report['mobile'] ?? $report['phone'] ?? $report['recipient'] ?? null,
+                'report_time' => $reportTime?->toDateTimeString(),
+                'report' => $report,
+            ],
+        );
 
         $update = [
             'status' => $status,
@@ -1434,4 +1616,41 @@ class SmsService
 
         return $phone;
     }
+
+    protected function classifySmsFailure(string $message): string
+    {
+        $message = Str::lower($message);
+
+        return match (true) {
+            str_contains($message, 'insufficient credit'),
+            str_contains($message, 'insufficient balance'),
+            str_contains($message, 'low balance') => 'insufficient_credit',
+
+            str_contains($message, 'invalid tanzania phone'),
+            str_contains($message, 'phone number is missing'),
+            str_contains($message, 'invalid phone') => 'invalid_phone',
+
+            str_contains($message, 'timeout'),
+            str_contains($message, 'timed out') => 'provider_timeout',
+
+            str_contains($message, 'not configured'),
+            str_contains($message, 'api key'),
+            str_contains($message, 'api secret'),
+            str_contains($message, 'sender_id'),
+            str_contains($message, 'sender id') => 'configuration_error',
+
+            str_contains($message, 'rejected') => 'provider_rejected',
+
+            str_contains($message, 'http 401'),
+            str_contains($message, 'http 403'),
+            str_contains($message, 'unauthorized'),
+            str_contains($message, 'forbidden') => 'authentication_error',
+
+            str_contains($message, 'http 429'),
+            str_contains($message, 'rate limit') => 'rate_limited',
+
+            default => 'unknown',
+        };
+    }
+
 }

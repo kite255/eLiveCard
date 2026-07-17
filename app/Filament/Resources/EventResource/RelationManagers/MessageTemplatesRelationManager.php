@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\EventResource\RelationManagers;
 
 use App\Models\MessageTemplate;
+use App\Services\AuditLogService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -12,6 +13,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class MessageTemplatesRelationManager extends RelationManager
 {
@@ -394,7 +396,23 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalDescription('Select the template first, then customize the available options.')
                     ->modalWidth('6xl')
                     ->mutateFormDataUsing(fn (array $data): array => $this->mutateTemplateData($data))
-                    ->after(fn (MessageTemplate $record): null => $this->afterTemplateSaved($record)),
+                    ->after(function (MessageTemplate $record): void {
+                        AuditLogService::created(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Message template was created.',
+                            metadata: [
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                                'status' => $record->status,
+                                'whatsapp_template_name' => $record->whatsapp_template_name,
+                                'whatsapp_language_code' => $record->whatsapp_language_code,
+                                'source' => 'filament_admin',
+                            ],
+                        );
+
+                        $this->afterTemplateSaved($record);
+                    }),
 
                 Tables\Actions\Action::make('create_default_templates')
                     ->visible(fn (): bool => $this->canManageMessages())
@@ -429,6 +447,43 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalDescription('Customize the message wording, placeholders, status, WhatsApp template name, and buttons.')
                     ->modalWidth('6xl')
                     ->mutateFormDataUsing(fn (array $data): array => $this->mutateTemplateData($data))
+                    ->using(function (MessageTemplate $record, array $data): MessageTemplate {
+                        $oldValues = $record->only([
+                            'name',
+                            'channel',
+                            'type',
+                            'status',
+                            'content',
+                            'whatsapp_template_name',
+                            'whatsapp_language_code',
+                            'whatsapp_buttons',
+                        ]);
+
+                        $record->update($data);
+                        $record->refresh();
+
+                        AuditLogService::updated(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Message template was updated.',
+                            oldValues: $oldValues,
+                            newValues: $record->only([
+                                'name',
+                                'channel',
+                                'type',
+                                'status',
+                                'content',
+                                'whatsapp_template_name',
+                                'whatsapp_language_code',
+                                'whatsapp_buttons',
+                            ]),
+                            metadata: [
+                                'source' => 'filament_admin',
+                            ],
+                        );
+
+                        return $record;
+                    })
                     ->after(fn (MessageTemplate $record): null => $this->afterTemplateSaved($record)),
 
                 Tables\Actions\Action::make('preview')
@@ -438,7 +493,21 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalWidth('4xl')
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close')
-                    ->modalContent(fn (MessageTemplate $record): HtmlString => new HtmlString($this->recordPreviewBox($record))),
+                    ->modalContent(function (MessageTemplate $record): HtmlString {
+                        AuditLogService::record(
+                            action: 'message_template.previewed',
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Message template preview was opened.',
+                            metadata: [
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                                'status' => $record->status,
+                            ],
+                        );
+
+                        return new HtmlString($this->recordPreviewBox($record));
+                    }),
 
                 Tables\Actions\Action::make('duplicate')
                     ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record))
@@ -456,6 +525,19 @@ class MessageTemplatesRelationManager extends RelationManager
                         $copy->updated_at = now();
                         $copy->save();
 
+                        AuditLogService::created(
+                            subject: $copy,
+                            eventId: $copy->event_id,
+                            description: 'Message template was duplicated.',
+                            metadata: [
+                                'source_template_id' => $record->id,
+                                'source_template_name' => $record->name,
+                                'channel' => $copy->channel,
+                                'type' => $copy->type,
+                                'status' => $copy->status,
+                            ],
+                        );
+
                         Notification::make()
                             ->title('Template duplicated')
                             ->body('An inactive copy was created. Open it and customize it.')
@@ -472,8 +554,33 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalHeading('Activate template')
                     ->modalDescription('Only one active template is kept for the same event, channel, and type.')
                     ->action(function (MessageTemplate $record): void {
+                        $oldValues = $record->only(['status']);
+
+                        $deactivatedIds = MessageTemplate::query()
+                            ->where('event_id', $record->event_id)
+                            ->where('channel', $record->channel)
+                            ->where('type', $record->type)
+                            ->where('id', '!=', $record->id)
+                            ->where('status', MessageTemplate::STATUS_ACTIVE)
+                            ->pluck('id')
+                            ->all();
+
                         $record->update(['status' => MessageTemplate::STATUS_ACTIVE]);
                         $this->deactivateOtherActiveTemplates($record);
+                        $record->refresh();
+
+                        AuditLogService::updated(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Message template was activated.',
+                            oldValues: $oldValues,
+                            newValues: $record->only(['status']),
+                            metadata: [
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                                'deactivated_template_ids' => $deactivatedIds,
+                            ],
+                        );
 
                         Notification::make()
                             ->title('Template activated')
@@ -488,7 +595,22 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->color('danger')
                     ->requiresConfirmation()
                     ->action(function (MessageTemplate $record): void {
+                        $oldValues = $record->only(['status']);
+
                         $record->update(['status' => MessageTemplate::STATUS_INACTIVE]);
+                        $record->refresh();
+
+                        AuditLogService::updated(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Message template was deactivated.',
+                            oldValues: $oldValues,
+                            newValues: $record->only(['status']),
+                            metadata: [
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                            ],
+                        );
 
                         Notification::make()
                             ->title('Template deactivated')
@@ -499,7 +621,22 @@ class MessageTemplatesRelationManager extends RelationManager
                 Tables\Actions\DeleteAction::make()
                     ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record))
                     ->label('Delete')
-                    ->icon('heroicon-o-trash'),
+                    ->icon('heroicon-o-trash')
+                    ->before(function (MessageTemplate $record): void {
+                        AuditLogService::deleted(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Message template was deleted.',
+                            metadata: [
+                                'name' => $record->name,
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                                'status' => $record->status,
+                                'whatsapp_template_name' => $record->whatsapp_template_name,
+                                'whatsapp_language_code' => $record->whatsapp_language_code,
+                            ],
+                        );
+                    }),
             ])
             ->actionsColumnLabel('Actions')
             ->bulkActions([
@@ -512,8 +649,24 @@ class MessageTemplatesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->action(function ($records): void {
                             $records->each(function (MessageTemplate $record): void {
+                                $oldValues = $record->only(['status']);
+
                                 $record->update(['status' => MessageTemplate::STATUS_ACTIVE]);
                                 $this->deactivateOtherActiveTemplates($record);
+                                $record->refresh();
+
+                                AuditLogService::updated(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Message template was activated in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only(['status']),
+                                    metadata: [
+                                        'bulk_action' => true,
+                                        'channel' => $record->channel,
+                                        'type' => $record->type,
+                                    ],
+                                );
                             });
 
                             Notification::make()
@@ -529,7 +682,25 @@ class MessageTemplatesRelationManager extends RelationManager
                         ->color('danger')
                         ->requiresConfirmation()
                         ->action(function ($records): void {
-                            $records->each->update(['status' => MessageTemplate::STATUS_INACTIVE]);
+                            $records->each(function (MessageTemplate $record): void {
+                                $oldValues = $record->only(['status']);
+
+                                $record->update(['status' => MessageTemplate::STATUS_INACTIVE]);
+                                $record->refresh();
+
+                                AuditLogService::updated(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Message template was deactivated in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only(['status']),
+                                    metadata: [
+                                        'bulk_action' => true,
+                                        'channel' => $record->channel,
+                                        'type' => $record->type,
+                                    ],
+                                );
+                            });
 
                             Notification::make()
                                 ->title('Selected templates deactivated')
@@ -538,7 +709,24 @@ class MessageTemplatesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn (): bool => $this->canManageMessages()),
+                        ->visible(fn (): bool => $this->canManageMessages())
+                        ->before(function ($records): void {
+                            $records->each(function (MessageTemplate $record): void {
+                                AuditLogService::deleted(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Message template was deleted in bulk.',
+                                    metadata: [
+                                        'bulk_action' => true,
+                                        'name' => $record->name,
+                                        'channel' => $record->channel,
+                                        'type' => $record->type,
+                                        'status' => $record->status,
+                                        'whatsapp_template_name' => $record->whatsapp_template_name,
+                                    ],
+                                );
+                            });
+                        }),
                 ]),
             ]);
     }
@@ -742,6 +930,15 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
 
         $created = $this->createDefaultTemplates();
 
+        AuditLogService::system(
+            action: 'message_templates_defaults_created',
+            description: 'Default message templates were processed.',
+            eventId: $this->getOwnerRecord()->getKey(),
+            metadata: [
+                'created_count' => $created,
+            ],
+        );
+
         Notification::make()
             ->title($created > 0 ? 'Default templates created' : 'Templates already exist')
             ->body($created > 0 ? "{$created} missing templates were created." : 'No changes were made because all default templates already exist.')
@@ -780,6 +977,18 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
             );
 
             if ($record->wasRecentlyCreated) {
+                AuditLogService::created(
+                    subject: $record,
+                    eventId: $record->event_id,
+                    description: 'Default message template was created.',
+                    metadata: [
+                        'source' => 'default_templates',
+                        'channel' => $record->channel,
+                        'type' => $record->type,
+                        'status' => $record->status,
+                    ],
+                );
+
                 $created++;
             }
         }
@@ -792,6 +1001,15 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
         $this->ensureCanManageMessages();
 
         $updated = $this->syncWhatsAppProviderTemplates();
+
+        AuditLogService::system(
+            action: 'whatsapp_provider_templates_synced',
+            description: 'WhatsApp provider templates were synchronized.',
+            eventId: $this->getOwnerRecord()->getKey(),
+            metadata: [
+                'updated_or_created' => $updated,
+            ],
+        );
 
         Notification::make()
             ->title('WhatsApp provider templates synced')
@@ -811,6 +1029,21 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
             ->filter(fn (array $template): bool => $template['channel'] === MessageTemplate::CHANNEL_WHATSAPP);
 
         foreach ($whatsappTemplates as $template) {
+            $existing = MessageTemplate::query()
+                ->where('event_id', $event->getKey())
+                ->where('channel', $template['channel'])
+                ->where('type', $template['type'])
+                ->first();
+
+            $oldValues = $existing?->only([
+                'name',
+                'content',
+                'whatsapp_template_name',
+                'whatsapp_language_code',
+                'whatsapp_buttons',
+                'status',
+            ]) ?? [];
+
             $record = MessageTemplate::updateOrCreate(
                 [
                     'event_id' => $event->getKey(),
@@ -832,6 +1065,38 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
             );
 
             $this->deactivateOtherActiveTemplates($record);
+            $record->refresh();
+
+            if ($record->wasRecentlyCreated) {
+                AuditLogService::created(
+                    subject: $record,
+                    eventId: $record->event_id,
+                    description: 'WhatsApp provider message template was created during synchronization.',
+                    metadata: [
+                        'source' => 'whatsapp_sync',
+                        'provider_template_name' => $record->whatsapp_template_name,
+                        'language_code' => $record->whatsapp_language_code,
+                    ],
+                );
+            } else {
+                AuditLogService::updated(
+                    subject: $record,
+                    eventId: $record->event_id,
+                    description: 'WhatsApp provider message template was synchronized.',
+                    oldValues: $oldValues,
+                    newValues: $record->only([
+                        'name',
+                        'content',
+                        'whatsapp_template_name',
+                        'whatsapp_language_code',
+                        'whatsapp_buttons',
+                        'status',
+                    ]),
+                    metadata: [
+                        'source' => 'whatsapp_sync',
+                    ],
+                );
+            }
 
             $updated++;
         }

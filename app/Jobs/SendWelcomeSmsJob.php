@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Invitee;
+use App\Services\AuditLogService;
 use App\Services\SmsService;
 use App\Support\EliveMessagePlaceholders;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -32,7 +33,7 @@ class SendWelcomeSmsJob implements ShouldQueue
     public function middleware(): array
     {
         return [
-            (new WithoutOverlapping('welcome-sms-invitee-' . $this->inviteeId))
+            (new WithoutOverlapping('welcome-sms-invitee-'.$this->inviteeId))
                 ->releaseAfter(10)
                 ->expireAfter(120),
         ];
@@ -49,16 +50,51 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'invitee_id' => $this->inviteeId,
             ]);
 
+            AuditLogService::system(
+                action: 'welcome_sms.invitee_missing',
+                description: 'Welcome SMS job stopped because the invitee could not be found.',
+                metadata: [
+                    'invitee_id' => $this->inviteeId,
+                    'attempt' => $this->attempts(),
+                    'job' => self::class,
+                ],
+            );
+
             return;
         }
 
         $event = $invitee->event;
+
+        AuditLogService::record(
+            action: 'welcome_sms.job_started',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'Welcome SMS queue job started.',
+            metadata: [
+                'invitee_id' => $invitee->id,
+                'invitee_name' => $invitee->name,
+                'attempt' => $this->attempts(),
+                'max_attempts' => $this->tries,
+                'job' => self::class,
+            ],
+        );
 
         if (! $event) {
             Log::warning('Welcome SMS skipped because event was not found.', [
                 'invitee_id' => $invitee->id,
                 'event_id' => $invitee->event_id,
             ]);
+
+            AuditLogService::record(
+                action: 'welcome_sms.event_missing',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Welcome SMS was skipped because the event could not be found.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'attempt' => $this->attempts(),
+                ],
+            );
 
             return;
         }
@@ -69,6 +105,18 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'event_id' => $event->id,
             ]);
 
+            AuditLogService::record(
+                action: 'welcome_sms.disabled',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Welcome SMS was skipped because it is disabled for this event.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'event_id' => $event->id,
+                    'attempt' => $this->attempts(),
+                ],
+            );
+
             return;
         }
 
@@ -76,7 +124,7 @@ class SendWelcomeSmsJob implements ShouldQueue
         $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
 
         if (blank($invitee->phone)) {
-            $this->recordSmsLog(
+            $smsLogId = $this->recordSmsLog(
                 invitee: $invitee,
                 message: $message,
                 status: 'failed',
@@ -88,6 +136,18 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'event_id' => $event->id,
             ]);
 
+            AuditLogService::record(
+                action: 'welcome_sms.phone_missing',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Welcome SMS failed because the invitee phone number is empty.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'sms_log_id' => $smsLogId,
+                    'message_length' => mb_strlen($message),
+                ],
+            );
+
             return;
         }
 
@@ -96,6 +156,17 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'invitee_id' => $invitee->id,
                 'event_id' => $event->id,
             ]);
+
+            AuditLogService::record(
+                action: 'welcome_sms.duplicate_prevented',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Duplicate welcome SMS was prevented.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'phone' => $invitee->phone,
+                ],
+            );
 
             return;
         }
@@ -124,8 +195,29 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'status' => $status,
                 'message_id' => $result['message_id'] ?? null,
             ]);
+
+            AuditLogService::messageSent(
+                subject: $invitee,
+                eventId: $event->id,
+                description: $status === 'logged'
+                    ? 'Welcome SMS was processed using the log driver.'
+                    : 'Welcome SMS was sent successfully.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'invitee_name' => $invitee->name,
+                    'phone' => $invitee->phone,
+                    'sms_type' => 'welcome_sms',
+                    'status' => $status,
+                    'message_id' => $result['message_id'] ?? null,
+                    'provider' => $result['provider'] ?? null,
+                    'provider_status' => $result['provider_status'] ?? $status,
+                    'driver' => $result['driver'] ?? null,
+                    'attempt' => $this->attempts(),
+                    'message_length' => mb_strlen($message),
+                ],
+            );
         } catch (Throwable $exception) {
-            $this->recordSmsLog(
+            $smsLogId = $this->recordSmsLog(
                 invitee: $invitee,
                 message: $message,
                 status: 'failed',
@@ -137,6 +229,24 @@ class SendWelcomeSmsJob implements ShouldQueue
                 'event_id' => $event->id,
                 'error' => $exception->getMessage(),
             ]);
+
+            AuditLogService::record(
+                action: 'welcome_sms.job_failed',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Welcome SMS queue job failed.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'invitee_name' => $invitee->name,
+                    'phone' => $invitee->phone,
+                    'sms_log_id' => $smsLogId,
+                    'attempt' => $this->attempts(),
+                    'max_attempts' => $this->tries,
+                    'error' => $exception->getMessage(),
+                    'exception' => $exception::class,
+                    'failure_category' => $this->classifyFailure($exception->getMessage()),
+                ],
+            );
 
             throw $exception;
         }
@@ -232,11 +342,70 @@ class SendWelcomeSmsJob implements ShouldQueue
         return (int) DB::table('sms_logs')->insertGetId($insertable);
     }
 
+    protected function classifyFailure(string $message): string
+    {
+        $message = strtolower($message);
+
+        return match (true) {
+            str_contains($message, 'insufficient credit'),
+            str_contains($message, 'insufficient balance') => 'insufficient_credit',
+
+            str_contains($message, 'phone number'),
+            str_contains($message, 'invalid phone') => 'invalid_phone',
+
+            str_contains($message, 'timeout'),
+            str_contains($message, 'timed out') => 'provider_timeout',
+
+            str_contains($message, 'not configured'),
+            str_contains($message, 'api key'),
+            str_contains($message, 'api secret') => 'configuration_error',
+
+            str_contains($message, 'rejected') => 'provider_rejected',
+
+            default => 'unknown',
+        };
+    }
+
     public function failed(?Throwable $exception): void
     {
         Log::error('SendWelcomeSmsJob permanently failed.', [
             'invitee_id' => $this->inviteeId,
             'error' => $exception?->getMessage(),
         ]);
+
+        $invitee = Invitee::query()
+            ->with('event')
+            ->find($this->inviteeId);
+
+        if (! $invitee) {
+            AuditLogService::system(
+                action: 'welcome_sms.permanently_failed',
+                description: 'Welcome SMS job permanently failed, but the invitee record was unavailable.',
+                metadata: [
+                    'invitee_id' => $this->inviteeId,
+                    'max_attempts' => $this->tries,
+                    'error' => $exception?->getMessage(),
+                    'exception' => $exception ? $exception::class : null,
+                ],
+            );
+
+            return;
+        }
+
+        AuditLogService::record(
+            action: 'welcome_sms.permanently_failed',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'Welcome SMS job permanently failed after all queue attempts.',
+            metadata: [
+                'invitee_id' => $invitee->id,
+                'invitee_name' => $invitee->name,
+                'phone' => $invitee->phone,
+                'max_attempts' => $this->tries,
+                'error' => $exception?->getMessage(),
+                'exception' => $exception ? $exception::class : null,
+                'failure_category' => $this->classifyFailure((string) $exception?->getMessage()),
+            ],
+        );
     }
 }

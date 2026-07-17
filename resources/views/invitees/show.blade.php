@@ -5,24 +5,26 @@
 
     $event = $event ?? $invitee->event ?? null;
 
-    $eventName = $event->name ?? $event->title ?? 'eLive Event';
-    $eventDate = $event->event_date ?? $event->date ?? null;
-    $eventTime = $event->start_time ?? $event->time ?? null;
-    $eventEndTime = $event->end_time ?? null;
+    $eventName = $event?->title
+        ?? $event?->name
+        ?? 'eLive Event';
+    $eventDate = $event?->event_date ?? $event?->date ?? null;
+    $eventTime = $event?->start_time ?? $event?->time ?? null;
+    $eventEndTime = $event?->end_time ?? null;
 
     $formattedDate = $eventDate ? Carbon::parse($eventDate)->format('d M Y') : 'Date will be shared';
     $formattedTime = $eventTime ? Carbon::parse($eventTime)->format('h:i A') : 'Time will be shared';
     $formattedEndTime = $eventEndTime ? Carbon::parse($eventEndTime)->format('h:i A') : null;
     $timeDisplay = $formattedEndTime ? $formattedTime . ' - ' . $formattedEndTime : $formattedTime;
 
-    $venue = $event->venue_name
-        ?? $event->venue
-        ?? $event->location
+    $venue = $event?->venue_name
+        ?? $event?->venue
+        ?? $event?->location
         ?? 'Venue will be shared';
 
-    $venueAddress = $event->venue_address ?? null;
-    $dressCode = $event->dress_code ?? null;
-    $googleMapsLink = $event->google_maps_link ?? $event->map_link ?? null;
+    $venueAddress = $event?->venue_address ?? null;
+    $dressCode = $event?->dress_code ?? null;
+    $googleMapsLink = $event?->google_maps_link ?? $event?->map_link ?? null;
 
     $cardTypeName = $invitee->cardType->name ?? $invitee->card_type ?? $invitee->card_type_name ?? 'Invitation';
 
@@ -166,20 +168,60 @@
         $coverImageUrl = Storage::disk('public')->url($event->cover_image);
     }
 
-    $showCoverImage = (bool) ($event->show_cover_image ?? true);
-    $showLoveStory = (bool) ($event->show_love_story ?? false);
-    $showProgram = (bool) ($event->show_program ?? true);
-    $showCountdown = (bool) ($event->show_countdown ?? true);
-    $showWishes = (bool) ($event->show_wishes ?? true);
-    $showPhotoUpload = (bool) ($event->show_photo_upload ?? true);
-    $showOrganizerContact = (bool) ($event->show_organizer_contact ?? true);
+    $showCoverImage = (bool) (
+        $showCoverImage
+        ?? $event?->show_cover_image
+        ?? true
+    );
 
-    $logoUrl = asset('images/elive-card-logo.png');
-    $canSubmitWish = Route::has('invitee.wish');
-    $canSubmitPhoto = Route::has('invitee.photo');
+    $showLoveStory = (bool) (
+        $showLoveStory
+        ?? $event?->show_love_story
+        ?? false
+    );
+
+    $showProgram = (bool) (
+        $showProgram
+        ?? $event?->show_program
+        ?? true
+    );
+
+    $showCountdown = (bool) (
+        $showCountdown
+        ?? $event?->show_countdown
+        ?? true
+    );
+
+    $showWishes = (bool) (
+        $showWishes
+        ?? $event?->show_wishes
+        ?? true
+    );
+
+    $showPhotoUpload = (bool) (
+        $showPhotoUpload
+        ?? $event?->show_photo_upload
+        ?? true
+    );
+
+    $showOrganizerContact = (bool) (
+        $showOrganizerContact
+        ?? $event?->show_organizer_contact
+        ?? true
+    );
+
+    $logoUrl = asset('images/elive-cardw-logo.png');
+
+    $canSubmitWish = $showWishes
+        && Route::has('invitee.wish');
+
+    $canSubmitPhoto = $showPhotoUpload
+        && Route::has('invitee.photo');
 
     $approvedWishes = collect($approvedWishes ?? []);
+    $myWishes = collect($myWishes ?? []);
     $approvedPhotos = collect($approvedPhotos ?? []);
+    $myPhotos = collect($myPhotos ?? []);
 @endphp
 
 <!DOCTYPE html>
@@ -190,7 +232,10 @@
     <title>{{ $eventName }} - Invitation</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#213B73">
+    <meta name="robots" content="noindex,nofollow,noarchive">
+    <meta name="description" content="Private invitation for {{ $eventName }}">
 
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
@@ -212,10 +257,7 @@
 
         body {
             margin: 0;
-            background:
-                radial-gradient(circle at top left, rgba(253, 150, 24, 0.14), transparent 28%),
-                radial-gradient(circle at top right, rgba(33, 59, 115, 0.14), transparent 28%),
-                var(--elive-bg);
+            background: var(--elive-bg);
             color: var(--elive-dark);
         }
 
@@ -264,9 +306,7 @@
         }
 
         .hero-card {
-            background:
-                linear-gradient(135deg, rgba(33, 59, 115, 0.98), rgba(33, 59, 115, 0.9)),
-                radial-gradient(circle at bottom right, rgba(253, 150, 24, 0.5), transparent 34%);
+            background: var(--elive-blue);
         }
 
         .btn {
@@ -284,6 +324,31 @@
 
         .btn:active {
             transform: scale(0.985);
+        }
+
+        .btn:focus-visible,
+        a:focus-visible,
+        button:focus-visible,
+        input:focus-visible,
+        textarea:focus-visible,
+        select:focus-visible {
+            outline: 3px solid rgba(253, 150, 24, 0.45);
+            outline-offset: 3px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            html {
+                scroll-behavior: auto;
+            }
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+                scroll-behavior: auto !important;
+            }
         }
 
         .section-title {
@@ -336,12 +401,6 @@
         }
 
         @media (max-width: 520px) {
-            body {
-                background:
-                    radial-gradient(circle at top left, rgba(253, 150, 24, 0.10), transparent 30%),
-                    var(--elive-bg);
-            }
-
             .sticky-rsvp .page-shell {
                 gap: 0.75rem;
             }
@@ -459,9 +518,9 @@
 <header class="sticky top-0 z-40 border-b border-white/10 bg-[#213B73] shadow-sm">
     <div class="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:px-6 sm:py-3 lg:px-8">
         <div class="flex min-w-0 items-center gap-3 sm:gap-4">
-            <a href="{{ route('invitee.page', $invitee->short_code) }}" class="flex shrink-0 items-center">
+            <a href="#top" class="flex shrink-0 items-center" aria-label="Back to invitation top">
                 <img
-                    src="{{ asset('images/elive-cardw-logo.png') }}"
+                    src="{{ $logoUrl }}"
                     alt="eLive Card"
                     class="h-7 w-auto sm:h-8"
                 >
@@ -560,9 +619,10 @@
             @if ($showCoverImage && $coverImageUrl)
                 <img
                     src="{{ $coverImageUrl }}"
-                    alt="{{ $eventName }}"
+                    alt="Cover image for {{ $eventName }}"
                     class="h-40 w-full object-cover sm:h-56"
-                    loading="lazy"
+                    loading="eager"
+                    decoding="async"
                 >
             @endif
 
@@ -615,7 +675,12 @@
             </div>
         @endif
 
-        <form method="POST" action="{{ route('invitee.rsvp', $invitee->short_code) }}" class="mt-5 space-y-4">
+        <form
+            method="POST"
+            action="{{ route('invitee.rsvp', $invitee->short_code) }}"
+            class="mt-5 space-y-4"
+            aria-label="RSVP form"
+        >
             @csrf
 
             <div class="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -720,7 +785,13 @@
 
         @if ($generatedCardUrl)
             <div class="mt-5 overflow-hidden rounded-[24px] bg-slate-50 ring-1 ring-slate-200">
-                <img src="{{ $generatedCardUrl }}" alt="Invitation Card" class="h-auto w-full object-cover" loading="lazy">
+                <img
+                    src="{{ $generatedCardUrl }}"
+                    alt="Personalized invitation card for {{ $invitee->name }}"
+                    class="h-auto w-full object-contain"
+                    loading="lazy"
+                    decoding="async"
+                >
             </div>
 
             <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -818,14 +889,19 @@
         </div>
 
         @if ($googleMapsLink)
-            <a href="{{ $googleMapsLink }}" target="_blank" class="btn mt-4 w-full bg-[#213B73] text-white">
+            <a
+                href="{{ $googleMapsLink }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn mt-4 w-full bg-[#213B73] text-white"
+            >
                 Open Venue Location
             </a>
         @endif
     </section>
 
     {{-- Countdown --}}
-    @if ($showCountdown)
+    @if ($showCountdown && $countdownTarget)
         <section class="mt-4 rounded-[28px] bg-[#213B73] p-5 text-white shadow-xl shadow-blue-950/10">
             <div class="flex items-start justify-between gap-3">
                 <div>
@@ -833,8 +909,11 @@
                     <p class="mt-1 text-sm text-white/65">Event starts in</p>
                 </div>
 
-                <span class="rounded-2xl bg-[#FD9618] px-3 py-2 text-xs font-black text-white">
-                    {{ $formattedDate }}
+                <span class="rounded-2xl bg-[#FD9618] px-3 py-2 text-right text-xs font-black text-white">
+                    <span class="block">{{ $formattedDate }}</span>
+                    <span class="mt-0.5 block text-[11px] text-white/85">
+                        {{ $timeDisplay }}
+                    </span>
                 </span>
             </div>
 
@@ -906,6 +985,117 @@
         </section>
     @endif
 
+    {{-- Invitee's Own Wishes --}}
+    @if ($showWishes && $myWishes->isNotEmpty())
+        <section class="soft-card mt-4 rounded-[28px] p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                        Your Submissions
+                    </p>
+
+                    <h2 class="section-title mt-1">
+                        Your Wishes
+                    </h2>
+
+                    <p class="mt-1 text-sm muted">
+                        Pending wishes can be edited before the organizer approves them.
+                    </p>
+                </div>
+
+                <span class="shrink-0 rounded-full bg-[#213B73]/10 px-3 py-1 text-xs font-black text-[#213B73]">
+                    {{ $myWishes->count() }}
+                </span>
+            </div>
+
+            <div class="mt-5 space-y-4">
+                @foreach ($myWishes as $myWish)
+                    @php
+                        $myWishStatus = $myWish->status ?? 'pending';
+
+                        $myWishStatusLabel = match ($myWishStatus) {
+                            'approved' => 'Approved',
+                            'rejected' => 'Rejected',
+                            default => 'Pending',
+                        };
+
+                        $myWishStatusClasses = match ($myWishStatus) {
+                            'approved' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                            'rejected' => 'border-red-200 bg-red-50 text-red-700',
+                            default => 'border-orange-200 bg-orange-50 text-orange-700',
+                        };
+                    @endphp
+
+                    <article class="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-bold text-slate-400">
+                                    Submitted {{ optional($myWish->created_at)->format('d M Y, h:i A') }}
+                                </p>
+                            </div>
+
+                            <span class="shrink-0 rounded-full border px-3 py-1 text-[11px] font-black {{ $myWishStatusClasses }}">
+                                {{ $myWishStatusLabel }}
+                            </span>
+                        </div>
+
+                        @if ($myWishStatus === 'pending' && Route::has('invitee.wish.update'))
+                            <form
+                                method="POST"
+                                action="{{ route('invitee.wish.update', [
+                                    'shortCode' => $invitee->short_code,
+                                    'wish' => $myWish,
+                                ]) }}"
+                                class="mt-4 space-y-3"
+                            >
+                                @csrf
+                                @method('PUT')
+
+                                <label
+                                    for="wish-message-{{ $myWish->id }}"
+                                    class="block text-sm font-black text-slate-700"
+                                >
+                                    Edit Wish
+                                </label>
+
+                                <textarea
+                                    id="wish-message-{{ $myWish->id }}"
+                                    name="message"
+                                    rows="4"
+                                    required
+                                    minlength="3"
+                                    maxlength="1000"
+                                    class="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
+                                >{{ old('message', $myWish->message) }}</textarea>
+
+                                <button
+                                    type="submit"
+                                    class="btn w-full bg-[#213B73] text-white"
+                                >
+                                    Save Wish Changes
+                                </button>
+                            </form>
+                        @else
+                            <p class="mt-4 whitespace-pre-line text-sm font-semibold leading-7 text-slate-700">
+                                {{ $myWish->message }}
+                            </p>
+
+                            @if ($myWishStatus === 'approved')
+                                <p class="mt-3 text-xs font-bold text-emerald-700">
+                                    This wish has been approved and can no longer be edited.
+                                </p>
+                            @elseif ($myWishStatus === 'rejected')
+                                <p class="mt-3 text-xs font-bold text-red-700">
+                                    This wish was reviewed and can no longer be edited.
+                                </p>
+                            @endif
+                        @endif
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
+
     {{-- Wishes --}}
     @if ($showWishes)
         <section class="soft-card mt-4 rounded-[28px] p-5">
@@ -924,7 +1114,8 @@
                                name="name"
                                value="{{ old('name', $invitee->name) }}"
                                class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
-                               placeholder="Your name">
+                               placeholder="Your name"
+                               autocomplete="name">
                     </div>
 
                     <div>
@@ -934,6 +1125,8 @@
                                   name="message"
                                   rows="4"
                                   required
+                                  minlength="3"
+                                  maxlength="1000"
                                   class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
                                   placeholder="Write your wishes here...">{{ old('message') }}</textarea>
                     </div>
@@ -995,6 +1188,193 @@
         </section>
     @endif
 
+    {{-- Invitee's Own Photos --}}
+    @if ($showPhotoUpload && $myPhotos->isNotEmpty())
+        <section class="soft-card mt-4 rounded-[28px] p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                        Your Submissions
+                    </p>
+
+                    <h2 class="section-title mt-1">
+                        Your Photos
+                    </h2>
+
+                    <p class="mt-1 text-sm muted">
+                        Pending photos can be replaced, updated, or deleted before approval.
+                    </p>
+                </div>
+
+                <span class="shrink-0 rounded-full bg-[#213B73]/10 px-3 py-1 text-xs font-black text-[#213B73]">
+                    {{ $myPhotos->count() }}
+                </span>
+            </div>
+
+            <div class="mt-5 space-y-5">
+                @foreach ($myPhotos as $myPhoto)
+                    @php
+                        $myPhotoStatus = $myPhoto->status ?? 'pending';
+
+                        $myPhotoStatusLabel = match ($myPhotoStatus) {
+                            'approved' => 'Approved',
+                            'rejected' => 'Rejected',
+                            default => 'Pending',
+                        };
+
+                        $myPhotoStatusClasses = match ($myPhotoStatus) {
+                            'approved' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                            'rejected' => 'border-red-200 bg-red-50 text-red-700',
+                            default => 'border-orange-200 bg-orange-50 text-orange-700',
+                        };
+
+                        $myPhotoUrl = $myPhoto->file_url ?? (
+                            filled($myPhoto->file_path)
+                                ? Storage::disk('public')->url($myPhoto->file_path)
+                                : null
+                        );
+                    @endphp
+
+                    <article class="overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50">
+                        @if ($myPhotoUrl)
+                            <a
+                                href="{{ $myPhotoUrl }}"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="block overflow-hidden bg-slate-100"
+                            >
+                                <img
+                                    src="{{ $myPhotoUrl }}"
+                                    alt="{{ $myPhoto->message ?: 'Your submitted event photo' }}"
+                                    class="h-56 w-full object-cover sm:h-72"
+                                    loading="lazy"
+                                    decoding="async"
+                                >
+                            </a>
+                        @endif
+
+                        <div class="p-4">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <p class="text-xs font-bold text-slate-400">
+                                        Submitted {{ optional($myPhoto->created_at)->format('d M Y, h:i A') }}
+                                    </p>
+                                </div>
+
+                                <span class="shrink-0 rounded-full border px-3 py-1 text-[11px] font-black {{ $myPhotoStatusClasses }}">
+                                    {{ $myPhotoStatusLabel }}
+                                </span>
+                            </div>
+
+                            @if (
+                                $myPhotoStatus === 'pending'
+                                && Route::has('invitee.photo.update')
+                            )
+                                <form
+                                    method="POST"
+                                    action="{{ route('invitee.photo.update', [
+                                        'shortCode' => $invitee->short_code,
+                                        'photo' => $myPhoto,
+                                    ]) }}"
+                                    enctype="multipart/form-data"
+                                    class="mt-4 space-y-4"
+                                >
+                                    @csrf
+                                    @method('PUT')
+
+                                    <div>
+                                        <label
+                                            for="photo-caption-{{ $myPhoto->id }}"
+                                            class="block text-sm font-black text-slate-700"
+                                        >
+                                            Edit Caption
+                                        </label>
+
+                                        <input
+                                            id="photo-caption-{{ $myPhoto->id }}"
+                                            type="text"
+                                            name="caption"
+                                            value="{{ old('caption', $myPhoto->message) }}"
+                                            maxlength="255"
+                                            class="mt-2 w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
+                                            placeholder="Optional caption"
+                                        >
+                                    </div>
+
+                                    <div>
+                                        <label
+                                            for="replacement-photo-{{ $myPhoto->id }}"
+                                            class="block text-sm font-black text-slate-700"
+                                        >
+                                            Replace Photo
+                                        </label>
+
+                                        <input
+                                            id="replacement-photo-{{ $myPhoto->id }}"
+                                            type="file"
+                                            name="photo"
+                                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                                            class="mt-2 w-full rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 outline-none focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
+                                        >
+
+                                        <p class="mt-2 text-xs font-semibold text-slate-500">
+                                            Leave this empty to update only the caption. Maximum file size: 5MB.
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        class="btn w-full bg-[#213B73] text-white"
+                                    >
+                                        Save Photo Changes
+                                    </button>
+                                </form>
+
+                                @if (Route::has('invitee.photo.delete'))
+                                    <form
+                                        method="POST"
+                                        action="{{ route('invitee.photo.delete', [
+                                            'shortCode' => $invitee->short_code,
+                                            'photo' => $myPhoto,
+                                        ]) }}"
+                                        class="mt-3"
+                                        onsubmit="return confirm('Delete this pending photo? This action cannot be undone.');"
+                                    >
+                                        @csrf
+                                        @method('DELETE')
+
+                                        <button
+                                            type="submit"
+                                            class="btn w-full bg-white text-red-700 ring-1 ring-red-200"
+                                        >
+                                            Delete Pending Photo
+                                        </button>
+                                    </form>
+                                @endif
+                            @else
+                                @if (filled($myPhoto->message))
+                                    <p class="mt-4 text-sm font-semibold leading-6 text-slate-700">
+                                        {{ $myPhoto->message }}
+                                    </p>
+                                @endif
+
+                                @if ($myPhotoStatus === 'approved')
+                                    <p class="mt-3 text-xs font-bold text-emerald-700">
+                                        This photo has been approved and can no longer be edited or deleted.
+                                    </p>
+                                @elseif ($myPhotoStatus === 'rejected')
+                                    <p class="mt-3 text-xs font-bold text-red-700">
+                                        This photo was reviewed and can no longer be edited or deleted.
+                                    </p>
+                                @endif
+                            @endif
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
+
     {{-- Photo Upload --}}
     @if ($showPhotoUpload)
         <section class="soft-card mt-4 rounded-[28px] p-5">
@@ -1021,7 +1401,7 @@
                             id="photo"
                             type="file"
                             name="photo"
-                            accept="image/*"
+                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                             required
                             class="mt-2 w-full rounded-[20px] border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-[#213B73]/15"
                         >
@@ -1095,6 +1475,7 @@
                                 src="{{ $photo->file_url }}"
                                 alt="{{ $photo->message ?: 'Approved event photo' }}"
                                 loading="lazy"
+                                decoding="async"
                             >
                         </a>
 
@@ -1131,12 +1512,17 @@
 
             @if ($organizerPhone)
                 <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <a href="tel:{{ $organizerPhoneClean }}" class="btn bg-[#213B73] text-white">
+                    <a href="tel:{{ $organizerPhoneClean }}" class="btn bg-[#213B73] text-white" rel="nofollow">
                         Call Organizer
                     </a>
 
                     @if ($whatsAppOrganizerUrl)
-                        <a href="{{ $whatsAppOrganizerUrl }}" target="_blank" class="btn bg-emerald-600 text-white">
+                        <a
+                            href="{{ $whatsAppOrganizerUrl }}"
+                            target="_blank"
+                            rel="noopener noreferrer nofollow"
+                            class="btn bg-emerald-600 text-white"
+                        >
                             WhatsApp Organizer
                         </a>
                     @endif

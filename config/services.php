@@ -41,12 +41,12 @@ return [
     | Use SMS_DRIVER=log while testing locally.
     | Use SMS_DRIVER=http when connecting to the real SMS provider.
     |
-    | This block is used for sending SMS.
-    |
     */
 
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
+
+        'provider' => env('SMS_PROVIDER', 'eLive SMS'),
 
         'api_url' => env(
             'SMS_API_URL',
@@ -54,26 +54,23 @@ return [
         ),
 
         'api_key' => env('SMS_API_KEY'),
+
         'api_secret' => env('SMS_API_SECRET'),
 
-        'sender_id' => env('SMS_SENDER_ID', 'eLiveCard'),
+        'sender_id' => env('SMS_SENDER_ID', 'eLive Card'),
 
         'timeout' => (int) env('SMS_TIMEOUT', 30),
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | eLive SMS Provider API
+    | eLive SMS Provider
     |--------------------------------------------------------------------------
     |
-    | This block is used for SMS balance checking and delivery reports.
-    | The provider expects api_key and api_secret request headers.
+    | The provider expects these headers:
     |
-    | Delivery report:
-    | GET /delivery/{shootId}
-    |
-    | Balance:
-    | GET /balance
+    | api_key
+    | api_secret
     |
     */
 
@@ -93,9 +90,64 @@ return [
             env('SMS_API_SECRET')
         ),
 
+        'delivery_report_path' => env(
+            'ELIVE_SMS_DELIVERY_REPORT_PATH',
+            '/deliver/{shootId}'
+        ),
+
+        'balance_path' => env(
+            'ELIVE_SMS_BALANCE_PATH',
+            '/balance'
+        ),
+
         'timeout' => (int) env(
             'ELIVE_SMS_TIMEOUT',
             env('SMS_TIMEOUT', 30)
+        ),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | SMS Balance
+    |--------------------------------------------------------------------------
+    |
+    | Used by the dashboard SMS Balance card.
+    |
+    */
+
+    'sms_balance' => [
+        'url' => env(
+            'SMS_BALANCE_URL',
+            rtrim(
+                env(
+                    'ELIVE_SMS_BASE_URL',
+                    'https://message.elive.co.tz/api/v1/vendor/message'
+                ),
+                '/'
+            ).'/balance'
+        ),
+
+        'method' => env('SMS_BALANCE_METHOD', 'get'),
+
+        'api_key' => env(
+            'SMS_BALANCE_API_KEY',
+            env(
+                'ELIVE_SMS_API_KEY',
+                env('SMS_API_KEY')
+            )
+        ),
+
+        'api_secret' => env(
+            'SMS_BALANCE_API_SECRET',
+            env(
+                'ELIVE_SMS_API_SECRET',
+                env('SMS_API_SECRET')
+            )
+        ),
+
+        'timeout' => (int) env(
+            'SMS_BALANCE_TIMEOUT',
+            env('ELIVE_SMS_TIMEOUT', env('SMS_TIMEOUT', 30))
         ),
     ],
 
@@ -109,17 +161,9 @@ return [
     | log       - Records payloads in Laravel logs without calling Meta.
     | cloud_api - Sends real WhatsApp messages using Meta Cloud API.
     |
-    | Never commit the access token, app secret, or webhook verify token.
-    |
     */
 
     'whatsapp' => [
-
-        /*
-        |--------------------------------------------------------------------------
-        | Driver and status
-        |--------------------------------------------------------------------------
-        */
 
         'enabled' => filter_var(
             env('WHATSAPP_ENABLED', false),
@@ -150,10 +194,6 @@ return [
         |--------------------------------------------------------------------------
         | API settings
         |--------------------------------------------------------------------------
-        |
-        | Keep the API version configurable because Meta retires older Graph API
-        | versions over time.
-        |
         */
 
         'api_version' => env('WHATSAPP_API_VERSION', 'v25.0'),
@@ -187,7 +227,7 @@ return [
 
         /*
         |--------------------------------------------------------------------------
-        | Template language
+        | Template configuration
         |--------------------------------------------------------------------------
         */
 
@@ -195,12 +235,6 @@ return [
             'WHATSAPP_TEMPLATE_LANGUAGE',
             'sw'
         ),
-
-        /*
-        |--------------------------------------------------------------------------
-        | WhatsApp templates
-        |--------------------------------------------------------------------------
-        */
 
         'templates' => [
             'invitation' => env(
@@ -223,16 +257,6 @@ return [
                 'elive_event_day'
             ),
         ],
-
-        /*
-        |--------------------------------------------------------------------------
-        | Default template header
-        |--------------------------------------------------------------------------
-        |
-        | Supported values:
-        | none, image, document, video
-        |
-        */
 
         'invitation_header_type' => env(
             'WHATSAPP_INVITATION_HEADER_TYPE',

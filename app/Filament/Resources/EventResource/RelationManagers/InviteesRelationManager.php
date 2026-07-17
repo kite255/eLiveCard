@@ -9,6 +9,7 @@ use App\Models\CardType;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
+use App\Services\AuditLogService;
 use App\Services\MessageTemplateRenderer;
 use App\Services\SmsService;
 use Filament\Forms;
@@ -792,6 +793,17 @@ class InviteesRelationManager extends RelationManager
 
                         $invitee = Invitee::create($preparedData);
 
+                        AuditLogService::created(
+                            subject: $invitee,
+                            eventId: $invitee->event_id,
+                            description: 'Invitee was added manually.',
+                            metadata: [
+                                'source' => 'manual',
+                                'card_type_id' => $invitee->card_type_id,
+                                'allowed_guests' => $invitee->allowed_guests,
+                            ],
+                        );
+
                         $this->queueAutomaticCardGeneration($invitee);
 
                         Notification::make()
@@ -849,6 +861,18 @@ class InviteesRelationManager extends RelationManager
                                 $failed++;
                             }
                         }
+
+                        AuditLogService::system(
+                            action: 'cards_generate_missing',
+                            description: 'Missing invitation card generation was processed.',
+                            eventId: $event->id,
+                            metadata: [
+                                'queued' => $queued,
+                                'already_generated' => $skippedGenerated,
+                                'already_generating' => $skippedGenerating,
+                                'failed' => $failed,
+                            ],
+                        );
 
                         Notification::make()
                             ->title($queued > 0 ? 'Card generation started' : 'No missing cards')
@@ -1094,6 +1118,16 @@ class InviteesRelationManager extends RelationManager
 
                         $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
 
+                        AuditLogService::exported(
+                            subject: $event,
+                            eventId: $event->id,
+                            description: 'Invitees report was exported.',
+                            metadata: [
+                                'report' => 'invitees',
+                                'format' => 'xlsx',
+                            ],
+                        );
+
                         return Excel::download(
                             new EventInviteesExport((int) $event->id),
                             $eventName . '-invitees-report.xlsx'
@@ -1109,6 +1143,16 @@ class InviteesRelationManager extends RelationManager
                         $event = $this->getOwnerRecord();
 
                         $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        AuditLogService::exported(
+                            subject: $event,
+                            eventId: $event->id,
+                            description: 'RSVP report was exported.',
+                            metadata: [
+                                'report' => 'rsvp',
+                                'format' => 'xlsx',
+                            ],
+                        );
 
                         return Excel::download(
                             new EventRsvpExport((int) $event->id),
@@ -1286,8 +1330,40 @@ class InviteesRelationManager extends RelationManager
 
                             $originalData = $record->only($cardSensitiveFields);
 
+                            $auditOldValues = $record->only([
+                                'name',
+                                'phone',
+                                'email',
+                                'card_type_id',
+                                'allowed_guests',
+                                'category',
+                                'table_number',
+                                'rsvp_status',
+                                'confirmed_guests',
+                                'card_status',
+                            ]);
+
                             $record->update($data);
                             $record->refresh();
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee details were updated.',
+                                oldValues: $auditOldValues,
+                                newValues: $record->only([
+                                    'name',
+                                    'phone',
+                                    'email',
+                                    'card_type_id',
+                                    'allowed_guests',
+                                    'category',
+                                    'table_number',
+                                    'rsvp_status',
+                                    'confirmed_guests',
+                                    'card_status',
+                                ]),
+                            );
 
                             $shouldRegenerateCard = collect($cardSensitiveFields)
                                 ->contains(fn (string $field): bool => ($originalData[$field] ?? null) != ($record->{$field} ?? null));
@@ -1325,6 +1401,16 @@ class InviteesRelationManager extends RelationManager
 
                             $this->queueAutomaticCardGeneration($record, true);
 
+                            AuditLogService::record(
+                                action: 'invitee.card_generation_queued',
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitation card generation or regeneration was queued.',
+                                metadata: [
+                                    'force_regenerate' => true,
+                                ],
+                            );
+
                             Notification::make()
                                 ->title('Card generation started')
                                 ->body('Click Refresh Status after a few seconds to update the Card Gen column from Generating to Generated.')
@@ -1348,6 +1434,13 @@ class InviteesRelationManager extends RelationManager
                         ->visible(fn (Invitee $record): bool => $this->canGenerateCardsForOwner() && $record->latestGeneratedCard?->status === GeneratedCard::STATUS_FAILED)
                         ->action(function (Invitee $record): void {
                             $this->queueAutomaticCardGeneration($record, true);
+
+                            AuditLogService::record(
+                                action: 'invitee.card_generation_retried',
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Failed invitation card generation was retried.',
+                            );
 
                             Notification::make()
                                 ->title('Card generation restarted')
@@ -1428,6 +1521,19 @@ class InviteesRelationManager extends RelationManager
                                     : null,
                             );
 
+                            AuditLogService::record(
+                                action: 'invitee.message_'.$result['status'],
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: ucfirst((string) $data['channel']).' message action was processed for the invitee.',
+                                metadata: [
+                                    'channel' => $data['channel'],
+                                    'template_type' => $data['template_type'],
+                                    'status' => $result['status'] ?? null,
+                                    'message_template_id' => $data['message_template_id'] ?? null,
+                                ],
+                            );
+
                             $notification = Notification::make()
                                 ->title($result['title'])
                                 ->body($result['body'])
@@ -1450,12 +1556,30 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
-                        ->action(function ($record) {
+                        ->action(function (Invitee $record): void {
+                            $oldValues = $record->only([
+                                'rsvp_status',
+                                'rsvp_confirmed_at',
+                                'confirmed_guests',
+                            ]);
+
                             $record->update([
                                 'rsvp_status' => Invitee::RSVP_ATTENDING,
                                 'rsvp_confirmed_at' => now(),
                                 'confirmed_guests' => max(1, (int) ($record->confirmed_guests ?: 1)),
                             ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee RSVP was marked as attending.',
+                                oldValues: $oldValues,
+                                newValues: $record->only([
+                                    'rsvp_status',
+                                    'rsvp_confirmed_at',
+                                    'confirmed_guests',
+                                ]),
+                            );
 
                             Notification::make()
                                 ->title('Invitee marked as attending')
@@ -1469,12 +1593,30 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->requiresConfirmation()
-                        ->action(function ($record) {
+                        ->action(function (Invitee $record): void {
+                            $oldValues = $record->only([
+                                'rsvp_status',
+                                'rsvp_confirmed_at',
+                                'confirmed_guests',
+                            ]);
+
                             $record->update([
                                 'rsvp_status' => Invitee::RSVP_NOT_ATTENDING,
                                 'rsvp_confirmed_at' => now(),
                                 'confirmed_guests' => 0,
                             ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee RSVP was marked as not attending.',
+                                oldValues: $oldValues,
+                                newValues: $record->only([
+                                    'rsvp_status',
+                                    'rsvp_confirmed_at',
+                                    'confirmed_guests',
+                                ]),
+                            );
 
                             Notification::make()
                                 ->title('Invitee marked as not attending')
@@ -1488,12 +1630,30 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-arrow-path')
                         ->color('warning')
                         ->requiresConfirmation()
-                        ->action(function ($record) {
+                        ->action(function (Invitee $record): void {
+                            $oldValues = $record->only([
+                                'rsvp_status',
+                                'rsvp_confirmed_at',
+                                'confirmed_guests',
+                            ]);
+
                             $record->update([
                                 'rsvp_status' => Invitee::RSVP_PENDING,
                                 'rsvp_confirmed_at' => null,
                                 'confirmed_guests' => 0,
                             ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee RSVP was reset to pending.',
+                                oldValues: $oldValues,
+                                newValues: $record->only([
+                                    'rsvp_status',
+                                    'rsvp_confirmed_at',
+                                    'confirmed_guests',
+                                ]),
+                            );
 
                             Notification::make()
                                 ->title('RSVP reset to pending')
@@ -1510,9 +1670,19 @@ class InviteesRelationManager extends RelationManager
                         ->modalHeading('Cancel Invitee')
                         ->modalDescription('This keeps the invitee record but blocks the card from being used.')
                         ->action(function (Invitee $record): void {
+                            $oldValues = $record->only(['card_status']);
+
                             $record->update([
                                 'card_status' => Invitee::CARD_STATUS_CANCELLED,
                             ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee card was cancelled.',
+                                oldValues: $oldValues,
+                                newValues: $record->only(['card_status']),
+                            );
 
                             Notification::make()
                                 ->title('Invitee cancelled successfully')
@@ -1530,6 +1700,16 @@ class InviteesRelationManager extends RelationManager
                         ->modalDescription('Use this only for test invitees. For real invitees, use Cancel Invitee instead.')
                         ->action(function (Invitee $record): void {
                             try {
+                                AuditLogService::deleted(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Invitee was deleted.',
+                                    metadata: [
+                                        'serial_number' => $record->serial_number,
+                                        'phone' => $record->phone,
+                                    ],
+                                );
+
                                 $record->delete();
 
                                 Notification::make()
@@ -1598,6 +1778,17 @@ class InviteesRelationManager extends RelationManager
                                     $failed++;
                                 }
                             }
+
+                            AuditLogService::system(
+                                action: 'invitee_qr_regeneration',
+                                description: 'Selected invitee QR code regeneration was processed.',
+                                eventId: $this->getOwnerRecord()->id,
+                                metadata: [
+                                    'regenerated' => $regenerated,
+                                    'skipped' => $skipped,
+                                    'failed' => $failed,
+                                ],
+                            );
 
                             Notification::make()
                                 ->title('QR regeneration completed')
@@ -1748,6 +1939,18 @@ class InviteesRelationManager extends RelationManager
                                 }
                             }
 
+                            AuditLogService::system(
+                                action: 'selected_cards_generate_missing',
+                                description: 'Missing cards for selected invitees were processed.',
+                                eventId: $this->getOwnerRecord()->id,
+                                metadata: [
+                                    'queued' => $queued,
+                                    'already_generated' => $skippedGenerated,
+                                    'already_generating' => $skippedGenerating,
+                                    'failed' => $failed,
+                                ],
+                            );
+
                             Notification::make()
                                 ->title($queued > 0 ? 'Missing selected cards queued' : 'No missing selected cards')
                                 ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
@@ -1790,6 +1993,17 @@ class InviteesRelationManager extends RelationManager
                                 }
                             }
 
+                            AuditLogService::system(
+                                action: 'selected_cards_regenerated',
+                                description: 'Selected invitation cards were queued for regeneration.',
+                                eventId: $this->getOwnerRecord()->id,
+                                metadata: [
+                                    'queued' => $queued,
+                                    'already_generating' => $skippedGenerating,
+                                    'failed' => $failed,
+                                ],
+                            );
+
                             Notification::make()
                                 ->title('Selected card regeneration started')
                                 ->body("Queued: {$queued}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
@@ -1819,6 +2033,16 @@ class InviteesRelationManager extends RelationManager
                                 $marked++;
                             }
 
+                            AuditLogService::system(
+                                action: 'generated_cards_marked_sent',
+                                description: 'Generated cards were marked as sent.',
+                                eventId: $this->getOwnerRecord()->id,
+                                metadata: [
+                                    'marked' => $marked,
+                                    'skipped' => $skipped,
+                                ],
+                            );
+
                             Notification::make()
                                 ->title('Cards marked as sent')
                                 ->body($marked . ' card(s) marked as sent. ' . $skipped . ' skipped because they have no generated card.')
@@ -1833,12 +2057,31 @@ class InviteesRelationManager extends RelationManager
                         ->color('success')
                         ->requiresConfirmation()
                         ->action(function ($records) {
-                            $records->each(function ($record) {
+                            $records->each(function (Invitee $record): void {
+                                $oldValues = $record->only([
+                                    'rsvp_status',
+                                    'rsvp_confirmed_at',
+                                    'confirmed_guests',
+                                ]);
+
                                 $record->update([
                                     'rsvp_status' => Invitee::RSVP_ATTENDING,
                                     'rsvp_confirmed_at' => now(),
                                     'confirmed_guests' => max(1, (int) ($record->confirmed_guests ?: 1)),
                                 ]);
+
+                                AuditLogService::updated(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Invitee RSVP was marked as attending in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only([
+                                        'rsvp_status',
+                                        'rsvp_confirmed_at',
+                                        'confirmed_guests',
+                                    ]),
+                                    metadata: ['bulk_action' => true],
+                                );
                             });
 
                             Notification::make()
@@ -1854,12 +2097,31 @@ class InviteesRelationManager extends RelationManager
                         ->color('warning')
                         ->requiresConfirmation()
                         ->action(function ($records) {
-                            $records->each(function ($record) {
+                            $records->each(function (Invitee $record): void {
+                                $oldValues = $record->only([
+                                    'rsvp_status',
+                                    'rsvp_confirmed_at',
+                                    'confirmed_guests',
+                                ]);
+
                                 $record->update([
                                     'rsvp_status' => Invitee::RSVP_PENDING,
                                     'rsvp_confirmed_at' => null,
                                     'confirmed_guests' => 0,
                                 ]);
+
+                                AuditLogService::updated(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Invitee RSVP was reset in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only([
+                                        'rsvp_status',
+                                        'rsvp_confirmed_at',
+                                        'confirmed_guests',
+                                    ]),
+                                    metadata: ['bulk_action' => true],
+                                );
                             });
 
                             Notification::make()
@@ -1875,10 +2137,21 @@ class InviteesRelationManager extends RelationManager
                         ->color('warning')
                         ->requiresConfirmation()
                         ->action(function ($records) {
-                            $records->each(function ($record) {
+                            $records->each(function (Invitee $record): void {
+                                $oldValues = $record->only(['card_status']);
+
                                 $record->update([
                                     'card_status' => Invitee::CARD_STATUS_CANCELLED,
                                 ]);
+
+                                AuditLogService::updated(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Invitee was cancelled in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only(['card_status']),
+                                    metadata: ['bulk_action' => true],
+                                );
                             });
 
                             Notification::make()
@@ -1899,6 +2172,17 @@ class InviteesRelationManager extends RelationManager
 
                             foreach ($records as $record) {
                                 try {
+                                    AuditLogService::deleted(
+                                        subject: $record,
+                                        eventId: $record->event_id,
+                                        description: 'Invitee was deleted in bulk.',
+                                        metadata: [
+                                            'bulk_action' => true,
+                                            'serial_number' => $record->serial_number,
+                                            'phone' => $record->phone,
+                                        ],
+                                    );
+
                                     $record->delete();
                                     $deleted++;
                                 } catch (Throwable $e) {
@@ -1983,6 +2267,19 @@ class InviteesRelationManager extends RelationManager
                                     $failed++;
                                 }
                             }
+
+                            AuditLogService::system(
+                                action: 'selected_messages_processed',
+                                description: 'Messages to selected invitees were processed.',
+                                eventId: $this->getOwnerRecord()->id,
+                                metadata: [
+                                    'channel' => $data['channel'],
+                                    'template_type' => $data['template_type'],
+                                    'sent_or_recorded' => $sent,
+                                    'skipped' => $skipped,
+                                    'failed' => $failed,
+                                ],
+                            );
 
                             Notification::make()
                                 ->title('Selected messages processed')
@@ -2319,6 +2616,21 @@ class InviteesRelationManager extends RelationManager
         if (! empty($failedExamples)) {
             $body .= "\n\nFirst errors:\n" . implode("\n", $failedExamples);
         }
+
+        AuditLogService::system(
+            action: 'event_messages_processed',
+            description: $actionTitle,
+            eventId: $event->id,
+            metadata: [
+                'channel' => $channel,
+                'template_type' => $templateType,
+                'recipient_scope' => $recipientScope,
+                'message_template_id' => $messageTemplateId,
+                'sent_or_recorded' => $sent,
+                'skipped' => $skipped,
+                'failed' => $failed,
+            ],
+        );
 
         Notification::make()
             ->title($actionTitle)
@@ -3512,6 +3824,17 @@ class InviteesRelationManager extends RelationManager
                 'table_number' => $data['table_number'] ?? null,
             ]));
 
+            AuditLogService::created(
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Invitee was imported from Excel.',
+                metadata: [
+                    'source' => 'excel',
+                    'row_number' => $rowNumber,
+                    'card_type_id' => $invitee->card_type_id,
+                ],
+            );
+
             $this->queueAutomaticCardGeneration($invitee);
 
             $created++;
@@ -3526,6 +3849,17 @@ class InviteesRelationManager extends RelationManager
                 $message .= "\n...and more.";
             }
         }
+
+        AuditLogService::system(
+            action: 'invitees_excel_imported',
+            description: 'Invitee Excel import was completed.',
+            eventId: $eventId,
+            metadata: [
+                'created' => $created,
+                'skipped' => $skipped,
+                'error_count' => count($errors),
+            ],
+        );
 
         Notification::make()
             ->title('Excel import completed')

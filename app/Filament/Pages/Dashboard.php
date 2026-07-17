@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class Dashboard extends Page
@@ -114,18 +115,36 @@ class Dashboard extends Page
 
         // Feature 3: combined SMS and WhatsApp overview.
         $whatsAppTotal = $this->countWhatsAppMessages();
+
+        // Keep message states mutually exclusive so totals are not overstated.
         $whatsAppSent = $this->countWhatsAppByStatus([
+            'accepted',
+            'submitted',
             'sent',
-            'delivered',
-            'read',
-            'replied',
             'success',
         ]);
-        $whatsAppDelivered = $this->countWhatsAppByStatus(['delivered', 'read']);
-        $whatsAppRead = $this->countWhatsAppByStatus(['read']);
-        $whatsAppReplied = $this->countWhatsAppByStatus(['replied']);
-        $whatsAppFailed = $this->countWhatsAppByStatus(['failed', 'error']);
-        $whatsAppPending = $this->countWhatsAppByStatus(['pending', 'queued']);
+        $whatsAppDelivered = $this->countWhatsAppByStatus([
+            'delivered',
+        ]);
+        $whatsAppRead = $this->countWhatsAppByStatus([
+            'read',
+        ]);
+        $whatsAppReplied = $this->countWhatsAppByStatus([
+            'replied',
+        ]);
+        $whatsAppFailed = $this->countWhatsAppByStatus([
+            'failed',
+            'error',
+            'rejected',
+            'undelivered',
+            'expired',
+        ]);
+        $whatsAppPending = $this->countWhatsAppByStatus([
+            'pending',
+            'queued',
+            'processing',
+            'sending',
+        ]);
 
         // Feature 4: guest attendance and live check-in.
         $totalAllowedGuests = $this->sumAllowedGuests();
@@ -185,10 +204,11 @@ class Dashboard extends Page
             'smsBalance' => $this->getSmsBalance(),
 
             'smsTotal' => $this->countSms(),
+            // These groups are mutually exclusive to avoid double counting.
             'smsSent' => $this->countSmsByStatus([
-                'sent',
-                'delivered',
+                'accepted',
                 'submitted',
+                'sent',
                 'success',
             ]),
             'smsDelivered' => $this->countSmsByStatus([
@@ -197,10 +217,15 @@ class Dashboard extends Page
             'smsFailed' => $this->countSmsByStatus([
                 'failed',
                 'error',
+                'rejected',
+                'undelivered',
+                'expired',
             ]),
             'smsPending' => $this->countSmsByStatus([
                 'pending',
                 'queued',
+                'processing',
+                'sending',
             ]),
 
             'invitationSms' => $this->countSmsByType([
@@ -822,7 +847,13 @@ class Dashboard extends Page
             if (Schema::hasTable('check_ins')) {
                 $query = $this->checkInQuery();
 
-                foreach (['guest_count', 'guests_count', 'checked_in_count', 'quantity'] as $column) {
+                foreach ([
+                    'guest_count',
+                    'guests_count',
+                    'guests_checked_in',
+                    'checked_in_count',
+                    'quantity',
+                ] as $column) {
                     if (Schema::hasColumn('check_ins', $column)) {
                         return (int) $query->sum($column);
                     }
@@ -940,6 +971,7 @@ class Dashboard extends Page
             return $records->map(function ($record) use ($invitees, $dateColumn) {
                 $guestCount = $record->guest_count
                     ?? $record->guests_count
+                    ?? $record->guests_checked_in
                     ?? $record->checked_in_count
                     ?? $record->quantity
                     ?? 1;
@@ -950,6 +982,7 @@ class Dashboard extends Page
                     'guest_count' => (int) $guestCount,
                     'method' => $record->method
                         ?? $record->check_in_method
+                        ?? $record->checkin_method
                         ?? 'manual',
                     'status' => $record->status ?? 'successful',
                     'gate' => $record->gate_name
@@ -1216,48 +1249,55 @@ class Dashboard extends Page
             function (): string {
                 try {
                     $url = config('services.sms_balance.url');
+                    $apiKey = config('services.sms_balance.api_key');
+                    $apiSecret = config('services.sms_balance.api_secret');
+                    $timeout = (int) config('services.sms_balance.timeout', 30);
 
-                    if (blank($url)) {
-                        return 'N/A';
+                    if (blank($url) || blank($apiKey) || blank($apiSecret)) {
+                        return 'Not configured';
                     }
 
-                    $request = Http::timeout(10);
-
-                    $token = config('services.sms_balance.token');
-                    $username = config('services.sms_balance.username');
-                    $password = config('services.sms_balance.password');
-
-                    if (filled($token)) {
-                        $request = $request->withToken($token);
-                    }
-
-                    if (filled($username) && filled($password)) {
-                        $request = $request->withBasicAuth(
-                            $username,
-                            $password,
-                        );
-                    }
-
-                    $response = $request->get($url);
+                    $response = Http::timeout($timeout)
+                        ->retry(2, 300, throw: false)
+                        ->acceptJson()
+                        ->withHeaders([
+                            'api_key' => (string) $apiKey,
+                            'api_secret' => (string) $apiSecret,
+                        ])
+                        ->get($url);
 
                     if (! $response->successful()) {
+                        Log::warning('SMS balance request failed', [
+                            'status' => $response->status(),
+                            'body' => str($response->body())
+                                ->limit(500)
+                                ->toString(),
+                        ]);
+
                         return 'Unavailable';
                     }
 
-                    $data = $response->json();
+                    $payload = $response->json();
 
-                    $balance = $data['balance']
-                        ?? $data['sms_balance']
-                        ?? $data['credits']
-                        ?? $data['credit']
-                        ?? $data['remaining']
-                        ?? null;
+                    // eLive returns the balance as data.totalSms.
+                    // Read that exact field first so the response code (200)
+                    // is never mistaken for the SMS balance.
+                    $balance = data_get($payload, 'data.totalSms')
+                        ?? data_get($payload, 'data.total_sms')
+                        ?? $this->extractSmsBalance($payload);
 
                     if ($balance === null) {
+                        Log::warning(
+                            'SMS balance value was not found in provider response',
+                            [
+                                'response' => $response->json(),
+                            ],
+                        );
+
                         return 'Check provider';
                     }
 
-                    return number_format((float) $balance);
+                    return number_format((float) $balance, 0);
                 } catch (\Throwable $e) {
                     report($e);
 
@@ -1266,4 +1306,47 @@ class Dashboard extends Page
             },
         );
     }
+
+    protected function extractSmsBalance(mixed $data): int|float|string|null
+    {
+        if (is_numeric($data)) {
+            return $data;
+        }
+
+        if (! is_array($data)) {
+            return null;
+        }
+
+      foreach ([
+    'balance',
+    'sms_balance',
+    'totalSms',
+    'total_sms',
+    'credits',
+    'credit',
+    'remaining',
+    'remaining_balance',
+    'available_balance',
+] as $key) {
+            if (array_key_exists($key, $data) && is_numeric($data[$key])) {
+                return $data[$key];
+            }
+        }
+
+        foreach ($data as $key => $value) {
+            // Ignore HTTP/provider metadata such as code => 200.
+            if (in_array((string) $key, ['code', 'status', 'status_code'], true)) {
+                continue;
+            }
+
+            $balance = $this->extractSmsBalance($value);
+
+            if ($balance !== null) {
+                return $balance;
+            }
+        }
+
+        return null;
+    }
+
 }

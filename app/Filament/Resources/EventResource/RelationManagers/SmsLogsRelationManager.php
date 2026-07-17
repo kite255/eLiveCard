@@ -3,12 +3,14 @@
 namespace App\Filament\Resources\EventResource\RelationManagers;
 
 use App\Models\SmsLog;
+use App\Services\AuditLogService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 class SmsLogsRelationManager extends RelationManager
 {
@@ -19,6 +21,33 @@ class SmsLogsRelationManager extends RelationManager
     protected static ?string $modelLabel = 'SMS Log';
 
     protected static ?string $pluralModelLabel = 'SMS Logs';
+
+    public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (
+            method_exists($user, 'isEventAdmin')
+            && $user->isEventAdmin()
+            && (int) ($ownerRecord->user_id ?? 0) === (int) $user->id
+        ) {
+            return true;
+        }
+
+        if (method_exists($user, 'canAccessEvent')) {
+            return (bool) $user->canAccessEvent($ownerRecord);
+        }
+
+        return $user->can('view', $ownerRecord);
+    }
 
     public function form(Form $form): Form
     {
@@ -42,6 +71,14 @@ class SmsLogsRelationManager extends RelationManager
                             ->label('Status')
                             ->disabled(),
 
+                        Forms\Components\TextInput::make('provider_status')
+                            ->label('Provider Status')
+                            ->disabled(),
+
+                        Forms\Components\TextInput::make('send_source')
+                            ->label('Send Source')
+                            ->disabled(),
+
                         Forms\Components\TextInput::make('provider_message_id')
                             ->label('Provider Message ID')
                             ->disabled()
@@ -51,6 +88,16 @@ class SmsLogsRelationManager extends RelationManager
                             ->label('Message')
                             ->rows(6)
                             ->disabled()
+                            ->columnSpanFull(),
+
+                        Forms\Components\Textarea::make('provider_response')
+                            ->label('Provider Response')
+                            ->rows(5)
+                            ->disabled()
+                            ->visible(
+                                fn (?SmsLog $record): bool =>
+                                    filled($record?->provider_response)
+                            )
                             ->columnSpanFull(),
 
                         Forms\Components\Textarea::make('error_message')
@@ -70,7 +117,14 @@ class SmsLogsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->heading('SMS Delivery Logs')
+            ->description('Review invitation, reminder, welcome, and other SMS delivery records for this event.')
             ->recordTitleAttribute('phone')
+            ->searchPlaceholder('Search invitee, phone, provider ID, message, status, or error')
+            ->searchDebounce('500ms')
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => $query
                     ->with('invitee')
@@ -192,6 +246,29 @@ class SmsLogsRelationManager extends RelationManager
                     )
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('provider_status')
+                    ->label('Provider Status')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn (?string $state): string => str($state ?: '-')
+                            ->replace('_', ' ')
+                            ->title()
+                            ->toString()
+                    )
+                    ->color(
+                        fn (?string $state): string => match (strtolower((string) $state)) {
+                            'delivered', 'success', 'operator submitted' => 'success',
+                            'accepted', 'submitted' => 'info',
+                            'queued', 'pending', 'processing' => 'warning',
+                            'failed', 'rejected', 'undelivered' => 'danger',
+                            default => 'gray',
+                        }
+                    )
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('message')
                     ->label('Message')
                     ->limit(70)
@@ -219,6 +296,24 @@ class SmsLogsRelationManager extends RelationManager
                         fn (SmsLog $record): ?string =>
                             $record->error_message
                     )
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('send_source')
+                    ->label('Source')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn (?string $state): string => str($state ?: '-')
+                            ->replace('_', ' ')
+                            ->title()
+                            ->toString()
+                    )
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('batch_id')
+                    ->label('Batch ID')
+                    ->copyable()
+                    ->placeholder('-')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('sent_at')
@@ -284,11 +379,57 @@ class SmsLogsRelationManager extends RelationManager
                                 'rejected',
                             ])
                     ),
+
+                Tables\Filters\Filter::make('today')
+                    ->label('Today')
+                    ->query(
+                        fn (Builder $query): Builder =>
+                            $query->whereDate('created_at', today())
+                    ),
+
+                Tables\Filters\Filter::make('date_range')
+                    ->label('Date Range')
+                    ->form([
+                        Forms\Components\DatePicker::make('from')
+                            ->label('From'),
+                        Forms\Components\DatePicker::make('until')
+                            ->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['from'] ?? null,
+                                fn (Builder $query, $date): Builder =>
+                                    $query->whereDate('created_at', '>=', $date)
+                            )
+                            ->when(
+                                $data['until'] ?? null,
+                                fn (Builder $query, $date): Builder =>
+                                    $query->whereDate('created_at', '<=', $date)
+                            );
+                    }),
             ])
+            ->filtersFormColumns(3)
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->label('View')
-                    ->icon('heroicon-o-eye'),
+                    ->label('View Details')
+                    ->icon('heroicon-o-eye')
+                    ->modalHeading(fn (SmsLog $record): string => 'SMS Log: '.($record->phone ?: 'Unknown'))
+                    ->after(function (SmsLog $record): void {
+                        AuditLogService::record(
+                            action: 'sms_log.viewed',
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'SMS delivery log was viewed.',
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'sms_type' => $record->sms_type,
+                                'status' => $record->status,
+                                'provider_status' => $record->provider_status,
+                                'provider_message_id' => $record->provider_message_id,
+                            ],
+                        );
+                    }),
             ])
             ->bulkActions([])
             ->defaultSort('created_at', 'desc')

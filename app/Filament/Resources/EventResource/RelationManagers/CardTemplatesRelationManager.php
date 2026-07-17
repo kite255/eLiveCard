@@ -4,6 +4,7 @@ namespace App\Filament\Resources\EventResource\RelationManagers;
 
 use App\Models\CardTemplate;
 use App\Models\CardTemplatePlaceholder;
+use App\Services\AuditLogService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -233,6 +234,21 @@ class CardTemplatesRelationManager extends RelationManager
 
                         return $data;
                     })
+                    ->after(function (CardTemplate $record): void {
+                        AuditLogService::created(
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Card template was uploaded.',
+                            metadata: [
+                                'name' => $record->name,
+                                'status' => $record->status,
+                                'width' => $record->width,
+                                'height' => $record->height,
+                                'template_image' => $record->template_image,
+                                'source' => 'filament_admin',
+                            ],
+                        );
+                    })
                     ->successNotificationTitle('Card template uploaded successfully'),
             ])
             ->actions([
@@ -257,6 +273,37 @@ class CardTemplatesRelationManager extends RelationManager
 
                             return $data;
                         })
+                        ->using(function (CardTemplate $record, array $data): CardTemplate {
+                            $oldValues = $record->only([
+                                'name',
+                                'template_image',
+                                'width',
+                                'height',
+                                'status',
+                            ]);
+
+                            $record->update($data);
+                            $record->refresh();
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Card template details were updated.',
+                                oldValues: $oldValues,
+                                newValues: $record->only([
+                                    'name',
+                                    'template_image',
+                                    'width',
+                                    'height',
+                                    'status',
+                                ]),
+                                metadata: [
+                                    'source' => 'filament_admin',
+                                ],
+                            );
+
+                            return $record;
+                        })
                         ->successNotificationTitle('Card template updated successfully'),
 
                     Tables\Actions\Action::make('open_template_image')
@@ -270,7 +317,20 @@ class CardTemplatesRelationManager extends RelationManager
                         ->label('Design Placeholders')
                         ->icon('heroicon-o-cursor-arrow-rays')
                         ->color('primary')
-                        ->url(fn (CardTemplate $record): string => route('card-templates.designer', $record))
+                        ->url(function (CardTemplate $record): string {
+                            AuditLogService::record(
+                                action: 'card_template.designer_opened',
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Card template placeholder designer was opened.',
+                                metadata: [
+                                    'template_name' => $record->name,
+                                    'placeholders_count' => $record->placeholders()->count(),
+                                ],
+                            );
+
+                            return route('card-templates.designer', $record);
+                        })
                         ->openUrlInNewTab()
                         ->visible(fn (): bool => $this->canManageCardTemplates()),
 
@@ -283,9 +343,15 @@ class CardTemplatesRelationManager extends RelationManager
                         ->modalDescription('This will make this template active for card generation. Other templates for this event will be changed to draft.')
                         ->visible(fn (CardTemplate $record): bool => $this->canManageCardTemplates() && $record->status !== CardTemplate::STATUS_ACTIVE)
                         ->action(function (CardTemplate $record): void {
-                            CardTemplate::where('event_id', $record->event_id)
+                            $oldValues = $record->only(['status']);
+
+                            $deactivatedTemplateIds = CardTemplate::where('event_id', $record->event_id)
                                 ->where('id', '!=', $record->id)
                                 ->where('status', CardTemplate::STATUS_ACTIVE)
+                                ->pluck('id')
+                                ->all();
+
+                            CardTemplate::whereIn('id', $deactivatedTemplateIds)
                                 ->update([
                                     'status' => CardTemplate::STATUS_DRAFT,
                                 ]);
@@ -293,6 +359,17 @@ class CardTemplatesRelationManager extends RelationManager
                             $record->update([
                                 'status' => CardTemplate::STATUS_ACTIVE,
                             ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Card template was set as active.',
+                                oldValues: $oldValues,
+                                newValues: $record->only(['status']),
+                                metadata: [
+                                    'deactivated_template_ids' => $deactivatedTemplateIds,
+                                ],
+                            );
 
                             Notification::make()
                                 ->title('Template set as active')
@@ -406,8 +483,10 @@ class CardTemplatesRelationManager extends RelationManager
                                 ],
                             ];
 
+                            $createdOrUpdated = [];
+
                             foreach ($starterPlaceholders as $placeholder) {
-                                CardTemplatePlaceholder::updateOrCreate(
+                                $savedPlaceholder = CardTemplatePlaceholder::updateOrCreate(
                                     [
                                         'card_template_id' => $record->id,
                                         'placeholder_key' => $placeholder['placeholder_key'],
@@ -416,7 +495,24 @@ class CardTemplatesRelationManager extends RelationManager
                                         'card_template_id' => $record->id,
                                     ])
                                 );
+
+                                $createdOrUpdated[] = [
+                                    'id' => $savedPlaceholder->id,
+                                    'key' => $savedPlaceholder->placeholder_key,
+                                    'label' => $savedPlaceholder->label,
+                                ];
                             }
+
+                            AuditLogService::record(
+                                action: 'card_template.starter_placeholders_added',
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Starter placeholders were added or updated.',
+                                metadata: [
+                                    'count' => count($createdOrUpdated),
+                                    'placeholders' => $createdOrUpdated,
+                                ],
+                            );
 
                             Notification::make()
                                 ->title('Starter placeholders added')
@@ -434,7 +530,30 @@ class CardTemplatesRelationManager extends RelationManager
                         ->modalDescription('This will delete all placeholders for this template. The template image will not be deleted.')
                         ->visible(fn (CardTemplate $record): bool => $this->canManageCardTemplates() && $record->placeholders()->exists())
                         ->action(function (CardTemplate $record): void {
+                            $placeholders = $record->placeholders()
+                                ->get([
+                                    'id',
+                                    'placeholder_key',
+                                    'label',
+                                    'x_percent',
+                                    'y_percent',
+                                    'width_percent',
+                                    'height_percent',
+                                ])
+                                ->toArray();
+
                             $record->placeholders()->delete();
+
+                            AuditLogService::record(
+                                action: 'card_template.placeholders_deleted',
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'All placeholders were deleted from the card template.',
+                                metadata: [
+                                    'deleted_count' => count($placeholders),
+                                    'placeholders' => $placeholders,
+                                ],
+                            );
 
                             Notification::make()
                                 ->title('Placeholders deleted successfully')
@@ -449,9 +568,19 @@ class CardTemplatesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->visible(fn (CardTemplate $record): bool => $this->canManageCardTemplates() && $record->status !== CardTemplate::STATUS_ARCHIVED)
                         ->action(function (CardTemplate $record): void {
+                            $oldValues = $record->only(['status']);
+
                             $record->update([
                                 'status' => CardTemplate::STATUS_ARCHIVED,
                             ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Card template was archived.',
+                                oldValues: $oldValues,
+                                newValues: $record->only(['status']),
+                            );
 
                             Notification::make()
                                 ->title('Template archived successfully')
@@ -478,6 +607,22 @@ class CardTemplatesRelationManager extends RelationManager
 
                                 return;
                             }
+
+                            $metadata = [
+                                'name' => $record->name,
+                                'status' => $record->status,
+                                'width' => $record->width,
+                                'height' => $record->height,
+                                'template_image' => $record->template_image,
+                                'placeholders_count' => $record->placeholders()->count(),
+                            ];
+
+                            AuditLogService::deleted(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Card template was deleted.',
+                                metadata: $metadata,
+                            );
 
                             if (filled($record->template_image) && Storage::disk('public')->exists($record->template_image)) {
                                 Storage::disk('public')->delete($record->template_image);
@@ -508,9 +653,22 @@ class CardTemplatesRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->action(function ($records): void {
                             $records->each(function (CardTemplate $record): void {
+                                $oldValues = $record->only(['status']);
+
                                 $record->update([
                                     'status' => CardTemplate::STATUS_ARCHIVED,
                                 ]);
+
+                                AuditLogService::updated(
+                                    subject: $record,
+                                    eventId: $record->event_id,
+                                    description: 'Card template was archived in bulk.',
+                                    oldValues: $oldValues,
+                                    newValues: $record->only(['status']),
+                                    metadata: [
+                                        'bulk_action' => true,
+                                    ],
+                                );
                             });
 
                             Notification::make()

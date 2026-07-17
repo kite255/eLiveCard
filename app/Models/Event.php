@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\EliveMessagePlaceholders;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -40,6 +41,7 @@ class Event extends Model
         'contact_person_name',
         'contact_person_phone',
         'status',
+        'is_public',
 
         // Automatic SMS reminder settings
         'auto_sms_reminders_enabled',
@@ -68,6 +70,7 @@ class Event extends Model
         'auto_event_day_reminder_enabled' => 'boolean',
         'event_day_reminder_time' => 'datetime:H:i',
         'welcome_sms_enabled' => 'boolean',
+        'is_public' => 'boolean',
 
         // Invitee digital page toggles
         'show_cover_image' => 'boolean',
@@ -155,6 +158,30 @@ class Event extends Model
     public function inviteeUploads(): HasMany
     {
         return $this->hasMany(InviteeUpload::class);
+    }
+
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(
+            AuditLog::class,
+            'event_id'
+        );
+    }
+
+    public function recentAuditLogs(): HasMany
+    {
+        return $this->auditLogs()
+            ->where(
+                'created_at',
+                '>=',
+                now()->subDays(7)
+            );
+    }
+
+    public function systemAuditLogs(): HasMany
+    {
+        return $this->auditLogs()
+            ->whereNull('user_id');
     }
 
     public function assignedUsers(): BelongsToMany
@@ -246,32 +273,75 @@ class Event extends Model
     |--------------------------------------------------------------------------
     */
 
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_ACTIVE);
+        return $query->where(
+            'status',
+            self::STATUS_ACTIVE
+        );
     }
 
-    public function scopeDraft($query)
+    public function scopeDraft(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_DRAFT);
+        return $query->where(
+            'status',
+            self::STATUS_DRAFT
+        );
     }
 
-    public function scopeCompleted($query)
+    public function scopeCompleted(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_COMPLETED);
+        return $query->where(
+            'status',
+            self::STATUS_COMPLETED
+        );
     }
 
-    public function scopeAutomaticSmsEnabled($query)
+    public function scopePubliclyVisible(Builder $query): Builder
     {
-        return $query->where('auto_sms_reminders_enabled', true);
+        return $query
+            ->where('is_public', true)
+            ->whereNotIn('status', [
+                self::STATUS_DRAFT,
+                self::STATUS_CANCELLED,
+            ]);
     }
 
-    public function scopeWelcomeSmsEnabled($query)
+    public function scopeUpcomingPublic(Builder $query): Builder
     {
-        return $query->where('welcome_sms_enabled', true);
+        return $query
+            ->publiclyVisible()
+            ->whereDate('event_date', '>=', now()->toDateString())
+            ->orderBy('event_date')
+            ->orderBy('start_time');
     }
 
-    public function scopeOwnedBy($query, User|int|null $user)
+    public function scopePastPublic(Builder $query): Builder
+    {
+        return $query
+            ->publiclyVisible()
+            ->whereDate('event_date', '<', now()->toDateString())
+            ->orderByDesc('event_date')
+            ->orderByDesc('start_time');
+    }
+
+    public function scopeAutomaticSmsEnabled(Builder $query): Builder
+    {
+        return $query->where(
+            'auto_sms_reminders_enabled',
+            true
+        );
+    }
+
+    public function scopeWelcomeSmsEnabled(Builder $query): Builder
+    {
+        return $query->where(
+            'welcome_sms_enabled',
+            true
+        );
+    }
+
+    public function scopeOwnedBy(Builder $query, User|int|null $user): Builder
     {
         $userId = $user instanceof User ? $user->id : $user;
 
@@ -282,7 +352,7 @@ class Event extends Model
         return $query->where('user_id', $userId);
     }
 
-    public function scopeVisibleTo($query, ?User $user = null)
+    public function scopeVisibleTo(Builder $query, ?User $user = null): Builder
     {
         $user ??= auth()->user();
 
@@ -305,7 +375,7 @@ class Event extends Model
         });
     }
 
-    public function scopeCheckInVisibleTo($query, ?User $user = null)
+    public function scopeCheckInVisibleTo(Builder $query, ?User $user = null): Builder
     {
         $user ??= auth()->user();
 
@@ -364,6 +434,25 @@ class Event extends Model
         return $this->isAssignedTo($user, 'event_admin');
     }
 
+    public function canViewAuditLogsBy(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (! $this->canBeManagedBy($user)) {
+            return false;
+        }
+
+        return method_exists($user, 'canViewReports')
+            ? (bool) $user->canViewReports()
+            : true;
+    }
+
     public function canBeCheckedInBy(?User $user): bool
     {
         if (! $user) {
@@ -412,6 +501,84 @@ class Event extends Model
     public function isCancelled(): bool
     {
         return $this->status === self::STATUS_CANCELLED;
+    }
+
+    public function isPublic(): bool
+    {
+        return (bool) $this->is_public;
+    }
+
+    public function canBeShownPublicly(): bool
+    {
+        return $this->isPublic()
+            && ! $this->isDraft()
+            && ! $this->isCancelled();
+    }
+
+    public function isUpcoming(): bool
+    {
+        return $this->event_date
+            ? $this->event_date->isToday() || $this->event_date->isFuture()
+            : false;
+    }
+
+    public function isPast(): bool
+    {
+        return $this->event_date
+            ? $this->event_date->isPast() && ! $this->event_date->isToday()
+            : false;
+    }
+
+    public function isHappeningNow(): bool
+    {
+        if (! $this->event_date || ! $this->event_date->isToday()) {
+            return false;
+        }
+
+        if ($this->status === self::STATUS_COMPLETED) {
+            return false;
+        }
+
+        $now = now();
+
+        $startsAt = $this->event_date->copy()->startOfDay();
+
+        if ($this->start_time) {
+            $startsAt->setTime(
+                $this->start_time->hour,
+                $this->start_time->minute,
+                $this->start_time->second
+            );
+        }
+
+        $endsAt = $this->event_date->copy()->endOfDay();
+
+        if ($this->end_time) {
+            $endsAt->setTime(
+                $this->end_time->hour,
+                $this->end_time->minute,
+                $this->end_time->second
+            );
+        }
+
+        return $now->betweenIncluded($startsAt, $endsAt);
+    }
+
+    public function getPublicStatusLabelAttribute(): string
+    {
+        if ($this->status === self::STATUS_COMPLETED || $this->isPast()) {
+            return 'Completed';
+        }
+
+        if ($this->isHappeningNow()) {
+            return 'Happening Now';
+        }
+
+        if ($this->event_date?->isToday()) {
+            return 'Today';
+        }
+
+        return 'Upcoming';
     }
 
     /*
@@ -611,6 +778,13 @@ class Event extends Model
             ->all();
     }
 
+    public function getPublicSummaryAttribute(): ?string
+    {
+        return filled($this->welcome_message)
+            ? str($this->welcome_message)->stripTags()->squish()->limit(180)->toString()
+            : null;
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Display Accessors
@@ -765,10 +939,31 @@ class Event extends Model
             ->count();
     }
 
+    public function getAuditLogsCountAttribute(): int
+    {
+        return $this->auditLogs()->count();
+    }
+
+    public function getRecentAuditLogsCountAttribute(): int
+    {
+        return $this->recentAuditLogs()->count();
+    }
+
+    public function getSystemAuditLogsCountAttribute(): int
+    {
+        return $this->systemAuditLogs()->count();
+    }
+
     public function getRsvpPendingCountAttribute(): int
     {
         return $this->invitees()
-            ->where('rsvp_status', 'pending')
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('rsvp_status')
+                    ->orWhere('rsvp_status', '')
+                    ->orWhere('rsvp_status', 'pending')
+                    ->orWhere('rsvp_status', 'maybe');
+            })
             ->count();
     }
 
@@ -885,7 +1080,15 @@ class Event extends Model
     public function getCommunicationSentCountAttribute(): int
     {
         return $this->messageLogs()
-            ->whereIn('status', ['sent', 'delivered', 'read', 'logged'])
+            ->whereIn('status', [
+                'accepted',
+                'sent',
+                'delivered',
+                'read',
+                'replied',
+                'received',
+                'logged',
+            ])
             ->count();
     }
 
@@ -906,7 +1109,12 @@ class Event extends Model
     public function getCommunicationFailedCountAttribute(): int
     {
         return $this->messageLogs()
-            ->where('status', 'failed')
+            ->whereIn('status', [
+                'failed',
+                'rejected',
+                'undelivered',
+                'expired',
+            ])
             ->count();
     }
 
@@ -937,7 +1145,12 @@ class Event extends Model
     {
         return $this->messageLogs()
             ->where('channel', 'sms')
-            ->where('status', 'failed')
+            ->whereIn('status', [
+                'failed',
+                'rejected',
+                'undelivered',
+                'expired',
+            ])
             ->count();
     }
 
@@ -968,21 +1181,34 @@ class Event extends Model
     {
         return $this->messageLogs()
             ->where('channel', 'whatsapp')
-            ->where('status', 'failed')
+            ->whereIn('status', [
+                'failed',
+                'rejected',
+                'undelivered',
+                'expired',
+            ])
             ->count();
     }
 
     public function getInvitationCardMessageCountAttribute(): int
     {
         return $this->messageLogs()
-            ->whereIn('type', ['invitation_card', 'invitation'])
+            ->whereIn('type', [
+                'invitation_card',
+                'invitation',
+                'whatsapp_invitation_card',
+            ])
             ->count();
     }
 
     public function getInvitationCardMessageSentCountAttribute(): int
     {
         return $this->messageLogs()
-            ->whereIn('type', ['invitation_card', 'invitation'])
+            ->whereIn('type', [
+                'invitation_card',
+                'invitation',
+                'whatsapp_invitation_card',
+            ])
             ->whereIn('status', ['sent', 'delivered', 'read', 'logged'])
             ->count();
     }
@@ -990,7 +1216,11 @@ class Event extends Model
     public function getInvitationCardMessageFailedCountAttribute(): int
     {
         return $this->messageLogs()
-            ->whereIn('type', ['invitation_card', 'invitation'])
+            ->whereIn('type', [
+                'invitation_card',
+                'invitation',
+                'whatsapp_invitation_card',
+            ])
             ->where('status', 'failed')
             ->count();
     }

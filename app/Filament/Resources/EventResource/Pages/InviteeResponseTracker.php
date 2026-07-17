@@ -10,8 +10,10 @@ use App\Services\SmsService;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
+use Filament\Support\Enums\MaxWidth;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class InviteeResponseTracker extends Page
@@ -24,9 +26,13 @@ class InviteeResponseTracker extends Page
 
     public string $search = '';
 
-    public string $statusFilter = '';
+    public string $rsvpFilter = '';
+
+    public string $openFilter = '';
 
     public string $channelFilter = '';
+
+    public string $messageStatusFilter = '';
 
     public array $whatsappMessages = [];
 
@@ -57,6 +63,11 @@ class InviteeResponseTracker extends Page
             ?? 'Track delivery, opens, RSVP and invitee replies';
     }
 
+    public function getMaxContentWidth(): MaxWidth|string|null
+    {
+        return MaxWidth::Full;
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -67,6 +78,12 @@ class InviteeResponseTracker extends Page
                 ->url(fn () => EventResource::getUrl('view', [
                     'record' => $this->record,
                 ])),
+
+            Actions\Action::make('export')
+                ->label('Export Responses')
+                ->icon('heroicon-o-arrow-down-tray')
+                ->color('gray')
+                ->action(fn (): StreamedResponse => $this->exportResponses()),
 
             Actions\Action::make('refresh')
                 ->label('Refresh')
@@ -115,35 +132,27 @@ class InviteeResponseTracker extends Page
                         ->orWhere('short_code', 'like', '%' . $this->search . '%');
                 });
             })
-            ->when($this->statusFilter !== '', function ($query): void {
-                match ($this->statusFilter) {
-                    'rsvp_pending' => $query->where(function ($query): void {
+            ->when($this->rsvpFilter !== '', function ($query): void {
+                match ($this->rsvpFilter) {
+                    'pending' => $query->where(function ($query): void {
                         $query->whereNull('rsvp_status')
                             ->orWhere('rsvp_status', 'pending');
                     }),
 
                     'attending' => $query->where('rsvp_status', 'attending'),
 
-                    'not_attending' => $query->where('rsvp_status', 'not_attending'),
+                    'not_attending' => $query->whereIn('rsvp_status', [
+                        'not_attending',
+                        'declined',
+                    ]),
 
                     'maybe' => $query->where('rsvp_status', 'maybe'),
 
-                    'replied' => $query->where(function ($query): void {
-                        $query->where('last_message_status', 'replied')
-                            ->orWhereNotNull('last_reply_message');
-                    }),
-
-                    'failed' => $query->where(function ($query): void {
-                        $query->where('last_message_status', 'failed')
-                            ->orWhere('sms_status', 'failed')
-                            ->orWhere('invitation_sms_status', 'failed');
-                    }),
-
-                    'not_sent' => $query->where(function ($query): void {
-                        $query->whereNull('last_message_channel')
-                            ->orWhere('last_message_status', 'not_sent');
-                    }),
-
+                    default => null,
+                };
+            })
+            ->when($this->openFilter !== '', function ($query): void {
+                match ($this->openFilter) {
                     'opened' => $query->whereNotNull('first_opened_at'),
 
                     'not_opened' => $query->whereNull('first_opened_at'),
@@ -157,6 +166,114 @@ class InviteeResponseTracker extends Page
             })
             ->when($this->channelFilter !== '', function ($query): void {
                 $query->where('last_message_channel', $this->channelFilter);
+            })
+            ->when($this->messageStatusFilter !== '', function ($query): void {
+                match ($this->messageStatusFilter) {
+                    'not_sent' => $query->where(function ($query): void {
+                        $query->where(function ($query): void {
+                            $query->whereNull('last_message_status')
+                                ->orWhere('last_message_status', 'not_sent');
+                        })
+                            ->where(function ($query): void {
+                                $query->whereNull('sms_status')
+                                    ->orWhere('sms_status', 'not_sent');
+                            })
+                            ->where(function ($query): void {
+                                $query->whereNull('invitation_sms_status')
+                                    ->orWhere('invitation_sms_status', 'not_sent');
+                            });
+                    }),
+
+                    'queued' => $query->where(function ($query): void {
+                        $query->whereIn('last_message_status', [
+                            'pending',
+                            'queued',
+                        ])
+                            ->orWhereIn('sms_status', [
+                                'pending',
+                                'queued',
+                            ])
+                            ->orWhereIn('invitation_sms_status', [
+                                'pending',
+                                'queued',
+                            ]);
+                    }),
+
+                    'sending' => $query->where(function ($query): void {
+                        $query->whereIn('last_message_status', [
+                            'processing',
+                            'sending',
+                        ])
+                            ->orWhereIn('sms_status', [
+                                'processing',
+                                'sending',
+                            ])
+                            ->orWhereIn('invitation_sms_status', [
+                                'processing',
+                                'sending',
+                            ]);
+                    }),
+
+                    'sent' => $query->where(function ($query): void {
+                        $query->whereIn('last_message_status', [
+                            'accepted',
+                            'submitted',
+                            'sent',
+                            'success',
+                        ])
+                            ->orWhereIn('sms_status', [
+                                'accepted',
+                                'submitted',
+                                'sent',
+                                'success',
+                            ])
+                            ->orWhereIn('invitation_sms_status', [
+                                'accepted',
+                                'submitted',
+                                'sent',
+                                'success',
+                            ]);
+                    }),
+
+                    'delivered' => $query->where(function ($query): void {
+                        $query->where('last_message_status', 'delivered')
+                            ->orWhere('sms_status', 'delivered')
+                            ->orWhere('invitation_sms_status', 'delivered');
+                    }),
+
+                    'read' => $query->where('last_message_status', 'read'),
+
+                    'replied' => $query->where(function ($query): void {
+                        $query->where('last_message_status', 'replied')
+                            ->orWhereNotNull('last_reply_message');
+                    }),
+
+                    'failed' => $query->where(function ($query): void {
+                        $query->whereIn('last_message_status', [
+                            'failed',
+                            'error',
+                            'rejected',
+                            'undelivered',
+                            'expired',
+                        ])
+                            ->orWhereIn('sms_status', [
+                                'failed',
+                                'error',
+                                'rejected',
+                                'undelivered',
+                                'expired',
+                            ])
+                            ->orWhereIn('invitation_sms_status', [
+                                'failed',
+                                'error',
+                                'rejected',
+                                'undelivered',
+                                'expired',
+                            ]);
+                    }),
+
+                    default => null,
+                };
             })
             ->latest()
             ->get();
@@ -477,6 +594,74 @@ class InviteeResponseTracker extends Page
         }
     }
 
+    public function exportResponses(): StreamedResponse
+    {
+        $fileName = 'invitee-responses-'
+            .str($this->record->name ?? $this->record->title ?? 'event')
+                ->slug()
+            .'-'
+            .now()->format('Y-m-d-His')
+            .'.csv';
+
+        $invitees = $this->invitees;
+
+        return response()->streamDownload(
+            function () use ($invitees): void {
+                $handle = fopen('php://output', 'wb');
+
+                if ($handle === false) {
+                    throw new \RuntimeException('Unable to open export stream.');
+                }
+
+                fputcsv($handle, [
+                    'Guest Name',
+                    'Phone',
+                    'SMS Status',
+                    'WhatsApp Status',
+                    'Opened',
+                    'Views',
+                    'Last Opened',
+                    'RSVP Status',
+                    'Confirmed Guests',
+                    'Allowed Guests',
+                    'RSVP Date',
+                    'Comment',
+                    'Serial Number',
+                    'Short Code',
+                ]);
+
+                foreach ($invitees as $invitee) {
+                    fputcsv($handle, [
+                        $invitee->name,
+                        $invitee->phone,
+                        $invitee->sms_status
+                            ?? $invitee->invitation_sms_status
+                            ?? 'not_sent',
+                        $invitee->last_message_channel === 'whatsapp'
+                            ? ($invitee->last_message_status ?? 'sent')
+                            : 'not_sent',
+                        filled($invitee->first_opened_at) ? 'Yes' : 'No',
+                        (int) ($invitee->open_count ?? 0),
+                        optional($invitee->last_opened_at)?->format('Y-m-d H:i:s'),
+                        $invitee->rsvp_status ?: 'pending',
+                        (int) ($invitee->confirmed_guests ?? 0),
+                        (int) ($invitee->allowed_guests ?? 1),
+                        optional($invitee->rsvp_confirmed_at)?->format('Y-m-d H:i:s'),
+                        $invitee->last_reply_message,
+                        $invitee->serial_number,
+                        $invitee->short_code,
+                    ]);
+                }
+
+                fclose($handle);
+            },
+            $fileName,
+            [
+                'Content-Type' => 'text/csv; charset=UTF-8',
+            ],
+        );
+    }
+
     protected function findInviteeForCurrentEvent(int $inviteeId): Invitee
     {
         return Invitee::query()
@@ -563,27 +748,29 @@ class InviteeResponseTracker extends Page
 
     public function filterOpened(): void
     {
-        $this->statusFilter = 'opened';
+        $this->openFilter = 'opened';
         $this->dispatch('$refresh');
     }
 
     public function filterNotOpened(): void
     {
-        $this->statusFilter = 'not_opened';
+        $this->openFilter = 'not_opened';
         $this->dispatch('$refresh');
     }
 
     public function filterRecentOpens(): void
     {
-        $this->statusFilter = 'recent_opens';
+        $this->openFilter = 'recent_opens';
         $this->dispatch('$refresh');
     }
 
     public function clearFilters(): void
     {
         $this->search = '';
-        $this->statusFilter = '';
+        $this->rsvpFilter = '';
+        $this->openFilter = '';
         $this->channelFilter = '';
+        $this->messageStatusFilter = '';
         $this->dispatch('$refresh');
     }
 }

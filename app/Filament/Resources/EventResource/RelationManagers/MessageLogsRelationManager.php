@@ -4,6 +4,7 @@ namespace App\Filament\Resources\EventResource\RelationManagers;
 
 use App\Exports\EventMessageLogsExport;
 use App\Models\MessageLog;
+use App\Services\AuditLogService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\HtmlString;
 use Maatwebsite\Excel\Facades\Excel;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+
 class MessageLogsRelationManager extends RelationManager
 {
     protected static string $relationship = 'messageLogs';
@@ -84,13 +86,22 @@ class MessageLogsRelationManager extends RelationManager
                             ->label('Status')
                             ->disabled(),
 
+                        Forms\Components\TextInput::make('provider_status')
+                            ->label('Provider Status')
+                            ->disabled(),
+
                         Forms\Components\TextInput::make('provider')
                             ->label('Provider')
                             ->disabled(),
 
+                        Forms\Components\TextInput::make('send_source')
+                            ->label('Send Source')
+                            ->disabled(),
+
                         Forms\Components\TextInput::make('provider_message_id')
                             ->label('Provider Message ID')
-                            ->disabled(),
+                            ->disabled()
+                            ->columnSpanFull(),
 
                         Forms\Components\DateTimePicker::make('sent_at')
                             ->label('Sent At')
@@ -98,6 +109,14 @@ class MessageLogsRelationManager extends RelationManager
 
                         Forms\Components\DateTimePicker::make('delivered_at')
                             ->label('Delivered At')
+                            ->disabled(),
+
+                        Forms\Components\DateTimePicker::make('read_at')
+                            ->label('Read At')
+                            ->disabled(),
+
+                        Forms\Components\DateTimePicker::make('replied_at')
+                            ->label('Replied At')
                             ->disabled(),
 
                         Forms\Components\DateTimePicker::make('failed_at')
@@ -123,6 +142,16 @@ class MessageLogsRelationManager extends RelationManager
                                     filled($record?->error_message)
                             )
                             ->columnSpanFull(),
+
+                        Forms\Components\Textarea::make('provider_response')
+                            ->label('Provider Response')
+                            ->rows(6)
+                            ->disabled()
+                            ->visible(
+                                fn (?MessageLog $record): bool =>
+                                    filled($record?->provider_response)
+                            )
+                            ->columnSpanFull(),
                     ]),
             ]);
     }
@@ -130,7 +159,14 @@ class MessageLogsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->heading('Communication Delivery Logs')
+            ->description('Review SMS and WhatsApp delivery, read, failure, and reply activity for this event.')
             ->recordTitleAttribute('phone')
+            ->searchPlaceholder('Search invitee, phone, message, provider ID, status, or error')
+            ->searchDebounce('500ms')
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => $query
                     ->where('event_id', $this->getOwnerRecord()->getKey())
@@ -265,6 +301,8 @@ class MessageLogsRelationManager extends RelationManager
                             'sent' => 'Sent',
                             'delivered' => 'Delivered',
                             'read' => 'Read',
+                            'replied' => 'Replied',
+                            'received' => 'Received',
                             'logged' => 'Logged',
                             'failed' => 'Failed',
                             'rejected' => 'Rejected',
@@ -277,7 +315,9 @@ class MessageLogsRelationManager extends RelationManager
                     ->color(
                         fn (?string $state): string => match ($state) {
                             'delivered',
-                            'read' => 'success',
+                            'read',
+                            'replied',
+                            'received' => 'success',
 
                             'sent',
                             'accepted',
@@ -294,6 +334,29 @@ class MessageLogsRelationManager extends RelationManager
                         }
                     )
                     ->sortable(),
+
+                Tables\Columns\TextColumn::make('provider_status')
+                    ->label('Provider Status')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn (?string $state): string => str($state ?: '-')
+                            ->replace('_', ' ')
+                            ->title()
+                            ->toString()
+                    )
+                    ->color(
+                        fn (?string $state): string => match (strtolower((string) $state)) {
+                            'delivered', 'read', 'success' => 'success',
+                            'sent', 'accepted', 'operator submitted', 'submitted' => 'info',
+                            'queued', 'pending', 'processing' => 'warning',
+                            'failed', 'rejected', 'undelivered', 'expired' => 'danger',
+                            default => 'gray',
+                        }
+                    )
+                    ->placeholder('-')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('provider')
                     ->label('Provider')
@@ -349,6 +412,32 @@ class MessageLogsRelationManager extends RelationManager
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
+                Tables\Columns\TextColumn::make('read_at')
+                    ->label('Read At')
+                    ->dateTime('d M Y H:i:s')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('replied_at')
+                    ->label('Replied At')
+                    ->dateTime('d M Y H:i:s')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('send_source')
+                    ->label('Source')
+                    ->badge()
+                    ->formatStateUsing(
+                        fn (?string $state): string => str($state ?: '-')
+                            ->replace('_', ' ')
+                            ->title()
+                            ->toString()
+                    )
+                    ->placeholder('-')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('failed_at')
                     ->label('Failed At')
                     ->dateTime('d M Y H:i:s')
@@ -382,6 +471,11 @@ class MessageLogsRelationManager extends RelationManager
                         'event_reminder' => 'Event Reminder',
                         'final_reminder' => 'Final Reminder',
                         'welcome_checkin' => 'Welcome After Check-in',
+                        'welcome_sms' => 'Welcome SMS',
+                        'rsvp_reply' => 'WhatsApp RSVP Reply',
+                        'whatsapp_invitation_card' => 'WhatsApp Invitation',
+                        'whatsapp_template' => 'WhatsApp Template',
+                        'whatsapp_text' => 'WhatsApp Text',
                         'thank_you' => 'Thank You',
                         'custom' => 'Custom',
                     ]),
@@ -397,6 +491,8 @@ class MessageLogsRelationManager extends RelationManager
                         'sent' => 'Sent',
                         'delivered' => 'Delivered',
                         'read' => 'Read',
+                        'replied' => 'Replied',
+                        'received' => 'Received',
                         'failed' => 'Failed',
                         'rejected' => 'Rejected',
                     ]),
@@ -425,12 +521,77 @@ class MessageLogsRelationManager extends RelationManager
                         fn (Builder $query): Builder =>
                             $query->whereIn('status', ['delivered', 'read'])
                     ),
+
+                Tables\Filters\Filter::make('replied_only')
+                    ->label('Replies')
+                    ->query(
+                        fn (Builder $query): Builder =>
+                            $query->whereIn('status', ['replied', 'received'])
+                    ),
+
+                Tables\Filters\SelectFilter::make('invitee_id')
+                    ->label('Invitee')
+                    ->relationship(
+                        name: 'invitee',
+                        titleAttribute: 'name',
+                        modifyQueryUsing: fn (Builder $query): Builder =>
+                            $query->where('event_id', $this->getOwnerRecord()->getKey())
+                    )
+                    ->searchable()
+                    ->preload(),
+
+                Tables\Filters\Filter::make('today')
+                    ->label('Today')
+                    ->query(
+                        fn (Builder $query): Builder =>
+                            $query->whereDate('created_at', today())
+                    ),
+
+                Tables\Filters\Filter::make('date_range')
+                    ->label('Date Range')
+                    ->form([
+                        Forms\Components\DatePicker::make('from')
+                            ->label('From'),
+
+                        Forms\Components\DatePicker::make('until')
+                            ->label('Until'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['from'] ?? null,
+                                fn (Builder $query, $date): Builder =>
+                                    $query->whereDate('created_at', '>=', $date)
+                            )
+                            ->when(
+                                $data['until'] ?? null,
+                                fn (Builder $query, $date): Builder =>
+                                    $query->whereDate('created_at', '<=', $date)
+                            );
+                    }),
             ])
+            ->filtersFormColumns(3)
             ->actions([
                 Tables\Actions\ViewAction::make()
-                    ->label('View')
+                    ->label('View Details')
                     ->icon('heroicon-o-eye')
-                    ->visible(fn (): bool => $this->canViewMessageLogs()),
+                    ->visible(fn (): bool => $this->canViewMessageLogs())
+                    ->after(function (MessageLog $record): void {
+                        AuditLogService::record(
+                            action: 'message_log.viewed',
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Communication delivery log was viewed.',
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                                'status' => $record->status,
+                                'provider_status' => $record->provider_status,
+                                'provider_message_id' => $record->provider_message_id,
+                            ],
+                        );
+                    }),
 
                 Tables\Actions\Action::make('show_message')
                     ->label('Message')
@@ -441,7 +602,22 @@ class MessageLogsRelationManager extends RelationManager
                         fn (MessageLog $record): string =>
                             'Message to ' . ($record->invitee?->name ?: $record->phone)
                     )
-                    ->modalContent(fn (MessageLog $record): HtmlString => new HtmlString($this->messageLogModalContent($record)))
+                    ->modalContent(function (MessageLog $record): HtmlString {
+                        AuditLogService::record(
+                            action: 'message_log.message_opened',
+                            subject: $record,
+                            eventId: $record->event_id,
+                            description: 'Communication message content was opened.',
+                            metadata: [
+                                'invitee_id' => $record->invitee_id,
+                                'channel' => $record->channel,
+                                'type' => $record->type,
+                                'status' => $record->status,
+                            ],
+                        );
+
+                        return new HtmlString($this->messageLogModalContent($record));
+                    })
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close'),
             ])
@@ -482,9 +658,24 @@ class MessageLogsRelationManager extends RelationManager
             ->slug()
             ->toString();
 
+        $filename = $eventName.'-'.$suffix.'-'.now()->format('Ymd-His').'.xlsx';
+
+        AuditLogService::exported(
+            subject: $event,
+            eventId: $event->getKey(),
+            description: $failedOnly
+                ? 'Failed communication logs were exported.'
+                : 'Communication delivery logs were exported.',
+            metadata: [
+                'failed_only' => $failedOnly,
+                'filename' => $filename,
+                'export_type' => $suffix,
+            ],
+        );
+
         return Excel::download(
             new EventMessageLogsExport((int) $event->getKey(), $failedOnly),
-            $eventName . '-' . $suffix . '-' . now()->format('Ymd-His') . '.xlsx'
+            $filename
         );
     }
 
@@ -496,7 +687,24 @@ class MessageLogsRelationManager extends RelationManager
         $type = e(str($record->type ?: '-')->replace('_', ' ')->title()->toString());
         $status = e(str($record->status ?: '-')->replace('_', ' ')->title()->toString());
         $provider = e($record->provider ?: '-');
+        $providerStatus = e(
+            str($record->provider_status ?: '-')
+                ->replace('_', ' ')
+                ->title()
+                ->toString()
+        );
         $providerId = e($record->provider_message_id ?: '-');
+        $source = e(
+            str($record->send_source ?: '-')
+                ->replace('_', ' ')
+                ->title()
+                ->toString()
+        );
+        $sentAt = e($record->sent_at?->format('d M Y H:i:s') ?? '-');
+        $deliveredAt = e($record->delivered_at?->format('d M Y H:i:s') ?? '-');
+        $readAt = e($record->read_at?->format('d M Y H:i:s') ?? '-');
+        $repliedAt = e($record->replied_at?->format('d M Y H:i:s') ?? '-');
+        $failedAt = e($record->failed_at?->format('d M Y H:i:s') ?? '-');
         $error = filled($record->error_message)
             ? '<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:12px;color:#991B1B;white-space:pre-wrap;">' . e($record->error_message) . '</div>'
             : '<div style="background:#F8FAFC;border:1px solid #E5E7EB;border-radius:12px;padding:12px;color:#64748B;">No error recorded.</div>';
@@ -508,8 +716,15 @@ class MessageLogsRelationManager extends RelationManager
             . '<div><strong>Channel:</strong><br>' . $channel . '</div>'
             . '<div><strong>Type:</strong><br>' . $type . '</div>'
             . '<div><strong>Status:</strong><br>' . $status . '</div>'
+            . '<div><strong>Provider Status:</strong><br>' . $providerStatus . '</div>'
             . '<div><strong>Provider:</strong><br>' . $provider . '</div>'
+            . '<div><strong>Source:</strong><br>' . $source . '</div>'
             . '<div style="grid-column:1 / -1;"><strong>Provider Message ID:</strong><br>' . $providerId . '</div>'
+            . '<div><strong>Sent At:</strong><br>' . $sentAt . '</div>'
+            . '<div><strong>Delivered At:</strong><br>' . $deliveredAt . '</div>'
+            . '<div><strong>Read At:</strong><br>' . $readAt . '</div>'
+            . '<div><strong>Replied At:</strong><br>' . $repliedAt . '</div>'
+            . '<div><strong>Failed At:</strong><br>' . $failedAt . '</div>'
             . '</div>'
             . '<div>'
             . '<div style="font-weight:700;margin-bottom:6px;">Message</div>'

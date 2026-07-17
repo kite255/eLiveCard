@@ -3,12 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Models\Invitee;
+use App\Services\AuditLogService;
 use App\Services\RsvpService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
+use Throwable;
 
 class WhatsAppWebhookController extends Controller
 {
@@ -29,6 +35,15 @@ class WhatsAppWebhookController extends Controller
         ) {
             Log::info('WhatsApp webhook verified successfully.');
 
+            AuditLogService::system(
+                action: 'whatsapp_webhook.verification_succeeded',
+                description: 'WhatsApp webhook verification succeeded.',
+                metadata: [
+                    'mode' => $mode,
+                    'challenge_present' => filled($challenge),
+                ],
+            );
+
             return response(
                 (string) $challenge,
                 SymfonyResponse::HTTP_OK,
@@ -42,6 +57,16 @@ class WhatsAppWebhookController extends Controller
             'challenge_present' => filled($challenge),
         ]);
 
+        AuditLogService::system(
+            action: 'whatsapp_webhook.verification_failed',
+            description: 'WhatsApp webhook verification failed.',
+            metadata: [
+                'mode' => $mode,
+                'token_present' => filled($verifyToken),
+                'challenge_present' => filled($challenge),
+            ],
+        );
+
         return response()->json([
             'message' => 'WhatsApp webhook verification failed.',
         ], SymfonyResponse::HTTP_FORBIDDEN);
@@ -51,6 +76,16 @@ class WhatsAppWebhookController extends Controller
     {
         if (! $this->hasValidSignature($request)) {
             Log::warning('WhatsApp webhook rejected because of invalid signature.');
+
+            AuditLogService::system(
+                action: 'whatsapp_webhook.invalid_signature',
+                description: 'WhatsApp webhook request was rejected because its signature was invalid.',
+                metadata: [
+                    'signature_present' => filled(
+                        $request->header('X-Hub-Signature-256')
+                    ),
+                ],
+            );
 
             return response()->json([
                 'message' => 'Invalid webhook signature.',
@@ -64,73 +99,266 @@ class WhatsAppWebhookController extends Controller
             'entry_count' => count($payload['entry'] ?? []),
         ]);
 
+        AuditLogService::system(
+            action: 'whatsapp_webhook.received',
+            description: 'WhatsApp webhook payload was received.',
+            metadata: [
+                'object' => $payload['object'] ?? null,
+                'entry_count' => count($payload['entry'] ?? []),
+            ],
+        );
+
+        $messagesProcessed = 0;
+        $statusesProcessed = 0;
+        $errors = 0;
+
         foreach ($payload['entry'] ?? [] as $entry) {
             foreach ($entry['changes'] ?? [] as $change) {
                 $value = $change['value'] ?? [];
 
                 foreach ($value['messages'] ?? [] as $message) {
-                    $this->handleIncomingMessage($message, $rsvpService);
+                    try {
+                        $this->handleIncomingMessage($message, $rsvpService);
+                        $messagesProcessed++;
+                    } catch (Throwable $exception) {
+                        $errors++;
+
+                        Log::error('WhatsApp incoming message processing failed.', [
+                            'message_id' => $message['id'] ?? null,
+                            'error' => $exception->getMessage(),
+                        ]);
+
+                        AuditLogService::system(
+                            action: 'whatsapp_webhook.message_processing_failed',
+                            description: 'WhatsApp incoming message processing failed.',
+                            metadata: [
+                                'message_id' => $message['id'] ?? null,
+                                'message_type' => $message['type'] ?? null,
+                                'error' => $exception->getMessage(),
+                                'exception' => $exception::class,
+                            ],
+                        );
+                    }
                 }
 
                 foreach ($value['statuses'] ?? [] as $status) {
-                    $this->handleMessageStatus($status);
+                    try {
+                        $this->handleMessageStatus($status);
+                        $statusesProcessed++;
+                    } catch (Throwable $exception) {
+                        $errors++;
+
+                        Log::error('WhatsApp status processing failed.', [
+                            'message_id' => $status['id'] ?? null,
+                            'status' => $status['status'] ?? null,
+                            'error' => $exception->getMessage(),
+                        ]);
+
+                        AuditLogService::system(
+                            action: 'whatsapp_webhook.status_processing_failed',
+                            description: 'WhatsApp delivery-status processing failed.',
+                            metadata: [
+                                'message_id' => $status['id'] ?? null,
+                                'status' => $status['status'] ?? null,
+                                'error' => $exception->getMessage(),
+                                'exception' => $exception::class,
+                            ],
+                        );
+                    }
                 }
             }
         }
+
+        AuditLogService::system(
+            action: 'whatsapp_webhook.processed',
+            description: 'WhatsApp webhook payload processing completed.',
+            metadata: [
+                'messages_processed' => $messagesProcessed,
+                'statuses_processed' => $statusesProcessed,
+                'errors' => $errors,
+            ],
+        );
 
         return response()->json([
             'received' => true,
         ], SymfonyResponse::HTTP_OK);
     }
 
-    protected function handleIncomingMessage(array $message, RsvpService $rsvpService): void
-    {
-        $fromPhone = $this->normalizePhone((string) ($message['from'] ?? ''));
+    protected function handleIncomingMessage(
+        array $message,
+        RsvpService $rsvpService
+    ): void {
+        $fromPhone = $this->normalizePhone(
+            (string) ($message['from'] ?? '')
+        );
 
-        $buttonPayload = data_get($message, 'interactive.button_reply.id');
-        $buttonTitle = data_get($message, 'interactive.button_reply.title');
+        $messageId = (string) ($message['id'] ?? '');
+        $messageType = (string) ($message['type'] ?? 'unknown');
 
-        // Some WhatsApp replies may come as normal button payloads.
+        $buttonPayload = data_get(
+            $message,
+            'interactive.button_reply.id'
+        );
+
+        $buttonTitle = data_get(
+            $message,
+            'interactive.button_reply.title'
+        );
+
         if (! $buttonPayload) {
             $buttonPayload = data_get($message, 'button.payload');
             $buttonTitle = data_get($message, 'button.text');
         }
 
         if (! $fromPhone) {
-            Log::warning('WhatsApp incoming message ignored because phone number is missing.', [
-                'message' => $message,
-            ]);
+            Log::warning(
+                'WhatsApp incoming message ignored because phone number is missing.',
+                [
+                    'message_id' => $messageId,
+                    'type' => $messageType,
+                ]
+            );
 
-            return;
-        }
-
-        if (! $buttonPayload) {
-            Log::info('WhatsApp incoming message received without RSVP button payload.', [
-                'from' => $fromPhone,
-                'type' => $message['type'] ?? null,
-            ]);
+            AuditLogService::system(
+                action: 'whatsapp_message.phone_missing',
+                description: 'Incoming WhatsApp message was ignored because the sender phone number was missing.',
+                metadata: [
+                    'message_id' => $messageId,
+                    'message_type' => $messageType,
+                ],
+            );
 
             return;
         }
 
         $invitee = $this->findInviteeByPhone($fromPhone);
 
-        if (! $invitee) {
-            Log::warning('WhatsApp RSVP reply ignored because invitee was not found.', [
-                'from' => $fromPhone,
-                'button_payload' => $buttonPayload,
-                'button_title' => $buttonTitle,
-            ]);
+        if (! $buttonPayload) {
+            Log::info(
+                'WhatsApp incoming message received without RSVP button payload.',
+                [
+                    'from' => $fromPhone,
+                    'type' => $messageType,
+                    'message_id' => $messageId,
+                ]
+            );
+
+            if ($invitee) {
+                AuditLogService::record(
+                    action: 'whatsapp_message.received',
+                    subject: $invitee,
+                    eventId: $invitee->event_id,
+                    description: 'WhatsApp message was received without an RSVP button response.',
+                    metadata: [
+                        'message_id' => $messageId,
+                        'message_type' => $messageType,
+                        'from' => $fromPhone,
+                    ],
+                );
+            } else {
+                AuditLogService::system(
+                    action: 'whatsapp_message.unmatched',
+                    description: 'WhatsApp message was received but no invitee matched the sender phone number.',
+                    metadata: [
+                        'message_id' => $messageId,
+                        'message_type' => $messageType,
+                        'from' => $fromPhone,
+                    ],
+                );
+            }
 
             return;
         }
 
-        $beforeStatus = $invitee->rsvp_status;
+        if (! $invitee) {
+            Log::warning(
+                'WhatsApp RSVP reply ignored because invitee was not found.',
+                [
+                    'from' => $fromPhone,
+                    'button_payload' => $buttonPayload,
+                    'button_title' => $buttonTitle,
+                    'message_id' => $messageId,
+                ]
+            );
+
+            AuditLogService::system(
+                action: 'whatsapp_rsvp.invitee_not_found',
+                description: 'WhatsApp RSVP reply was ignored because no invitee matched the sender phone number.',
+                metadata: [
+                    'from' => $fromPhone,
+                    'message_id' => $messageId,
+                    'button_payload' => $buttonPayload,
+                    'button_title' => $buttonTitle,
+                ],
+            );
+
+            return;
+        }
+
+        if ($this->incomingMessageAlreadyProcessed($messageId)) {
+            Log::info('Duplicate WhatsApp message ignored.', [
+                'message_id' => $messageId,
+                'invitee_id' => $invitee->id,
+            ]);
+
+            AuditLogService::record(
+                action: 'whatsapp_message.duplicate_ignored',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Duplicate WhatsApp reply was ignored.',
+                metadata: [
+                    'message_id' => $messageId,
+                    'button_payload' => $buttonPayload,
+                ],
+            );
+
+            return;
+        }
+
+        $beforeValues = $invitee->only([
+            'rsvp_status',
+            'rsvp_confirmed_at',
+            'last_message_channel',
+            'last_message_status',
+            'last_reply_message',
+            'last_reply_at',
+        ]);
 
         $updatedInvitee = $rsvpService->updateFromWhatsappButton(
             invitee: $invitee,
             buttonPayload: (string) $buttonPayload,
             buttonTitle: $buttonTitle ? (string) $buttonTitle : null,
+        );
+
+        $this->recordIncomingMessage(
+            invitee: $updatedInvitee,
+            messageId: $messageId,
+            fromPhone: $fromPhone,
+            messageType: $messageType,
+            buttonPayload: (string) $buttonPayload,
+            buttonTitle: $buttonTitle ? (string) $buttonTitle : null,
+        );
+
+        AuditLogService::updated(
+            subject: $updatedInvitee,
+            eventId: $updatedInvitee->event_id,
+            description: 'Invitee RSVP was updated from a WhatsApp button response.',
+            oldValues: $beforeValues,
+            newValues: $updatedInvitee->only([
+                'rsvp_status',
+                'rsvp_confirmed_at',
+                'last_message_channel',
+                'last_message_status',
+                'last_reply_message',
+                'last_reply_at',
+            ]),
+            metadata: [
+                'message_id' => $messageId,
+                'phone' => $fromPhone,
+                'button_payload' => $buttonPayload,
+                'button_title' => $buttonTitle,
+                'source' => 'whatsapp_webhook',
+            ],
         );
 
         Log::info('WhatsApp RSVP reply processed.', [
@@ -139,19 +367,153 @@ class WhatsAppWebhookController extends Controller
             'phone' => $fromPhone,
             'button_payload' => $buttonPayload,
             'button_title' => $buttonTitle,
-            'before_status' => $beforeStatus,
+            'before_status' => $beforeValues['rsvp_status'] ?? null,
             'after_status' => $updatedInvitee->rsvp_status,
         ]);
     }
 
     protected function handleMessageStatus(array $status): void
     {
+        $messageId = trim((string) ($status['id'] ?? ''));
+        $recipient = $this->normalizePhone(
+            (string) ($status['recipient_id'] ?? '')
+        );
+
+        $providerStatus = strtolower(
+            trim((string) ($status['status'] ?? 'unknown'))
+        );
+
+        $timestamp = $this->parseWhatsappTimestamp(
+            $status['timestamp'] ?? null
+        );
+
+        $error = $this->extractWhatsappError($status);
+
         Log::info('WhatsApp message status received.', [
-            'message_id' => $status['id'] ?? null,
-            'recipient_id' => $status['recipient_id'] ?? null,
-            'status' => $status['status'] ?? null,
+            'message_id' => $messageId,
+            'recipient_id' => $recipient,
+            'status' => $providerStatus,
             'timestamp' => $status['timestamp'] ?? null,
         ]);
+
+        if ($messageId === '') {
+            AuditLogService::system(
+                action: 'whatsapp_status.message_id_missing',
+                description: 'WhatsApp status update was ignored because the provider message ID was missing.',
+                metadata: [
+                    'recipient_id' => $recipient,
+                    'status' => $providerStatus,
+                ],
+            );
+
+            return;
+        }
+
+        $matchedLog = $this->findWhatsappMessageLog($messageId);
+
+        if (! $matchedLog) {
+            AuditLogService::system(
+                action: 'whatsapp_status.message_not_found',
+                description: 'WhatsApp status update could not be matched to a message log.',
+                metadata: [
+                    'message_id' => $messageId,
+                    'recipient_id' => $recipient,
+                    'status' => $providerStatus,
+                    'error' => $error,
+                ],
+            );
+
+            return;
+        }
+
+        $normalizedStatus = $this->normalizeWhatsappStatus(
+            $providerStatus
+        );
+
+        $oldValues = Arr::only((array) $matchedLog, [
+            'status',
+            'provider_status',
+            'sent_at',
+            'delivered_at',
+            'read_at',
+            'failed_at',
+            'error_message',
+        ]);
+
+        $this->updateWhatsappMessageLogs(
+            messageId: $messageId,
+            normalizedStatus: $normalizedStatus,
+            providerStatus: $providerStatus,
+            timestamp: $timestamp,
+            error: $error,
+            rawStatus: $status,
+        );
+
+        $invitee = ! empty($matchedLog->invitee_id)
+            ? Invitee::find($matchedLog->invitee_id)
+            : null;
+
+        $newValues = [
+            'status' => $normalizedStatus,
+            'provider_status' => $providerStatus,
+            'sent_at' => in_array(
+                $normalizedStatus,
+                ['sent', 'delivered', 'read'],
+                true
+            ) ? $timestamp : ($matchedLog->sent_at ?? null),
+            'delivered_at' => in_array(
+                $normalizedStatus,
+                ['delivered', 'read'],
+                true
+            ) ? $timestamp : null,
+            'read_at' => $normalizedStatus === 'read'
+                ? $timestamp
+                : null,
+            'failed_at' => $normalizedStatus === 'failed'
+                ? $timestamp
+                : null,
+            'error_message' => $error,
+        ];
+
+        if ($invitee) {
+            $this->updateInviteeWhatsappStatus(
+                invitee: $invitee,
+                status: $normalizedStatus,
+                messageId: $messageId,
+                error: $error,
+                timestamp: $timestamp,
+            );
+
+            AuditLogService::record(
+                action: 'whatsapp_status.updated',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'WhatsApp delivery status was updated.',
+                oldValues: $oldValues,
+                newValues: $newValues,
+                metadata: [
+                    'message_id' => $messageId,
+                    'recipient_id' => $recipient,
+                    'provider_status' => $providerStatus,
+                    'normalized_status' => $normalizedStatus,
+                    'error' => $error,
+                    'source' => 'whatsapp_webhook',
+                ],
+            );
+        } else {
+            AuditLogService::system(
+                action: 'whatsapp_status.updated',
+                description: 'WhatsApp delivery status was updated, but no invitee was linked to the message log.',
+                eventId: $matchedLog->event_id ?? null,
+                metadata: [
+                    'message_id' => $messageId,
+                    'recipient_id' => $recipient,
+                    'provider_status' => $providerStatus,
+                    'normalized_status' => $normalizedStatus,
+                    'error' => $error,
+                ],
+            );
+        }
     }
 
     protected function findInviteeByPhone(string $phone): ?Invitee
@@ -163,8 +525,15 @@ class WhatsAppWebhookController extends Controller
         }
 
         return Invitee::query()
-            ->where('phone', $normalizedPhone)
-            ->orWhere('phone', '+' . $normalizedPhone)
+            ->where(function ($query) use ($normalizedPhone) {
+                $query
+                    ->where('phone', $normalizedPhone)
+                    ->orWhere('phone', '+'.$normalizedPhone)
+                    ->orWhereRaw(
+                        "REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', '') = ?",
+                        [$normalizedPhone]
+                    );
+            })
             ->latest('id')
             ->first();
     }
@@ -185,11 +554,18 @@ class WhatsAppWebhookController extends Controller
             return true;
         }
 
-        $appSecret = (string) config('services.whatsapp.app_secret');
+        $appSecret = (string) config(
+            'services.whatsapp.app_secret'
+        );
 
         if ($appSecret === '') {
             Log::error(
                 'WhatsApp signature verification is enabled but WHATSAPP_APP_SECRET is missing.'
+            );
+
+            AuditLogService::system(
+                action: 'whatsapp_webhook.app_secret_missing',
+                description: 'WhatsApp signature verification is enabled but the app secret is missing.',
             );
 
             return false;
@@ -212,6 +588,277 @@ class WhatsAppWebhookController extends Controller
             $appSecret
         );
 
-        return hash_equals($expectedSignature, $receivedSignature);
+        return hash_equals(
+            $expectedSignature,
+            $receivedSignature
+        );
+    }
+
+    protected function incomingMessageAlreadyProcessed(
+        string $messageId
+    ): bool {
+        if ($messageId === '' || ! Schema::hasTable('message_logs')) {
+            return false;
+        }
+
+        $columns = Schema::getColumnListing('message_logs');
+
+        foreach ([
+            'provider_message_id',
+            'message_id',
+            'wamid',
+            'external_message_id',
+        ] as $column) {
+            if (
+                in_array($column, $columns, true)
+                && DB::table('message_logs')
+                    ->where($column, $messageId)
+                    ->whereIn('status', ['replied', 'received'])
+                    ->exists()
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function recordIncomingMessage(
+        Invitee $invitee,
+        string $messageId,
+        string $fromPhone,
+        string $messageType,
+        string $buttonPayload,
+        ?string $buttonTitle,
+    ): void {
+        if (! Schema::hasTable('message_logs')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('message_logs');
+        $now = now();
+
+        $row = [
+            'event_id' => $invitee->event_id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'rsvp_reply',
+            'message_type' => 'rsvp_reply',
+            'recipient' => $fromPhone,
+            'phone' => $fromPhone,
+            'from' => $fromPhone,
+            'message' => $buttonTitle ?: $buttonPayload,
+            'body' => $buttonTitle ?: $buttonPayload,
+            'status' => 'replied',
+            'provider' => 'WhatsApp Cloud API',
+            'provider_name' => 'WhatsApp Cloud API',
+            'provider_status' => 'received',
+            'provider_message_id' => $messageId,
+            'message_id' => $messageId,
+            'wamid' => $messageId,
+            'last_reply_message' => $buttonTitle ?: $buttonPayload,
+            'meta' => json_encode([
+                'message_type' => $messageType,
+                'button_payload' => $buttonPayload,
+                'button_title' => $buttonTitle,
+            ]),
+            'provider_response' => json_encode([
+                'message_type' => $messageType,
+                'button_payload' => $buttonPayload,
+                'button_title' => $buttonTitle,
+            ]),
+            'received_at' => $now,
+            'replied_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+
+        $insertable = Arr::only($row, $columns);
+
+        if ($insertable !== []) {
+            DB::table('message_logs')->insert($insertable);
+        }
+    }
+
+    protected function findWhatsappMessageLog(
+        string $messageId
+    ): ?object {
+        if (! Schema::hasTable('message_logs')) {
+            return null;
+        }
+
+        $columns = Schema::getColumnListing('message_logs');
+
+        return DB::table('message_logs')
+            ->where(function ($query) use ($columns, $messageId) {
+                foreach ([
+                    'provider_message_id',
+                    'message_id',
+                    'wamid',
+                    'external_message_id',
+                ] as $column) {
+                    if (in_array($column, $columns, true)) {
+                        $query->orWhere($column, $messageId);
+                    }
+                }
+            })
+            ->latest('id')
+            ->first();
+    }
+
+    protected function updateWhatsappMessageLogs(
+        string $messageId,
+        string $normalizedStatus,
+        string $providerStatus,
+        Carbon $timestamp,
+        ?string $error,
+        array $rawStatus,
+    ): void {
+        if (! Schema::hasTable('message_logs')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('message_logs');
+
+        $update = [
+            'status' => $normalizedStatus,
+            'provider_status' => $providerStatus,
+            'provider_response' => json_encode($rawStatus),
+            'response' => json_encode($rawStatus),
+            'meta' => json_encode($rawStatus),
+            'error_message' => $error,
+            'error' => $error,
+            'sent_at' => in_array(
+                $normalizedStatus,
+                ['sent', 'delivered', 'read'],
+                true
+            ) ? $timestamp : null,
+            'delivered_at' => in_array(
+                $normalizedStatus,
+                ['delivered', 'read'],
+                true
+            ) ? $timestamp : null,
+            'read_at' => $normalizedStatus === 'read'
+                ? $timestamp
+                : null,
+            'failed_at' => $normalizedStatus === 'failed'
+                ? $timestamp
+                : null,
+            'updated_at' => now(),
+        ];
+
+        $safeUpdate = Arr::only($update, $columns);
+
+        if ($safeUpdate === []) {
+            return;
+        }
+
+        DB::table('message_logs')
+            ->where(function ($query) use ($columns, $messageId) {
+                foreach ([
+                    'provider_message_id',
+                    'message_id',
+                    'wamid',
+                    'external_message_id',
+                ] as $column) {
+                    if (in_array($column, $columns, true)) {
+                        $query->orWhere($column, $messageId);
+                    }
+                }
+            })
+            ->update($safeUpdate);
+    }
+
+    protected function updateInviteeWhatsappStatus(
+        Invitee $invitee,
+        string $status,
+        string $messageId,
+        ?string $error,
+        Carbon $timestamp,
+    ): void {
+        $updates = [
+            'last_message_channel' => 'whatsapp',
+            'last_message_status' => $status,
+            'message_status' => $status,
+            'whatsapp_status' => $status,
+            'whatsapp_message_id' => $messageId,
+            'whatsapp_error' => $error,
+            'delivered_at' => in_array(
+                $status,
+                ['delivered', 'read'],
+                true
+            ) ? $timestamp : null,
+            'failed_at' => $status === 'failed'
+                ? $timestamp
+                : null,
+        ];
+
+        $columns = Schema::getColumnListing(
+            $invitee->getTable()
+        );
+
+        $safeUpdates = Arr::only($updates, $columns);
+
+        if ($safeUpdates !== []) {
+            $invitee->forceFill($safeUpdates)->saveQuietly();
+        }
+    }
+
+    protected function normalizeWhatsappStatus(
+        string $status
+    ): string {
+        return match (strtolower(trim($status))) {
+            'sent' => 'sent',
+            'delivered' => 'delivered',
+            'read' => 'read',
+            'failed' => 'failed',
+            default => 'unknown',
+        };
+    }
+
+    protected function parseWhatsappTimestamp(
+        mixed $timestamp
+    ): Carbon {
+        if (is_numeric($timestamp)) {
+            return Carbon::createFromTimestamp(
+                (int) $timestamp
+            );
+        }
+
+        if (filled($timestamp)) {
+            try {
+                return Carbon::parse($timestamp);
+            } catch (Throwable) {
+                // Use the current time below.
+            }
+        }
+
+        return now();
+    }
+
+    protected function extractWhatsappError(
+        array $status
+    ): ?string {
+        $errors = $status['errors'] ?? [];
+
+        if (! is_array($errors) || $errors === []) {
+            return null;
+        }
+
+        return collect($errors)
+            ->map(function ($error): string {
+                if (! is_array($error)) {
+                    return (string) $error;
+                }
+
+                return (string) (
+                    $error['message']
+                    ?? data_get($error, 'error_data.details')
+                    ?? $error['title']
+                    ?? 'WhatsApp message failed.'
+                );
+            })
+            ->filter()
+            ->implode(' | ');
     }
 }

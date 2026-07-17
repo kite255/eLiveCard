@@ -7,6 +7,7 @@ use App\Models\User;
 use Filament\Pages\Page;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class GateCheckIn extends Page
 {
@@ -22,34 +23,46 @@ class GateCheckIn extends Page
 
     protected static string $view = 'filament.pages.gate-check-in';
 
-    public Collection $events;
+    /**
+     * Do not register this page in Filament navigation.
+     *
+     * The dashboard and event pages open the professional
+     * event-specific scanner route directly.
+     */
+    protected static bool $shouldRegisterNavigation = false;
 
-    public static function shouldRegisterNavigation(): bool
-    {
-        return auth()->user()?->canScanGuests() ?? false;
-    }
+    public Collection $events;
 
     public static function canAccess(): bool
     {
         return auth()->user()?->canScanGuests() ?? false;
     }
 
-    public function mount()
+    public function mount(): void
     {
+        abort_unless(static::canAccess(), 403);
+
         $this->events = $this->authorizedEventsQuery()
             ->when(
-                \Schema::hasColumn('events', 'event_date'),
-                fn (Builder $query) => $query->orderByDesc('event_date'),
-                fn (Builder $query) => $query->latest()
+                Schema::hasColumn('events', 'event_date'),
+                fn (Builder $query): Builder => $query
+                    ->orderByDesc('event_date')
+                    ->orderByDesc('id'),
+                fn (Builder $query): Builder => $query->latest(),
             )
             ->get();
 
-        /**
-         * If this user has only one assigned event,
-         * send them directly to the professional check-in page.
+        /*
+         * When the user has one authorized event, redirect directly
+         * to the professional event-specific gate scanner.
          */
         if ($this->events->count() === 1) {
-            return redirect()->route('gate.check-in.show', $this->events->first());
+            $this->redirect(
+                route('gate.check-in.show', [
+                    'event' => $this->events->first()->getKey(),
+                ]),
+                navigate: false,
+            );
         }
     }
 
@@ -71,21 +84,30 @@ class GateCheckIn extends Page
             return $query->where(function (Builder $query) use ($user): void {
                 $query
                     ->where('user_id', $user->id)
-                    ->orWhereHas('assignedUsers', function (Builder $query) use ($user): void {
-                        $query
-                            ->where('users.id', $user->id)
-                            ->where('event_user.is_active', true);
-                    });
+                    ->orWhereHas(
+                        'assignedUsers',
+                        function (Builder $query) use ($user): void {
+                            $query
+                                ->where('users.id', $user->id)
+                                ->where('event_user.is_active', true);
+                        },
+                    );
             });
         }
 
         if ($user->isCheckInOfficer()) {
-            return $query->whereHas('assignedUsers', function (Builder $query) use ($user): void {
-                $query
-                    ->where('users.id', $user->id)
-                    ->where('event_user.role', User::ROLE_CHECK_IN_OFFICER)
-                    ->where('event_user.is_active', true);
-            });
+            return $query->whereHas(
+                'assignedUsers',
+                function (Builder $query) use ($user): void {
+                    $query
+                        ->where('users.id', $user->id)
+                        ->where(
+                            'event_user.role',
+                            User::ROLE_CHECK_IN_OFFICER,
+                        )
+                        ->where('event_user.is_active', true);
+                },
+            );
         }
 
         return $query->whereRaw('1 = 0');

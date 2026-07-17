@@ -357,14 +357,20 @@
 
         .elive-filters {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr auto;
+            grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(150px, 1fr)) auto;
             gap: 10px;
             align-items: end;
             padding: 0 16px 14px;
             background: #FFFFFF;
         }
 
-        @media (max-width: 900px) {
+        @media (max-width: 1180px) {
+            .elive-filters {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
             .elive-filters {
                 grid-template-columns: 1fr;
             }
@@ -752,7 +758,6 @@
         }
 
 
-        .elive-row-stack,
         .elive-row-stack {
             display: flex;
             flex-direction: column;
@@ -1101,7 +1106,7 @@
 
     </style>
 
-    <div class="elive-page space-y-3">
+    <div class="elive-page w-full max-w-none space-y-3">
         <div class="elive-shell">
             {{-- Header --}}
             <div class="elive-table-header">
@@ -1125,50 +1130,12 @@
                         </div>
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-3">
-                        <div class="elive-header-stat">
-                            <div class="elive-header-icon">
-                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M4 6h16v12H4z" />
-                                    <path d="m4 7 8 6 8-6" />
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="elive-header-stat-number">
-                                    {{ ($stats['sms_sent'] ?? 0) + ($stats['whatsapp_sent'] ?? 0) }}
-                                </div>
-                                <div class="elive-header-stat-label">Sent</div>
-                            </div>
+                    <div class="text-right">
+                        <div class="text-sm font-black text-white">
+                            {{ $stats['sent'] ?? 0 }} sent · {{ $stats['opened'] ?? 0 }} opened · {{ $finalResponses }} responded
                         </div>
-
-                        <div class="elive-header-stat">
-                            <div class="elive-header-icon">
-                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                                    <circle cx="12" cy="12" r="3" />
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="elive-header-stat-number">
-                                    {{ $stats['opened'] ?? 0 }}
-                                </div>
-                                <div class="elive-header-stat-label">Opened</div>
-                            </div>
-                        </div>
-
-                        <div class="elive-header-stat">
-                            <div class="elive-header-icon">
-                                <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M7 17 17 7" />
-                                    <path d="M9 7h8v8" />
-                                </svg>
-                            </div>
-                            <div>
-                                <div class="elive-header-stat-number">
-                                    {{ $responseRate }}%
-                                </div>
-                                <div class="elive-header-stat-label">Response Rate</div>
-                            </div>
+                        <div class="mt-1 text-[11px] font-semibold text-white/70">
+                            {{ $responseRate }}% response rate
                         </div>
                     </div>
                 </div>
@@ -1239,7 +1206,7 @@
                     </div>
                     <div>
                         <div class="elive-summary-value" style="color:#213B73;">{{ $stats['opened'] ?? 0 }}</div>
-                        <div class="elive-summary-label">Opened Invitation</div>
+                        <div class="elive-summary-label">Opened</div>
                     </div>
                 </div>
 
@@ -1254,7 +1221,7 @@
                     </div>
                     <div>
                         <div class="elive-summary-value" style="color:#64748B;">{{ $stats['not_opened'] ?? 0 }}</div>
-                        <div class="elive-summary-label">Not Opened</div>
+                        <div class="elive-summary-label">Unopened</div>
                     </div>
                 </div>
 
@@ -1334,6 +1301,18 @@
                 </div>
 
                 <div>
+                    <label class="elive-label">Delivery Status</label>
+                    <select wire:model.live="deliveryFilter" class="elive-select">
+                        <option value="">All Delivery Statuses</option>
+                        <option value="sent">Sent</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed</option>
+                        <option value="not_sent">Not Sent</option>
+                    </select>
+                </div>
+
+                <div>
                     <button
                         type="button"
                         wire:click="clearFilters"
@@ -1353,7 +1332,7 @@
                             <th>Guest Name</th>
                             <th>Delivery</th>
                             <th>Opened</th>
-                            <th>Count</th>
+                            <th>Views</th>
                             <th>Last Opened</th>
                             <th>RSVP</th>
                             <th>Guests</th>
@@ -1463,8 +1442,8 @@
                                 $allowedGuestLimit = $inviteeAllowedGuests($invitee);
                                 $confirmedGuestCount = $inviteeConfirmedGuests($invitee);
                                 $guestCountLabel = in_array($invitee->rsvp_status, ['attending', 'not_attending', 'declined'], true)
-                                    ? $confirmedGuestCount . ' / ' . $allowedGuestLimit
-                                    : '— / ' . $allowedGuestLimit;
+                                    ? $confirmedGuestCount . ' of ' . $allowedGuestLimit
+                                    : '— of ' . $allowedGuestLimit;
                             @endphp
 
                             <tr wire:key="invitee-row-{{ $invitee->id }}">
@@ -1661,8 +1640,8 @@
                                             wire:loading.attr="disabled"
                                             wire:target="resendSmsInvitation({{ $invitee->id }})"
                                             class="elive-resend-btn sms"
-                                            title="Resend SMS invitation / RSVP reminder"
-                                            aria-label="Resend SMS invitation / RSVP reminder"
+                                            title="Resend SMS"
+                                            aria-label="Resend SMS"
                                         >
                                             <span wire:loading.remove wire:target="resendSmsInvitation({{ $invitee->id }})">
                                                 <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1680,8 +1659,8 @@
                                             wire:loading.attr="disabled"
                                             wire:target="resendWhatsAppInvitation({{ $invitee->id }})"
                                             class="elive-resend-btn whatsapp"
-                                            title="Resend WhatsApp invitation / RSVP reminder"
-                                            aria-label="Resend WhatsApp invitation / RSVP reminder"
+                                            title="Resend WhatsApp"
+                                            aria-label="Resend WhatsApp"
                                         >
                                             <span wire:loading.remove wire:target="resendWhatsAppInvitation({{ $invitee->id }})">
                                                 <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">

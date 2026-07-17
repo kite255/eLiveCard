@@ -4,6 +4,15 @@
         $notAttendingPercent = $totalInvitees > 0 ? round(($notAttending / $totalInvitees) * 100) : 0;
         $pendingPercent = $totalInvitees > 0 ? round(($rsvpPending / $totalInvitees) * 100) : 0;
         $checkedInPercent = $totalInvitees > 0 ? round(($checkedInInvitees / $totalInvitees) * 100) : 0;
+
+        /*
+         * The scanner must always be opened for an explicitly selected event.
+         * This prevents ambiguity when two or more events are active.
+         */
+        $scannerEvent = $selectedEvent;
+        $scannerUrl = $scannerEvent
+            ? route('gate.check-in.show', ['event' => $scannerEvent->getKey()])
+            : null;
     @endphp
 
     <style>
@@ -111,6 +120,46 @@
             background: #FFFFFF;
         }
 
+        .elive-btn-disabled {
+            color: rgba(255, 255, 255, .75);
+            background: rgba(255, 255, 255, .14);
+            border: 1px solid rgba(255, 255, 255, .2);
+            cursor: not-allowed;
+            opacity: .8;
+        }
+
+        .elive-btn-disabled:hover {
+            transform: none;
+        }
+
+        .elive-action-disabled {
+            cursor: not-allowed;
+            opacity: .55;
+            pointer-events: none;
+        }
+
+        .elive-scanner-notice {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-top: 14px;
+            padding: 11px 13px;
+            border-radius: 12px;
+            color: #92400E;
+            background: #FFF7ED;
+            border: 1px solid #FED7AA;
+            font-size: 12px;
+            font-weight: 750;
+            line-height: 1.5;
+        }
+
+        .elive-scanner-notice svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
         .elive-hero-stats {
             width: 100%;
             display: grid;
@@ -161,7 +210,7 @@
             min-height: 84px;
             display: flex;
             align-items: center;
-            padding: 12px;
+            padding: 10px 12px;
         }
 
         .elive-kpi-inner {
@@ -234,18 +283,53 @@
             white-space: nowrap;
         }
 
-        .elive-main-grid {
+        .elive-dashboard-grid {
             display: grid;
-            grid-template-columns: minmax(330px, 1.05fr) minmax(420px, 1.35fr) minmax(260px, .8fr);
+            grid-template-columns:
+                minmax(300px, 1fr)
+                minmax(440px, 1.35fr)
+                minmax(270px, .82fr);
+            grid-template-areas:
+                "rsvp messages actions"
+                "attendance checkins actions"
+                "attendance checkins alerts";
             gap: 18px;
             margin-top: 12px;
-            align-items: start;
+            align-items: stretch;
         }
 
-        .elive-main-grid > .elive-card {
+        .elive-main-grid,
+        .elive-operations-grid {
+            display: contents;
+        }
+
+        .elive-main-grid > :nth-child(1) {
+            grid-area: rsvp;
+        }
+
+        .elive-main-grid > :nth-child(2) {
+            grid-area: messages;
+        }
+
+        .elive-main-grid > :nth-child(3) {
+            grid-area: actions;
+        }
+
+        .elive-operations-grid > :nth-child(1) {
+            grid-area: attendance;
+        }
+
+        .elive-operations-grid > :nth-child(2) {
+            grid-area: checkins;
+        }
+
+        .elive-operations-grid > :nth-child(3) {
+            grid-area: alerts;
+        }
+
+        .elive-dashboard-grid > .elive-card {
             min-height: 0;
-            height: auto;
-            align-self: start;
+            height: 100%;
         }
 
         .elive-bottom-grid {
@@ -458,13 +542,13 @@
         .elive-actions-list {
             flex: 0;
             display: grid;
-            gap: 10px;
+            gap: 8px;
         }
 
         .elive-action-item {
             width: 100%;
             box-sizing: border-box;
-            min-height: 62px;
+            min-height: 56px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -841,14 +925,6 @@
             font-weight: 900;
         }
 
-        .elive-operations-grid {
-            display: grid;
-            grid-template-columns: minmax(280px, .8fr) minmax(460px, 1.45fr) minmax(280px, .85fr);
-            gap: 18px;
-            margin-top: 12px;
-            align-items: stretch;
-        }
-
         .elive-attendance-list {
             display: grid;
             gap: 12px;
@@ -1043,9 +1119,12 @@
         }
 
         @media (max-width: 1200px) {
-            .elive-main-grid,
-            .elive-operations-grid {
-                grid-template-columns: 1fr;
+            .elive-dashboard-grid {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                grid-template-areas:
+                    "rsvp messages"
+                    "attendance checkins"
+                    "actions alerts";
             }
 
             .elive-bottom-grid {
@@ -1064,6 +1143,17 @@
         }
 
         @media (max-width: 768px) {
+            .elive-dashboard-grid {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "rsvp"
+                    "messages"
+                    "actions"
+                    "attendance"
+                    "checkins"
+                    "alerts";
+            }
+
             .elive-content {
                 padding: 16px;
             }
@@ -1137,10 +1227,22 @@
                                 Create Event
                             </a>
 
-                            <a href="{{ url('/admin/gate-check-in') }}" class="elive-btn elive-btn-light">
-                                <x-heroicon-o-qr-code style="width: 18px; height: 18px;" />
-                                Open Gate Scanner
-                            </a>
+                            @if ($scannerUrl)
+                                <a href="{{ $scannerUrl }}" class="elive-btn elive-btn-light">
+                                    <x-heroicon-o-qr-code style="width: 18px; height: 18px;" />
+                                    Open Gate Scanner
+                                </a>
+                            @else
+                                <button
+                                    type="button"
+                                    class="elive-btn elive-btn-disabled"
+                                    disabled
+                                    title="Select an event before opening the scanner"
+                                >
+                                    <x-heroicon-o-qr-code style="width: 18px; height: 18px;" />
+                                    Select Event First
+                                </button>
+                            @endif
                         </div>
                     </div>
 
@@ -1169,7 +1271,7 @@
                     <div class="elive-filter-copy">
                         <div class="elive-filter-title">Event Dashboard Filter</div>
                         <div class="elive-filter-subtitle">
-                            Select one event to filter invitees, RSVP responses, SMS activity and check-ins.
+                            Select an event to filter dashboard data and activate the correct event scanner.
                         </div>
                     </div>
 
@@ -1179,7 +1281,7 @@
                             class="elive-select"
                             aria-label="Select event"
                         >
-                            <option value="">All Events</option>
+                            <option value="">All Events — scanner disabled</option>
 
                             @foreach ($eventOptions as $eventId => $eventName)
                                 <option value="{{ $eventId }}">
@@ -1199,6 +1301,16 @@
                         @endif
                     </div>
                 </div>
+
+                @if (! $selectedEvent)
+                    <div class="elive-scanner-notice">
+                        <x-heroicon-o-information-circle />
+                        <span>
+                            Select an event before opening the gate scanner. This prevents invitees
+                            from one active event being checked into another event.
+                        </span>
+                    </div>
+                @endif
 
                 @if ($selectedEvent)
                     @php
@@ -1350,8 +1462,25 @@
                         </div>
                         <div>
                             <div class="elive-kpi-label">SMS Balance</div>
-                            <div class="elive-kpi-value">{{ $smsBalance }}</div>
-                            <div class="elive-kpi-note">SMS credits</div>
+                            <div
+                                class="elive-kpi-value"
+                                @style([
+                                    'font-size:16px' => ! is_numeric(str_replace(',', '', (string) $smsBalance)),
+                                    'color:#DC2626' => in_array($smsBalance, ['Unavailable', 'Check provider'], true),
+                                    'color:#C2410C' => $smsBalance === 'Not configured',
+                                ])
+                            >
+                                {{ $smsBalance }}
+                            </div>
+                            <div class="elive-kpi-note">
+                                @if ($smsBalance === 'Not configured')
+                                    Configure balance API
+                                @elseif (in_array($smsBalance, ['Unavailable', 'Check provider'], true))
+                                    Provider connection issue
+                                @else
+                                    Available SMS credits
+                                @endif
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1383,7 +1512,8 @@
                 </div>
             </section>
 
-            <section class="elive-main-grid">
+            <div class="elive-dashboard-grid">
+                <section class="elive-main-grid">
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
@@ -1481,7 +1611,7 @@
                             <div class="elive-section-title">WhatsApp & SMS Overview</div>
                             <div class="elive-section-subtitle">{{ $selectedEventId ? 'Selected event communication summary' : 'Combined message delivery and response summary' }}</div>
                         </div>
-                        <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View SMS Reports</a>
+                        <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View Message Reports</a>
                     </div>
 
                     <div class="elive-channel-grid">
@@ -1496,7 +1626,7 @@
 
                             <div class="elive-channel-stats">
                                 <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Sent</div>
+                                    <div class="elive-channel-stat-label">Accepted / Sent</div>
                                     <div class="elive-channel-stat-value" style="color:#16A34A;">{{ number_format($smsSent) }}</div>
                                 </div>
                                 <div class="elive-channel-stat">
@@ -1525,7 +1655,7 @@
 
                             <div class="elive-channel-stats">
                                 <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Sent</div>
+                                    <div class="elive-channel-stat-label">Accepted / Sent</div>
                                     <div class="elive-channel-stat-value" style="color:#16A34A;">{{ number_format($whatsAppSent) }}</div>
                                 </div>
                                 <div class="elive-channel-stat">
@@ -1593,18 +1723,34 @@
                             <span style="color:#213B73;font-weight:900;">›</span>
                         </a>
 
-                        <a href="{{ url('/admin/gate-check-in') }}" class="elive-action-item">
-                            <span class="elive-action-left">
-                                <span class="elive-small-icon green">
-                                    <x-heroicon-o-qr-code />
+                        @if ($scannerUrl)
+                            <a href="{{ $scannerUrl }}" class="elive-action-item">
+                                <span class="elive-action-left">
+                                    <span class="elive-small-icon green">
+                                        <x-heroicon-o-qr-code />
+                                    </span>
+                                    <span>
+                                        <span class="elive-action-title">Open Gate Scanner</span>
+                                        <span class="elive-action-subtitle">
+                                            {{ $selectedEvent?->title ?? $selectedEvent?->name ?? 'Selected event' }}
+                                        </span>
+                                    </span>
                                 </span>
-                                <span>
-                                    <span class="elive-action-title">Open Gate Scanner</span>
-                                    <span class="elive-action-subtitle">Scan QR / invitee ID</span>
+                                <span style="color:#213B73;font-weight:900;">›</span>
+                            </a>
+                        @else
+                            <div class="elive-action-item elive-action-disabled">
+                                <span class="elive-action-left">
+                                    <span class="elive-small-icon green">
+                                        <x-heroicon-o-qr-code />
+                                    </span>
+                                    <span>
+                                        <span class="elive-action-title">Select Event First</span>
+                                        <span class="elive-action-subtitle">Choose an event from the filter</span>
+                                    </span>
                                 </span>
-                            </span>
-                            <span style="color:#213B73;font-weight:900;">›</span>
-                        </a>
+                            </div>
+                        @endif
 
                         <a href="{{ url('/admin/rsvp-report') }}" class="elive-action-item">
                             <span class="elive-action-left">
@@ -1671,7 +1817,13 @@
                             <div class="elive-section-title">Recent Check-Ins</div>
                             <div class="elive-section-subtitle">Latest guest arrivals recorded at the gate</div>
                         </div>
-                        <a href="{{ url('/admin/gate-check-in') }}" class="elive-link">Open Scanner</a>
+                        @if ($scannerUrl)
+                            <a href="{{ $scannerUrl }}" class="elive-link">Open Scanner</a>
+                        @else
+                            <span class="elive-link" style="opacity:.55;cursor:not-allowed;">
+                                Select Event First
+                            </span>
+                        @endif
                     </div>
 
                     <div class="elive-table-wrap">
@@ -1710,7 +1862,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="5" style="padding:28px;text-align:center;color:#64748B;">
+                                        <td colspan="5" style="padding:22px;text-align:center;color:#64748B;">
                                             No check-ins recorded yet.
                                         </td>
                                     </tr>
@@ -1763,7 +1915,8 @@
                         </div>
                     </div>
                 </div>
-            </section>
+                </section>
+            </div>
 
             <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:12px;">
                 <a href="{{ url('/admin/events') }}" class="elive-link">View All Events</a>

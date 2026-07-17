@@ -5,6 +5,7 @@ namespace App\Exports;
 use App\Models\Event;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
+use App\Services\AuditLogService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -17,79 +18,170 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
 class EventSummaryExport implements FromCollection, WithHeadings, WithMapping, ShouldAutoSize, WithStyles
 {
-    public function __construct(protected int $eventId) {}
+    protected bool $auditRecorded = false;
+
+    public function __construct(
+        protected int $eventId
+    ) {}
 
     public function collection(): Collection
     {
         $event = Event::query()->find($this->eventId);
 
-        $inviteesQuery = Invitee::query()->where('event_id', $this->eventId);
+        $inviteesQuery = Invitee::query()
+            ->where('event_id', $this->eventId);
 
         $totalInvitees = (clone $inviteesQuery)->count();
-        $totalAllowedGuests = (clone $inviteesQuery)->sum('allowed_guests');
-        $totalConfirmedGuests = Schema::hasColumn('invitees', 'confirmed_guests')
+
+        $totalAllowedGuests = (clone $inviteesQuery)
+            ->sum('allowed_guests');
+
+        $totalConfirmedGuests = Schema::hasColumn(
+            'invitees',
+            'confirmed_guests'
+        )
             ? (clone $inviteesQuery)->sum('confirmed_guests')
             : 0;
 
-        $attending = (clone $inviteesQuery)->where('rsvp_status', Invitee::RSVP_ATTENDING)->count();
-        $notAttending = (clone $inviteesQuery)->where('rsvp_status', Invitee::RSVP_NOT_ATTENDING)->count();
-        $pendingRsvp = (clone $inviteesQuery)->where(function ($query): void {
-            $query->whereNull('rsvp_status')
-                ->orWhere('rsvp_status', '')
-                ->orWhere('rsvp_status', Invitee::RSVP_PENDING);
+        $attending = (clone $inviteesQuery)
+            ->where(
+                'rsvp_status',
+                Invitee::RSVP_ATTENDING
+            )
+            ->count();
 
-            if (defined(Invitee::class . '::RSVP_MAYBE')) {
-                $query->orWhere('rsvp_status', Invitee::RSVP_MAYBE);
-            }
-        })->count();
+        $notAttending = (clone $inviteesQuery)
+            ->where(
+                'rsvp_status',
+                Invitee::RSVP_NOT_ATTENDING
+            )
+            ->count();
 
-        $cardsGenerated = Schema::hasTable('generated_cards')
+        $pendingRsvp = (clone $inviteesQuery)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('rsvp_status')
+                    ->orWhere('rsvp_status', '')
+                    ->orWhere(
+                        'rsvp_status',
+                        Invitee::RSVP_PENDING
+                    );
+
+                if (
+                    defined(
+                        Invitee::class.'::RSVP_MAYBE'
+                    )
+                ) {
+                    $query->orWhere(
+                        'rsvp_status',
+                        Invitee::RSVP_MAYBE
+                    );
+                }
+            })
+            ->count();
+
+        $cardsGenerated = Schema::hasTable(
+            'generated_cards'
+        )
             ? GeneratedCard::query()
-                ->where('event_id', $this->eventId)
-                ->whereIn('status', [GeneratedCard::STATUS_GENERATED, GeneratedCard::STATUS_SENT])
+                ->where(
+                    'event_id',
+                    $this->eventId
+                )
+                ->whereIn('status', [
+                    GeneratedCard::STATUS_GENERATED,
+                    GeneratedCard::STATUS_SENT,
+                ])
                 ->count()
             : 0;
 
-        $cardsSent = Schema::hasTable('generated_cards')
+        $cardsSent = Schema::hasTable(
+            'generated_cards'
+        )
             ? GeneratedCard::query()
-                ->where('event_id', $this->eventId)
-                ->where('status', GeneratedCard::STATUS_SENT)
+                ->where(
+                    'event_id',
+                    $this->eventId
+                )
+                ->where(
+                    'status',
+                    GeneratedCard::STATUS_SENT
+                )
                 ->count()
             : 0;
 
-        $smsSent = $this->messageLogCount('sms', ['sent', 'delivered']);
-        $whatsappSent = $this->messageLogCount('whatsapp', ['sent', 'delivered', 'read']);
+        $smsSent = $this->messageLogCount(
+            'sms',
+            ['sent', 'delivered']
+        );
+
+        $whatsappSent = $this->messageLogCount(
+            'whatsapp',
+            ['sent', 'delivered', 'read']
+        );
+
         $failedMessages = $this->failedMessageCount();
 
-        $checkedInInvitees = (clone $inviteesQuery)->where('checked_in_count', '>', 0)->count();
-        $totalGuestsCheckedIn = (clone $inviteesQuery)->sum('checked_in_count');
-        $notCheckedIn = (clone $inviteesQuery)->where(function ($query): void {
-            $query->whereNull('checked_in_count')
-                ->orWhere('checked_in_count', 0);
-        })->count();
+        $checkedInInvitees = (clone $inviteesQuery)
+            ->where(
+                'checked_in_count',
+                '>',
+                0
+            )
+            ->count();
 
-        return collect([
-            [
-                'event_name' => (string) ($event?->title ?? $event?->name ?? 'Event #' . $this->eventId),
-                'event_date' => $this->eventDate($event),
-                'venue' => (string) ($event?->venue_name ?? $event?->venue ?? $event?->venue_address ?? '-'),
-                'total_invitees' => $totalInvitees,
-                'total_allowed_guests' => $totalAllowedGuests,
-                'total_confirmed_guests' => $totalConfirmedGuests,
-                'attending' => $attending,
-                'not_attending' => $notAttending,
-                'pending_rsvp' => $pendingRsvp,
-                'cards_generated' => $cardsGenerated,
-                'cards_sent' => $cardsSent,
-                'sms_sent' => $smsSent,
-                'whatsapp_sent' => $whatsappSent,
-                'failed_messages' => $failedMessages,
-                'checked_in_invitees' => $checkedInInvitees,
-                'total_guests_checked_in' => $totalGuestsCheckedIn,
-                'not_checked_in' => $notCheckedIn,
-                'exported_at' => now()->format('Y-m-d H:i:s'),
-            ],
-        ]);
+        $totalGuestsCheckedIn = (clone $inviteesQuery)
+            ->sum('checked_in_count');
+
+        $notCheckedIn = (clone $inviteesQuery)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('checked_in_count')
+                    ->orWhere(
+                        'checked_in_count',
+                        0
+                    );
+            })
+            ->count();
+
+        $summary = [
+            'event_name' => (string) (
+                $event?->title
+                ?? $event?->name
+                ?? 'Event #'.$this->eventId
+            ),
+            'event_date' => $this->eventDate($event),
+            'venue' => (string) (
+                $event?->venue_name
+                ?? $event?->venue
+                ?? $event?->venue_address
+                ?? '-'
+            ),
+            'total_invitees' => $totalInvitees,
+            'total_allowed_guests' => $totalAllowedGuests,
+            'total_confirmed_guests' => $totalConfirmedGuests,
+            'attending' => $attending,
+            'not_attending' => $notAttending,
+            'pending_rsvp' => $pendingRsvp,
+            'cards_generated' => $cardsGenerated,
+            'cards_sent' => $cardsSent,
+            'sms_sent' => $smsSent,
+            'whatsapp_sent' => $whatsappSent,
+            'failed_messages' => $failedMessages,
+            'checked_in_invitees' => $checkedInInvitees,
+            'total_guests_checked_in' => $totalGuestsCheckedIn,
+            'not_checked_in' => $notCheckedIn,
+            'exported_at' => now()->format(
+                'Y-m-d H:i:s'
+            ),
+        ];
+
+        $this->recordExportAudit(
+            event: $event,
+            summary: $summary,
+        );
+
+        return collect([$summary]);
     }
 
     public function map($row): array
@@ -143,20 +235,35 @@ class EventSummaryExport implements FromCollection, WithHeadings, WithMapping, S
     public function styles(Worksheet $sheet): array
     {
         return [
-            1 => ['font' => ['bold' => true]],
+            1 => [
+                'font' => [
+                    'bold' => true,
+                ],
+            ],
         ];
     }
 
-    protected function messageLogCount(string $channel, array $statuses): int
-    {
+    protected function messageLogCount(
+        string $channel,
+        array $statuses
+    ): int {
         if (! Schema::hasTable('message_logs')) {
             return 0;
         }
 
         return DB::table('message_logs')
-            ->where('event_id', $this->eventId)
-            ->where('channel', $channel)
-            ->whereIn('status', $statuses)
+            ->where(
+                'event_id',
+                $this->eventId
+            )
+            ->where(
+                'channel',
+                $channel
+            )
+            ->whereIn(
+                'status',
+                $statuses
+            )
             ->count();
     }
 
@@ -167,13 +274,22 @@ class EventSummaryExport implements FromCollection, WithHeadings, WithMapping, S
         }
 
         return DB::table('message_logs')
-            ->where('event_id', $this->eventId)
-            ->whereIn('status', ['failed', 'rejected', 'undelivered'])
+            ->where(
+                'event_id',
+                $this->eventId
+            )
+            ->whereIn('status', [
+                'failed',
+                'rejected',
+                'undelivered',
+                'expired',
+            ])
             ->count();
     }
 
-    protected function eventDate(?Event $event): string
-    {
+    protected function eventDate(
+        ?Event $event
+    ): string {
         $date = $event?->event_date
             ?? $event?->date
             ?? $event?->starts_at
@@ -184,9 +300,53 @@ class EventSummaryExport implements FromCollection, WithHeadings, WithMapping, S
         }
 
         try {
-            return \Carbon\Carbon::parse($date)->format('Y-m-d');
+            return \Carbon\Carbon::parse(
+                $date
+            )->format('Y-m-d');
         } catch (\Throwable) {
             return (string) $date;
         }
+    }
+
+    protected function recordExportAudit(
+        ?Event $event,
+        array $summary
+    ): void {
+        if ($this->auditRecorded) {
+            return;
+        }
+
+        $this->auditRecorded = true;
+
+        AuditLogService::exported(
+            subject: $event,
+            eventId: $this->eventId,
+            description: 'Event summary report was exported.',
+            metadata: [
+                'export_type' => 'event_summary',
+                'row_count' => 1,
+                'event_found' => (bool) $event,
+                'event_name' => $summary['event_name'],
+                'event_date' => $summary['event_date'],
+                'venue' => $summary['venue'],
+                'summary' => [
+                    'total_invitees' => $summary['total_invitees'],
+                    'total_allowed_guests' => $summary['total_allowed_guests'],
+                    'total_confirmed_guests' => $summary['total_confirmed_guests'],
+                    'attending' => $summary['attending'],
+                    'not_attending' => $summary['not_attending'],
+                    'pending_rsvp' => $summary['pending_rsvp'],
+                    'cards_generated' => $summary['cards_generated'],
+                    'cards_sent' => $summary['cards_sent'],
+                    'sms_sent' => $summary['sms_sent'],
+                    'whatsapp_sent' => $summary['whatsapp_sent'],
+                    'failed_messages' => $summary['failed_messages'],
+                    'checked_in_invitees' => $summary['checked_in_invitees'],
+                    'total_guests_checked_in' => $summary['total_guests_checked_in'],
+                    'not_checked_in' => $summary['not_checked_in'],
+                ],
+                'exported_at' => $summary['exported_at'],
+            ],
+        );
     }
 }
