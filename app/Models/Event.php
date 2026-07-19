@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class Event extends Model
 {
@@ -44,6 +46,14 @@ class Event extends Model
         'status',
         'is_public',
 
+        // Secure client RSVP report sharing
+        'rsvp_share_token_hash',
+        'rsvp_share_token_encrypted',
+        'rsvp_share_enabled',
+        'rsvp_share_expires_at',
+        'rsvp_share_show_phone',
+        'rsvp_share_last_generated_at',
+
         // Automatic SMS reminder settings
         'auto_sms_reminders_enabled',
         'auto_rsvp_pending_reminder_enabled',
@@ -72,6 +82,12 @@ class Event extends Model
         'event_day_reminder_time' => 'datetime:H:i',
         'welcome_sms_enabled' => 'boolean',
         'is_public' => 'boolean',
+
+        // Secure client RSVP report sharing
+        'rsvp_share_enabled' => 'boolean',
+        'rsvp_share_expires_at' => 'datetime',
+        'rsvp_share_show_phone' => 'boolean',
+        'rsvp_share_last_generated_at' => 'datetime',
 
         // Invitee digital page toggles
         'show_cover_image' => 'boolean',
@@ -759,6 +775,114 @@ class Event extends Model
             self::STATUS_UPCOMING => $this->event_date?->isToday() ? 'Today' : 'Upcoming',
             default => 'Upcoming',
         };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Secure Client RSVP Report Sharing
+    |--------------------------------------------------------------------------
+    */
+
+    public function hasValidRsvpShareLink(): bool
+    {
+        if (! $this->rsvp_share_enabled) {
+            return false;
+        }
+
+        if (! filled($this->rsvp_share_token_hash)) {
+            return false;
+        }
+
+        return ! (
+            $this->rsvp_share_expires_at
+            && $this->rsvp_share_expires_at->isPast()
+        );
+    }
+
+    public function generateRsvpShareLink(
+        ?Carbon $expiresAt = null,
+        ?bool $showPhone = null
+    ): string {
+        $plainToken = Str::random(64);
+
+        $this->forceFill([
+            'rsvp_share_token_hash' => hash('sha256', $plainToken),
+            'rsvp_share_token_encrypted' => Crypt::encryptString($plainToken),
+            'rsvp_share_enabled' => true,
+            'rsvp_share_expires_at' => $expiresAt,
+            'rsvp_share_show_phone' => $showPhone
+                ?? (bool) $this->rsvp_share_show_phone,
+            'rsvp_share_last_generated_at' => now(),
+        ])->save();
+
+        return route('public.rsvp-report', [
+            'token' => $plainToken,
+        ]);
+    }
+
+    public function getRsvpShareUrlAttribute(): ?string
+    {
+        if (! $this->hasValidRsvpShareLink()) {
+            return null;
+        }
+
+        if (! filled($this->rsvp_share_token_encrypted)) {
+            return null;
+        }
+
+        try {
+            $plainToken = Crypt::decryptString(
+                $this->rsvp_share_token_encrypted
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return route('public.rsvp-report', [
+            'token' => $plainToken,
+        ]);
+    }
+
+    public function ensureRsvpShareLink(
+        ?Carbon $expiresAt = null,
+        ?bool $showPhone = null
+    ): string {
+        $existingUrl = $this->rsvp_share_url;
+
+        if ($existingUrl) {
+            return $existingUrl;
+        }
+
+        return $this->generateRsvpShareLink(
+            $expiresAt,
+            $showPhone
+        );
+    }
+
+    public function disableRsvpShareLink(): void
+    {
+        $this->forceFill([
+            'rsvp_share_enabled' => false,
+        ])->save();
+    }
+
+    public function revokeRsvpShareLink(): void
+    {
+        $this->forceFill([
+            'rsvp_share_token_hash' => null,
+            'rsvp_share_token_encrypted' => null,
+            'rsvp_share_enabled' => false,
+            'rsvp_share_expires_at' => null,
+            'rsvp_share_last_generated_at' => null,
+        ])->save();
+    }
+
+    public function rsvpShareHasExpired(): bool
+    {
+        return (bool) (
+            $this->rsvp_share_expires_at
+            && $this->rsvp_share_expires_at->isPast()
+        );
     }
 
     /*

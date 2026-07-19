@@ -439,18 +439,29 @@ class EventResource extends Resource
                                     ->icon('heroicon-o-tag')
                                     ->placeholder('Not set'),
 
-                                Infolists\Components\TextEntry::make('status')
+                                Infolists\Components\TextEntry::make('display_status')
                                     ->label('Status')
+                                    ->state(fn (Event $record): string => $record->display_status)
                                     ->badge()
-                                    ->formatStateUsing(fn (?string $state): string => Event::statuses()[$state] ?? ucfirst((string) $state))
+                                    ->formatStateUsing(fn (?string $state): string =>
+                                        str($state ?: Event::STATUS_DRAFT)->headline()->toString()
+                                    )
                                     ->color(fn (?string $state): string => match ($state) {
-                                        Event::STATUS_ACTIVE => 'success',
-                                        Event::STATUS_COMPLETED => 'info',
-                                        Event::STATUS_CANCELLED => 'danger',
-                                        Event::STATUS_DRAFT => 'gray',
+                                        'active' => 'success',
+                                        'upcoming' => 'warning',
+                                        'completed' => 'info',
+                                        'cancelled' => 'danger',
+                                        'draft' => 'gray',
                                         default => 'gray',
                                     })
-                                    ->icon('heroicon-o-signal'),
+                                    ->icon(fn (?string $state): string => match ($state) {
+                                        'active' => 'heroicon-o-bolt',
+                                        'upcoming' => 'heroicon-o-clock',
+                                        'completed' => 'heroicon-o-check-circle',
+                                        'cancelled' => 'heroicon-o-x-circle',
+                                        'draft' => 'heroicon-o-pencil-square',
+                                        default => 'heroicon-o-signal',
+                                    }),
 
                                 Infolists\Components\TextEntry::make('is_public')
                                     ->label('Public Visibility')
@@ -740,6 +751,8 @@ class EventResource extends Resource
                                 ->where('channel', 'whatsapp')
                                 ->whereIn('status', ['sent', 'delivered', 'read']),
                     ])
+                    ->withSum('invitees as total_allowed_guests', 'allowed_guests')
+                    ->withSum('invitees as total_checked_in_guests', 'checked_in_count')
             )
             ->defaultSort('event_date', 'desc')
             ->striped()
@@ -877,21 +890,34 @@ class EventResource extends Resource
                 Tables\Columns\TextColumn::make('check_in_progress')
                     ->label('Check-in')
                     ->state(function (Event $record): string {
-                        $total = max((int) $record->invitees_count, 0);
-                        $checkedIn = max((int) $record->check_ins_count, 0);
+                        $expected = max((int) ($record->total_allowed_guests ?? 0), 0);
+                        $admitted = max((int) ($record->total_checked_in_guests ?? 0), 0);
 
-                        if ($total === 0) {
+                        if ($expected === 0) {
                             return '0 / 0';
                         }
 
-                        $percentage = (int) round(($checkedIn / $total) * 100);
+                        $percentage = min(
+                            100,
+                            (int) round(($admitted / $expected) * 100)
+                        );
 
-                        return "{$checkedIn} / {$total} ({$percentage}%)";
+                        return "{$admitted} / {$expected} ({$percentage}%)";
                     })
-                    ->badge()
-                    ->color(fn (Event $record): string =>
-                        (int) $record->check_ins_count > 0 ? 'success' : 'gray'
+                    ->description(fn (Event $record): string =>
+                        number_format((int) $record->check_ins_count).' transactions'
                     )
+                    ->badge()
+                    ->color(function (Event $record): string {
+                        $expected = max((int) ($record->total_allowed_guests ?? 0), 0);
+                        $admitted = max((int) ($record->total_checked_in_guests ?? 0), 0);
+
+                        if ($expected === 0 || $admitted === 0) {
+                            return 'gray';
+                        }
+
+                        return $admitted >= $expected ? 'success' : 'warning';
+                    })
                     ->icon('heroicon-o-qr-code')
                     ->alignCenter(),
 
@@ -945,13 +971,15 @@ class EventResource extends Resource
                     ->sortable()
                     ->toggleable(),
 
-                Tables\Columns\TextColumn::make('status')
+                Tables\Columns\TextColumn::make('display_status')
                     ->label('Status')
+                    ->state(fn (Event $record): string => $record->display_status)
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => self::statusLabel($state))
+                    ->formatStateUsing(fn (?string $state): string =>
+                        str($state ?: Event::STATUS_DRAFT)->headline()->toString()
+                    )
                     ->color(fn (?string $state): string => self::statusColor($state))
-                    ->icon(fn (?string $state): string => self::statusIcon($state))
-                    ->sortable(),
+                    ->icon(fn (?string $state): string => self::statusIcon($state)),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
@@ -1086,11 +1114,30 @@ class EventResource extends Resource
                         'record' => $record,
                     ])),
 
+                Tables\Actions\Action::make('check_in_dashboard')
+                    ->label('Check-in Dashboard')
+                    ->icon('heroicon-o-chart-bar-square')
+                    ->color('success')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canAccessEvent($record) ?? false
+                    )
+                    ->url(fn (Event $record): string => static::getUrl(
+                        'check-in-dashboard',
+                        ['record' => $record]
+                    )),
+
                 Tables\Actions\Action::make('gate_check_in')
                     ->label('Gate Check-in')
                     ->icon('heroicon-o-qr-code')
                     ->color('warning')
-                    ->url(fn (Event $record): string => route('gate.check-in.show', $record))
+                    ->visible(fn (Event $record): bool =>
+                        method_exists($record, 'canBeCheckedInBy')
+                            ? $record->canBeCheckedInBy(auth()->user())
+                            : (auth()->user()?->canAccessEvent($record) ?? false)
+                    )
+                    ->url(fn (Event $record): string => route('gate.check-in.entry', [
+                        'event' => $record->getKey(),
+                    ]))
                     ->openUrlInNewTab(),
 
                 Tables\Actions\Action::make('reports')
@@ -1139,22 +1186,24 @@ class EventResource extends Resource
     private static function statusColor(?string $state): string
     {
         return match ($state) {
-            Event::STATUS_ACTIVE => 'success',
-            Event::STATUS_COMPLETED => 'info',
-            Event::STATUS_CANCELLED => 'danger',
-            Event::STATUS_DRAFT => 'gray',
-            default => 'warning',
+            'active' => 'success',
+            'upcoming' => 'warning',
+            'completed' => 'info',
+            'cancelled' => 'danger',
+            'draft' => 'gray',
+            default => 'gray',
         };
     }
 
     private static function statusIcon(?string $state): string
     {
         return match ($state) {
-            Event::STATUS_ACTIVE => 'heroicon-o-play-circle',
-            Event::STATUS_COMPLETED => 'heroicon-o-check-circle',
-            Event::STATUS_CANCELLED => 'heroicon-o-x-circle',
-            Event::STATUS_DRAFT => 'heroicon-o-pencil-square',
-            default => 'heroicon-o-clock',
+            'active' => 'heroicon-o-bolt',
+            'upcoming' => 'heroicon-o-clock',
+            'completed' => 'heroicon-o-check-circle',
+            'cancelled' => 'heroicon-o-x-circle',
+            'draft' => 'heroicon-o-pencil-square',
+            default => 'heroicon-o-signal',
         };
     }
 
@@ -1185,6 +1234,7 @@ class EventResource extends Resource
             'edit' => Pages\EditEvent::route('/{record}/edit'),
             'send-message' => Pages\SendEventMessage::route('/{record}/send-message'),
             'invitee-responses' => Pages\InviteeResponseTracker::route('/{record}/invitee-responses'),
+            'check-in-dashboard' => Pages\CheckInDashboard::route('/{record}/check-in-dashboard'),
         ];
     }
 }

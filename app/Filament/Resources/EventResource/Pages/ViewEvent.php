@@ -190,34 +190,45 @@ class ViewEvent extends ViewRecord
 
     public function getStatusLabel(): string
     {
-        $status = (string) ($this->record->status ?? 'draft');
-        $model = EventResource::getModel();
-        $statuses = method_exists($model, 'statuses')
-            ? $model::statuses()
-            : [];
-
-        return $statuses[$status] ?? Str::headline($status);
+        return (string) (
+            $this->record->display_status_label
+            ?? Str::headline((string) ($this->record->status ?? 'draft'))
+        );
     }
 
     public function getStatusColor(): string
     {
-        return match ((string) $this->record->status) {
+        $status = (string) (
+            $this->record->display_status
+            ?? $this->record->status
+            ?? 'draft'
+        );
+
+        return match ($status) {
             'active' => 'success',
+            'upcoming' => 'warning',
             'completed' => 'info',
             'cancelled' => 'danger',
             'draft' => 'gray',
-            default => 'warning',
+            default => 'gray',
         };
     }
 
     public function getStatusIcon(): string
     {
-        return match ((string) $this->record->status) {
-            'active' => 'heroicon-m-play-circle',
+        $status = (string) (
+            $this->record->display_status
+            ?? $this->record->status
+            ?? 'draft'
+        );
+
+        return match ($status) {
+            'active' => 'heroicon-m-bolt',
+            'upcoming' => 'heroicon-m-clock',
             'completed' => 'heroicon-m-check-circle',
             'cancelled' => 'heroicon-m-x-circle',
             'draft' => 'heroicon-m-pencil-square',
-            default => 'heroicon-m-clock',
+            default => 'heroicon-m-information-circle',
         };
     }
 
@@ -309,7 +320,16 @@ class ViewEvent extends ViewRecord
 
     public function getGateCheckInUrl(): string
     {
-        return route('gate.check-in.show', $this->record);
+        return route('gate.check-in.entry', [
+            'event' => $this->record->getKey(),
+        ]);
+    }
+
+    public function getCheckInDashboardUrl(): string
+    {
+        return EventResource::getUrl('check-in-dashboard', [
+            'record' => $this->record,
+        ]);
     }
 
     public function getReportsUrl(): string
@@ -394,8 +414,11 @@ class ViewEvent extends ViewRecord
         $event = $this->record;
 
         $invitees = $this->safeRelationshipCount('invitees');
-        $checkIns = $this->safeRelationshipCount('checkIns');
+        $checkInTransactions = $this->safeRelationshipCount('checkIns');
 
+        $checkedInInvitees = 0;
+        $guestsCheckedIn = 0;
+        $totalAllowedGuests = 0;
         $attending = 0;
         $pendingRsvp = 0;
         $generatedCards = 0;
@@ -407,6 +430,23 @@ class ViewEvent extends ViewRecord
                 method_exists($event, 'invitees')
                 && Schema::hasTable('invitees')
             ) {
+                if (Schema::hasColumn('invitees', 'allowed_guests')) {
+                    $totalAllowedGuests = (int) $event
+                        ->invitees()
+                        ->sum('allowed_guests');
+                }
+
+                if (Schema::hasColumn('invitees', 'checked_in_count')) {
+                    $checkedInInvitees = (int) $event
+                        ->invitees()
+                        ->where('checked_in_count', '>', 0)
+                        ->count();
+
+                    $guestsCheckedIn = (int) $event
+                        ->invitees()
+                        ->sum('checked_in_count');
+                }
+
                 if (Schema::hasColumn('invitees', 'rsvp_status')) {
                     $attending = (int) $event
                         ->invitees()
@@ -458,8 +498,11 @@ class ViewEvent extends ViewRecord
             'attending_rate' => $this->percentage($attending, $invitees),
             'generated_cards' => $generatedCards,
             'cards_rate' => $this->percentage($generatedCards, $invitees),
-            'check_ins' => $checkIns,
-            'check_in_rate' => $this->percentage($checkIns, $invitees),
+            'check_ins' => $checkedInInvitees,
+            'check_in_transactions' => $checkInTransactions,
+            'guests_checked_in' => $guestsCheckedIn,
+            'total_allowed_guests' => $totalAllowedGuests,
+            'check_in_rate' => $this->percentage($guestsCheckedIn, $totalAllowedGuests),
             'messages_sent' => $messagesSent,
             'messages_failed' => $messagesFailed,
         ];
@@ -580,9 +623,9 @@ class ViewEvent extends ViewRecord
                 'tone' => 'purple',
             ],
             [
-                'label' => 'Checked In',
-                'value' => number_format($stats['check_ins']),
-                'description' => $stats['check_in_rate'].'%',
+                'label' => 'Guests Checked In',
+                'value' => number_format($stats['guests_checked_in']),
+                'description' => $stats['check_in_rate'].'% of expected guests',
                 'icon' => 'heroicon-o-check-badge',
                 'tone' => 'sky',
             ],
@@ -665,14 +708,25 @@ class ViewEvent extends ViewRecord
                 'visible' => $this->canEditEvent(),
             ],
             [
+                'title' => 'Check-in Dashboard',
+                'description' => 'Live attendance overview',
+                'icon' => 'heroicon-o-chart-bar-square',
+                'url' => $this->getCheckInDashboardUrl(),
+                'tone' => 'green',
+                'hint' => number_format($stats['guests_checked_in']).' guests admitted',
+                'visible' => $this->canViewReports() || $this->canEditEvent(),
+            ],
+            [
                 'title' => 'Gate Check-in',
                 'description' => 'Scan & verify',
                 'icon' => 'heroicon-o-qr-code',
                 'url' => $this->getGateCheckInUrl(),
                 'tone' => 'blue',
-                'hint' => number_format($stats['check_ins']).' check-ins',
+                'hint' => number_format($stats['check_in_transactions']).' transactions',
                 'new_tab' => true,
-                'visible' => true,
+                'visible' => method_exists($this->record, 'canBeCheckedInBy')
+                    ? $this->record->canBeCheckedInBy(auth()->user())
+                    : true,
             ],
             [
                 'title' => 'Reports',

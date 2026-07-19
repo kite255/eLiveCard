@@ -8,7 +8,9 @@ use App\Http\Controllers\InviteeLocationController;
 use App\Http\Controllers\InviteePageController;
 use App\Http\Controllers\PublicCardController;
 use App\Http\Controllers\PublicEventController;
+use App\Http\Controllers\PublicRsvpReportController;
 use App\Http\Controllers\RsvpController;
+use App\Http\Controllers\RsvpShareController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use App\Models\CardTemplate;
 use App\Models\Event;
@@ -160,6 +162,24 @@ Route::get('/rsvp/{token}/thank-you', [RsvpController::class, 'thankYou'])
     ->where('token', '[A-Za-z0-9]+')
     ->name('rsvp.thank-you');
 
+
+/*
+|--------------------------------------------------------------------------
+| Public Read-only RSVP Client Report
+|--------------------------------------------------------------------------
+|
+| Secure client-facing RSVP progress page.
+| The token is stored as a SHA-256 hash on the event record.
+|
+*/
+Route::get(
+    '/rsvp-report/{token}',
+    [PublicRsvpReportController::class, 'show']
+)
+    ->where('token', '[A-Za-z0-9]+')
+    ->middleware('throttle:120,1')
+    ->name('public.rsvp-report');
+
 /*
 |--------------------------------------------------------------------------
 | Public Generated Invitation Card
@@ -216,6 +236,7 @@ Route::get('/card-template-preview/{cardTemplate}', function (CardTemplate $card
 */
 Route::get('/gate/verify/{token}', [GateVerifyController::class, 'show'])
     ->where('token', '[A-Za-z0-9]+')
+    ->middleware('throttle:120,1')
     ->name('gate.verify.show');
 
 /*
@@ -263,6 +284,40 @@ Route::middleware(['auth'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
+    | RSVP Client Sharing Controls
+    |--------------------------------------------------------------------------
+    |
+    | These endpoints allow authorized event managers to:
+    | - view the current secure client report link,
+    | - generate or regenerate the link,
+    | - disable the link.
+    |
+    */
+    Route::get(
+        '/admin/events/{event}/rsvp-share',
+        [RsvpShareController::class, 'show']
+    )
+        ->whereNumber('event')
+        ->name('admin.events.rsvp-share.show');
+
+    Route::post(
+        '/admin/events/{event}/rsvp-share',
+        [RsvpShareController::class, 'generate']
+    )
+        ->whereNumber('event')
+        ->middleware('throttle:30,1')
+        ->name('admin.events.rsvp-share.generate');
+
+    Route::delete(
+        '/admin/events/{event}/rsvp-share',
+        [RsvpShareController::class, 'disable']
+    )
+        ->whereNumber('event')
+        ->middleware('throttle:30,1')
+        ->name('admin.events.rsvp-share.disable');
+
+    /*
+    |--------------------------------------------------------------------------
     | Gate Scanner Entry Route
     |--------------------------------------------------------------------------
     |
@@ -272,6 +327,7 @@ Route::middleware(['auth'])->group(function () {
     |
     */
     Route::get('/admin/gate-check-in', function () {
+        $user = auth()->user();
         $eventId = request()->integer('event');
 
         if ($eventId <= 0) {
@@ -285,6 +341,22 @@ Route::middleware(['auth'])->group(function () {
             return redirect('/admin/dashboard')
                 ->with('warning', 'The selected event could not be found.');
         }
+
+        $canAccessEvent = $user
+            && (
+                (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+                || (int) $event->user_id === (int) $user->id
+                || (
+                    method_exists($event, 'canBeCheckedInBy')
+                    && $event->canBeCheckedInBy($user)
+                )
+                || (
+                    method_exists($user, 'canAccessEvent')
+                    && $user->canAccessEvent($event)
+                )
+            );
+
+        abort_unless($canAccessEvent, 403);
 
         return redirect()->route('gate.check-in.show', [
             'event' => $event->getKey(),
@@ -322,6 +394,7 @@ Route::middleware(['auth'])->group(function () {
         [GateCheckInController::class, 'verify']
     )
         ->whereNumber('event')
+        ->middleware('throttle:120,1')
         ->name('gate.check-in.verify');
 
     /*
@@ -339,6 +412,7 @@ Route::middleware(['auth'])->group(function () {
         [GateCheckInController::class, 'verify']
     )
         ->whereNumber('event')
+        ->middleware('throttle:120,1')
         ->name('gate.manual-search');
 
     Route::post(
@@ -346,6 +420,7 @@ Route::middleware(['auth'])->group(function () {
         [GateCheckInController::class, 'confirm']
     )
         ->whereNumber('event')
+        ->middleware('throttle:120,1')
         ->name('gate.check-in.confirm');
 
     /*
@@ -358,5 +433,6 @@ Route::middleware(['auth'])->group(function () {
         [GateVerifyController::class, 'checkIn']
     )
         ->where('token', '[A-Za-z0-9]+')
+        ->middleware('throttle:120,1')
         ->name('gate.verify.check-in');
 });

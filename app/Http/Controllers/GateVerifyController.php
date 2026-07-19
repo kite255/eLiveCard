@@ -1,17 +1,19 @@
-PublicEventController.php<?php
+<?php
 
 namespace App\Http\Controllers;
 
 use App\Models\CheckIn;
 use App\Models\Invitee;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\View\View;
 use Throwable;
 
 class GateVerifyController extends Controller
 {
-    public function show(string $token)
+    public function show(string $token): View
     {
         $invitee = $this->findInviteeByToken($token);
 
@@ -33,76 +35,132 @@ class GateVerifyController extends Controller
         $confirmedGuests = $this->confirmedGuests($invitee);
         $gateLimit = $this->gateGuestLimit($invitee);
 
-        $checkedInCount = (int) ($invitee->checked_in_count ?? 0);
-        $remainingGuests = max(0, $gateLimit - $checkedInCount);
+        $checkedInCount = max(
+            0,
+            (int) ($invitee->checked_in_count ?? 0)
+        );
+
+        $remainingGuests = max(
+            0,
+            $gateLimit - $checkedInCount
+        );
 
         return view('gate.verify', [
             'invitee' => $invitee,
             'token' => $token,
-
-            // Original invitation/card limit
             'allowedGuests' => $allowedGuests,
-
-            // RSVP confirmed guests
             'confirmedGuests' => $confirmedGuests,
-
-            // Actual limit gate should use
             'gateLimit' => $gateLimit,
-
             'checkedInCount' => $checkedInCount,
             'remainingGuests' => $remainingGuests,
         ]);
     }
 
-    public function checkIn(Request $request, string $token)
+    public function checkIn(Request $request, string $token): RedirectResponse
     {
-        $request->validate([
-            'guests_to_check_in' => ['required', 'integer', 'min:1'],
+        $validated = $request->validate([
+            'guests_to_check_in' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:100',
+            ],
         ]);
 
-        $guestsToCheckIn = (int) $request->guests_to_check_in;
+        $guestsToCheckIn = (int) $validated['guests_to_check_in'];
         $tokenHash = hash('sha256', $token);
 
         try {
-            DB::transaction(function () use ($tokenHash, $guestsToCheckIn): void {
+            $result = DB::transaction(function () use (
+                $tokenHash,
+                $guestsToCheckIn
+            ): array {
                 $invitee = Invitee::query()
-                    ->with(['event', 'cardType'])
+                    ->with([
+                        'event',
+                        'cardType',
+                    ])
                     ->where('qr_token_hash', $tokenHash)
                     ->lockForUpdate()
                     ->first();
 
                 if (! $invitee) {
-                    throw new \RuntimeException('Invalid QR code.');
+                    return [
+                        'success' => false,
+                        'message' => 'Invalid QR code.',
+                    ];
                 }
 
-                $validationMessage = $this->validateInviteeForCheckIn($invitee);
+                $this->authorizeGateAccess($invitee);
+
+                $validationMessage = $this->validateInviteeForCheckIn(
+                    $invitee
+                );
 
                 if ($validationMessage) {
-                    $this->recordFailedAttempt($invitee, $validationMessage);
+                    $this->recordFailedAttempt(
+                        $invitee,
+                        $validationMessage
+                    );
 
-                    throw new \RuntimeException($validationMessage);
+                    return [
+                        'success' => false,
+                        'message' => $validationMessage,
+                    ];
                 }
 
                 $gateLimit = $this->gateGuestLimit($invitee);
-                $previousCount = (int) ($invitee->checked_in_count ?? 0);
-                $remainingBeforeCheckIn = max(0, $gateLimit - $previousCount);
+
+                $previousCount = max(
+                    0,
+                    (int) ($invitee->checked_in_count ?? 0)
+                );
+
+                $remainingBeforeCheckIn = max(
+                    0,
+                    $gateLimit - $previousCount
+                );
 
                 if ($remainingBeforeCheckIn <= 0) {
-                    $this->recordDuplicateAttempt($invitee);
+                    $message = 'Guest limit already reached.';
 
-                    throw new \RuntimeException('Guest limit already reached.');
+                    $this->recordDuplicateAttempt(
+                        $invitee,
+                        $message
+                    );
+
+                    return [
+                        'success' => false,
+                        'message' => $message,
+                    ];
                 }
 
                 if ($guestsToCheckIn > $remainingBeforeCheckIn) {
-                    $message = 'Only ' . $remainingBeforeCheckIn . ' guest(s) remaining.';
+                    $message = 'Only '
+                        .$remainingBeforeCheckIn
+                        .' guest(s) remaining.';
 
-                    $this->recordFailedAttempt($invitee, $message);
+                    $this->recordFailedAttempt(
+                        $invitee,
+                        $message
+                    );
 
-                    throw new \RuntimeException($message);
+                    return [
+                        'success' => false,
+                        'message' => $message,
+                    ];
                 }
 
                 $newCount = $previousCount + $guestsToCheckIn;
-                $remainingAfterCheckIn = max(0, $gateLimit - $newCount);
+
+                $remainingAfterCheckIn = max(
+                    0,
+                    $gateLimit - $newCount
+                );
+
+                $checkInStatus = $remainingAfterCheckIn === 0
+                    ? CheckIn::STATUS_SUCCESS
+                    : 'partial';
 
                 $invitee->checkIns()->create([
                     'event_id' => $invitee->event_id,
@@ -111,52 +169,131 @@ class GateVerifyController extends Controller
                     'guests_checked_in' => $guestsToCheckIn,
                     'previous_checked_in_count' => $previousCount,
                     'remaining_guests' => $remainingAfterCheckIn,
-                    'status' => CheckIn::STATUS_SUCCESS,
+                    'status' => $checkInStatus,
                     'remarks' => $this->successRemarks($invitee),
                     'checked_in_at' => now(),
+                    'device_name' => request()->userAgent(),
+                    'ip_address' => request()->ip(),
                 ]);
 
-                $invitee->update([
+                $invitee->forceFill([
                     'checked_in_count' => $newCount,
-                    'check_in_status' => $remainingAfterCheckIn <= 0
+                    'check_in_status' => $remainingAfterCheckIn === 0
                         ? 'checked_in'
                         : 'partially_checked_in',
                     'checked_in_at' => now(),
-                ]);
-            });
-        } catch (Throwable $e) {
-            return back()->with('error', $e->getMessage());
+                ])->save();
+
+                return [
+                    'success' => true,
+                    'message' => $guestsToCheckIn
+                        .' guest(s) checked in successfully.',
+                ];
+            }, 3);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()->with(
+                'error',
+                'Check-in could not be completed. Please try again.'
+            );
+        }
+
+        if (! ($result['success'] ?? false)) {
+            return back()->with(
+                'error',
+                (string) ($result['message'] ?? 'Check-in failed.')
+            );
         }
 
         return redirect()
-            ->route('gate.verify.show', $token)
-            ->with('success', $guestsToCheckIn . ' guest(s) checked in successfully.');
+            ->route('gate.verify.show', [
+                'token' => $token,
+            ])
+            ->with(
+                'success',
+                (string) $result['message']
+            );
     }
 
     private function findInviteeByToken(string $token): ?Invitee
     {
+        if (blank($token)) {
+            return null;
+        }
+
         $tokenHash = hash('sha256', $token);
 
         return Invitee::query()
-            ->with(['event', 'cardType'])
+            ->with([
+                'event',
+                'cardType',
+            ])
             ->where('qr_token_hash', $tokenHash)
             ->first();
     }
 
-    private function validateInviteeForCheckIn(Invitee $invitee): ?string
+    private function authorizeGateAccess(Invitee $invitee): void
     {
-        $cardStatus = $invitee->card_status ?? 'active';
+        $user = Auth::user();
+        $event = $invitee->event;
 
-        if ($cardStatus === 'blocked') {
+        abort_unless($user && $event, 403);
+
+        if (
+            method_exists($user, 'isSuperAdmin')
+            && $user->isSuperAdmin()
+        ) {
+            return;
+        }
+
+        if ((int) $event->user_id === (int) $user->id) {
+            return;
+        }
+
+        if (
+            method_exists($event, 'canBeCheckedInBy')
+            && $event->canBeCheckedInBy($user)
+        ) {
+            return;
+        }
+
+        if (
+            method_exists($user, 'canAccessEvent')
+            && $user->canAccessEvent($event)
+            && (
+                ! method_exists($user, 'canScanGuests')
+                || $user->canScanGuests()
+            )
+        ) {
+            return;
+        }
+
+        abort(403);
+    }
+
+    private function validateInviteeForCheckIn(
+        Invitee $invitee
+    ): ?string {
+        if (! $invitee->event) {
+            return 'The event connected to this invitation could not be found.';
+        }
+
+        $cardStatus = (string) (
+            $invitee->card_status
+            ?? Invitee::CARD_STATUS_ACTIVE
+        );
+
+        if ($cardStatus === Invitee::CARD_STATUS_BLOCKED) {
             return 'This invitation card is blocked.';
         }
 
-        if ($cardStatus === 'cancelled') {
+        if ($cardStatus === Invitee::CARD_STATUS_CANCELLED) {
             return 'This invitation card is cancelled.';
         }
 
         $allowedCardStatuses = [
-            'active',
+            Invitee::CARD_STATUS_ACTIVE,
             'generated',
             'sent',
         ];
@@ -165,7 +302,16 @@ class GateVerifyController extends Controller
             return 'This invitation card is not valid for check-in.';
         }
 
-        if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
+        if (
+            in_array(
+                $invitee->rsvp_status,
+                [
+                    Invitee::RSVP_NOT_ATTENDING,
+                    'declined',
+                ],
+                true
+            )
+        ) {
             return 'This invitee responded that they will not attend. Please contact the event manager before allowing check-in.';
         }
 
@@ -178,20 +324,40 @@ class GateVerifyController extends Controller
 
     private function allowedGuests(Invitee $invitee): int
     {
-        if (isset($invitee->final_allowed_guests) && (int) $invitee->final_allowed_guests > 0) {
-            return (int) $invitee->final_allowed_guests;
+        $finalAllowedGuests = (int) (
+            $invitee->final_allowed_guests
+            ?? 0
+        );
+
+        if ($finalAllowedGuests > 0) {
+            return $finalAllowedGuests;
         }
 
-        if ((int) ($invitee->allowed_guests ?? 0) > 0) {
-            return (int) $invitee->allowed_guests;
+        $inviteeAllowedGuests = (int) (
+            $invitee->allowed_guests
+            ?? 0
+        );
+
+        if ($inviteeAllowedGuests > 0) {
+            return $inviteeAllowedGuests;
         }
 
-        if ((int) ($invitee->cardType?->allowed_guests ?? 0) > 0) {
-            return (int) $invitee->cardType->allowed_guests;
+        $cardTypeAllowedGuests = (int) (
+            $invitee->cardType?->allowed_guests
+            ?? 0
+        );
+
+        if ($cardTypeAllowedGuests > 0) {
+            return $cardTypeAllowedGuests;
         }
 
-        if ((int) ($invitee->cardType?->allowed_people ?? 0) > 0) {
-            return (int) $invitee->cardType->allowed_people;
+        $cardTypeAllowedPeople = (int) (
+            $invitee->cardType?->allowed_people
+            ?? 0
+        );
+
+        if ($cardTypeAllowedPeople > 0) {
+            return $cardTypeAllowedPeople;
         }
 
         return 1;
@@ -199,7 +365,10 @@ class GateVerifyController extends Controller
 
     private function confirmedGuests(Invitee $invitee): int
     {
-        return max(0, (int) ($invitee->confirmed_guests ?? 0));
+        return max(
+            0,
+            (int) ($invitee->confirmed_guests ?? 0)
+        );
     }
 
     private function gateGuestLimit(Invitee $invitee): int
@@ -207,11 +376,26 @@ class GateVerifyController extends Controller
         $allowedGuests = $this->allowedGuests($invitee);
         $confirmedGuests = $this->confirmedGuests($invitee);
 
-        if ($invitee->rsvp_status === 'attending' && $confirmedGuests > 0) {
-            return min($confirmedGuests, $allowedGuests);
+        if (
+            $invitee->rsvp_status === Invitee::RSVP_ATTENDING
+            && $confirmedGuests > 0
+        ) {
+            return min(
+                $confirmedGuests,
+                $allowedGuests
+            );
         }
 
-        if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
+        if (
+            in_array(
+                $invitee->rsvp_status,
+                [
+                    Invitee::RSVP_NOT_ATTENDING,
+                    'declined',
+                ],
+                true
+            )
+        ) {
             return 0;
         }
 
@@ -220,18 +404,31 @@ class GateVerifyController extends Controller
 
     private function successRemarks(Invitee $invitee): string
     {
-        if ($invitee->rsvp_status === 'attending' && $this->confirmedGuests($invitee) > 0) {
-            return 'Checked in by QR code scan using RSVP confirmed guest limit.';
+        if (
+            $invitee->rsvp_status === Invitee::RSVP_ATTENDING
+            && $this->confirmedGuests($invitee) > 0
+        ) {
+            return 'Checked in by QR code using the RSVP-confirmed guest limit.';
         }
 
-        return 'Checked in by QR code scan using allowed guest limit.';
+        return 'Checked in by QR code using the invitation guest limit.';
     }
 
-    private function recordFailedAttempt(Invitee $invitee, string $message): void
-    {
+    private function recordFailedAttempt(
+        Invitee $invitee,
+        string $message
+    ): void {
         $gateLimit = $this->gateGuestLimit($invitee);
-        $previousCount = (int) ($invitee->checked_in_count ?? 0);
-        $remainingGuests = max(0, $gateLimit - $previousCount);
+
+        $previousCount = max(
+            0,
+            (int) ($invitee->checked_in_count ?? 0)
+        );
+
+        $remainingGuests = max(
+            0,
+            $gateLimit - $previousCount
+        );
 
         $invitee->checkIns()->create([
             'event_id' => $invitee->event_id,
@@ -243,12 +440,19 @@ class GateVerifyController extends Controller
             'status' => CheckIn::STATUS_FAILED,
             'remarks' => $message,
             'checked_in_at' => now(),
+            'device_name' => request()->userAgent(),
+            'ip_address' => request()->ip(),
         ]);
     }
 
-    private function recordDuplicateAttempt(Invitee $invitee): void
-    {
-        $previousCount = (int) ($invitee->checked_in_count ?? 0);
+    private function recordDuplicateAttempt(
+        Invitee $invitee,
+        string $message
+    ): void {
+        $previousCount = max(
+            0,
+            (int) ($invitee->checked_in_count ?? 0)
+        );
 
         $invitee->checkIns()->create([
             'event_id' => $invitee->event_id,
@@ -257,9 +461,13 @@ class GateVerifyController extends Controller
             'guests_checked_in' => 0,
             'previous_checked_in_count' => $previousCount,
             'remaining_guests' => 0,
-            'status' => CheckIn::STATUS_DUPLICATE,
-            'remarks' => 'Guest limit already reached.',
+            'status' => defined(CheckIn::class.'::STATUS_DUPLICATE')
+                ? CheckIn::STATUS_DUPLICATE
+                : 'duplicate',
+            'remarks' => $message,
             'checked_in_at' => now(),
+            'device_name' => request()->userAgent(),
+            'ip_address' => request()->ip(),
         ]);
     }
 }
