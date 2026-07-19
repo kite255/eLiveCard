@@ -7,10 +7,6 @@
 @php
     use Illuminate\Support\Facades\Route;
 
-    $loginUrl = Route::has('filament.admin.auth.login')
-        ? route('filament.admin.auth.login')
-        : url('/admin/login');
-
     $contactUrl = Route::has('contact')
         ? route('contact')
         : url('/contact');
@@ -62,63 +58,8 @@
     ];
 @endphp
 
-{{-- Hero --}}
-<section class="bg-[#213B73]">
-    <div class="container-shell flex min-h-[520px] items-center py-16 sm:py-20 lg:py-24">
-        <div class="mx-auto max-w-4xl text-center">
-            <p class="text-xs font-black uppercase tracking-[0.18em] text-[#FD9618]">
-                Digital Invitation Management
-            </p>
+{{-- The homepage image hero is rendered by layouts.public. --}}
 
-            <h1 class="mt-5 text-4xl font-black leading-[1.08] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
-                Manage invitations, RSVP, and guest check-in in one place.
-            </h1>
-
-            <p class="mx-auto mt-6 max-w-2xl text-base font-medium leading-8 text-white/75 sm:text-lg">
-                Create personalized invitation cards, send them through WhatsApp or SMS,
-                track responses, and validate guests securely using QR codes.
-            </p>
-
-            <div class="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                <a
-                    href="{{ $contactUrl }}"
-                    class="btn bg-[#FD9618] text-white shadow-lg shadow-black/10 transition hover:bg-[#e8870f]"
-                >
-                    Contact Us
-
-                    <svg
-                        class="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                    >
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M13 7l5 5-5 5M6 12h12"
-                        />
-                    </svg>
-                </a>
-
-                <a
-                    href="#how-it-works"
-                    class="btn border border-white/25 bg-transparent text-white transition hover:bg-white/10"
-                >
-                    See How It Works
-                </a>
-            </div>
-
-            <div class="mt-9 flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs font-bold text-white/60">
-                <span>Personalized Cards</span>
-                <span>RSVP Tracking</span>
-                <span>WhatsApp &amp; SMS</span>
-                <span>Secure QR Check-in</span>
-            </div>
-        </div>
-    </div>
-</section>
 
 {{-- Intro --}}
 <section class="border-b border-slate-200 bg-white py-12 sm:py-14">
@@ -140,8 +81,11 @@
 </section>
 
 {{-- Supported events --}}
-<section id="events" class="bg-[#F8FAFC] py-16 sm:py-20">
-    <div class="container-shell">
+<section id="events" class="relative overflow-hidden bg-[#F8FAFC] py-16 sm:py-20 lg:py-24">
+    <div class="pointer-events-none absolute -left-24 top-10 h-64 w-64 rounded-full bg-[#213B73]/[0.04] blur-3xl" aria-hidden="true"></div>
+    <div class="pointer-events-none absolute -right-20 bottom-0 h-64 w-64 rounded-full bg-[#FD9618]/[0.05] blur-3xl" aria-hidden="true"></div>
+
+    <div class="container-shell relative">
         <div class="mx-auto max-w-3xl text-center">
             <p class="section-kicker">Supported Social Events</p>
 
@@ -154,77 +98,85 @@
             </p>
         </div>
 
-        <div class="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div class="mt-12 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
             @foreach ($eventTypes as $eventType)
-                <article class="group rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm transition duration-200 hover:-translate-y-1 hover:border-[#213B73]/20 hover:shadow-lg">
-                    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#213B73]/[0.07] text-[#213B73] transition group-hover:bg-[#213B73] group-hover:text-white">
+                <article class="group relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white px-4 py-6 text-center shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition duration-200 hover:-translate-y-1 hover:border-[#213B73]/25 hover:shadow-[0_18px_38px_rgba(15,23,42,0.09)]">
+                    <span class="absolute inset-x-0 top-0 h-0.5 origin-left scale-x-0 bg-[#FD9618] transition-transform duration-200 group-hover:scale-x-100"></span>
+                    <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#213B73]/10 bg-[#F3F6FB] text-[#213B73] shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:scale-105 group-hover:border-[#213B73] group-hover:bg-[#213B73] group-hover:text-white group-hover:shadow-md">
                         @switch($eventType['icon'])
                             @case('rings')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <circle cx="9" cy="12" r="4" stroke-width="1.8"/>
-                                    <circle cx="15" cy="12" r="4" stroke-width="1.8"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.5 7.8L12 5l1.5 2.8"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <circle cx="8.5" cy="13" r="4" stroke-width="1.9"/>
+                                    <circle cx="15.5" cy="13" r="4" stroke-width="1.9"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M10.2 8.8L12 5.5l1.8 3.3M10.8 5.5h2.4"/>
                                 </svg>
                                 @break
 
                             @case('sparkles')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3l1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1L6.5 8.5l4.1-1.4L12 3zM18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M5 17l4.4-9.5 4.1 8.7M7.8 11.3h4.7M16.8 5.2l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8.8-1.9zM5.2 5.4l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5.5-1.2zM5 18.5h14"/>
                                 </svg>
                                 @break
 
                             @case('gift')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 10h16v10H4V10zm-1-4h18v4H3V6zm9 0v14M8.5 6C7 6 6 5.2 6 4.2S7 2.5 8.2 3.1C9.6 3.8 11 6 11 6m4.5 0C17 6 18 5.2 18 4.2S17 2.5 15.8 3.1C14.4 3.8 13 6 13 6"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M4 9h16v11H4V9zm-1-4h18v4H3V5zm9 0v15M8.5 5C7 5 6 4.2 6 3.2S7 1.8 8.2 2.3C9.6 3 11 5 11 5m4.5 0C17 5 18 4.2 18 3.2s-1-1.4-2.2-.9C14.4 3 13 5 13 5"/>
                                 </svg>
                                 @break
 
                             @case('heart')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M12 20s-6.8-4.3-6.8-9.7A3.8 3.8 0 0112 7.9a3.8 3.8 0 016.8 2.4C18.8 15.7 12 20 12 20z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M14.7 5.8l1-1.8 1 1.8"/>
                                 </svg>
                                 @break
 
                             @case('cake')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 10h14v10H5V10zm-2 4h18M9 10V7m6 3V7M9 4h.01M15 4h.01"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M5 11h14v9H5v-9zm-2 4h18M9 11V8m6 3V8"/>
+                                    <path stroke-linecap="round" stroke-width="1.7" d="M9 6c.8-.9.8-1.7 0-2.6M15 6c.8-.9.8-1.7 0-2.6"/>
                                 </svg>
                                 @break
 
                             @case('graduation')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 9l9-5 9 5-9 5-9-5zm4 2.5V16c3 2 7 2 10 0v-4.5M21 9v6"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M3 9l9-5 9 5-9 5-9-5zm4 2.5V16c3 2 7 2 10 0v-4.5M21 9v6"/>
                                 </svg>
                                 @break
 
                             @case('calendar')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <rect x="4" y="5" width="16" height="15" rx="2" stroke-width="1.8"/>
-                                    <path stroke-linecap="round" stroke-width="1.8" d="M8 3v4M16 3v4M4 9h16"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="4" y="5" width="16" height="15" rx="2" stroke-width="1.9"/>
+                                    <path stroke-linecap="round" stroke-width="1.9" d="M8 3v4M16 3v4M4 9h16"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" d="M8.7 13.8c.9-.9 2.1-.8 3.3.4 1.2-1.2 2.4-1.3 3.3-.4 1.6 1.6-.6 3.7-3.3 5-2.7-1.3-4.9-3.4-3.3-5z"/>
                                 </svg>
                                 @break
 
                             @case('baby')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <circle cx="12" cy="9" r="4" stroke-width="1.8"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 14c1.2-1 2.5-1.5 4-1.5s2.8.5 4 1.5v5H8v-5zM10 8h.01M14 8h.01M10.5 10.5c1 .8 2 .8 3 0"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M7 11h9a4 4 0 01-4 4H9.5A2.5 2.5 0 017 12.5V11zm0 0l2.2-4.8h3.4A4.4 4.4 0 0117 10.6V11"/>
+                                    <circle cx="8.2" cy="18" r="1.4" stroke-width="1.7"/>
+                                    <circle cx="15.8" cy="18" r="1.4" stroke-width="1.7"/>
                                 </svg>
                                 @break
 
                             @case('church')
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v5m-2-3h4M6 10l6-4 6 4v10H6V10zm4 10v-5h4v5"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M12 3v4m-2-2h4M6 10l6-4 6 4v10H6V10zm4 10v-4h4v4M3 20h18"/>
                                 </svg>
                                 @break
 
                             @default
-                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 11l9-7 9 7M5 10v10h14V10M9 20v-6h6v6"/>
+                                <svg class="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M3 11l9-7 9 7M5 10v10h14V10"/>
+                                    <circle cx="9.5" cy="14" r="1.5" stroke-width="1.6"/>
+                                    <circle cx="14.5" cy="14" r="1.5" stroke-width="1.6"/>
+                                    <path stroke-linecap="round" stroke-width="1.6" d="M7.8 19c.5-1.8 1.8-2.8 4.2-2.8s3.7 1 4.2 2.8"/>
                                 </svg>
                         @endswitch
                     </div>
 
-                    <h3 class="mt-4 text-sm font-black leading-5 text-[#213B73]">
+                    <h3 class="mt-4 text-sm font-black leading-5 text-[#1B3568]">
                         {{ $eventType['name'] }}
                     </h3>
                 </article>

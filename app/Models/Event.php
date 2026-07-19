@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 
 class Event extends Model
@@ -86,6 +87,9 @@ class Event extends Model
     public const STATUS_ACTIVE = 'active';
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELLED = 'cancelled';
+
+    /** Display-only status. It is calculated and is not stored in the database. */
+    public const STATUS_UPCOMING = 'upcoming';
 
     public const TYPE_WEDDING = 'wedding';
     public const TYPE_SEND_OFF = 'send_off';
@@ -273,28 +277,105 @@ class Event extends Model
     |--------------------------------------------------------------------------
     */
 
+    /**
+     * Events happening right now.
+     *
+     * A stored "active" event is only displayed as Active when the current
+     * date and time fall between its start and end boundaries.
+     */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where(
-            'status',
-            self::STATUS_ACTIVE
-        );
+        $today = now()->toDateString();
+        $currentTime = now()->format('H:i:s');
+
+        return $query
+            ->where('status', self::STATUS_ACTIVE)
+            ->whereDate('event_date', $today)
+            ->where(function (Builder $query) use ($currentTime): void {
+                $query
+                    ->whereNull('start_time')
+                    ->orWhereTime('start_time', '<=', $currentTime);
+            })
+            ->where(function (Builder $query) use ($currentTime): void {
+                $query
+                    ->whereNull('end_time')
+                    ->orWhereTime('end_time', '>=', $currentTime);
+            });
+    }
+
+    /**
+     * Events activated by an administrator but whose start time has not arrived.
+     */
+    public function scopeUpcoming(Builder $query): Builder
+    {
+        $today = now()->toDateString();
+        $currentTime = now()->format('H:i:s');
+
+        return $query
+            ->where('status', self::STATUS_ACTIVE)
+            ->where(function (Builder $query) use ($today, $currentTime): void {
+                $query
+                    ->whereDate('event_date', '>', $today)
+                    ->orWhere(function (Builder $query) use ($today, $currentTime): void {
+                        $query
+                            ->whereDate('event_date', $today)
+                            ->whereNotNull('start_time')
+                            ->whereTime('start_time', '>', $currentTime);
+                    });
+            });
     }
 
     public function scopeDraft(Builder $query): Builder
     {
-        return $query->where(
-            'status',
-            self::STATUS_DRAFT
-        );
+        return $query->where('status', self::STATUS_DRAFT);
     }
 
+    /**
+     * Events explicitly completed or active events whose end boundary passed.
+     */
     public function scopeCompleted(Builder $query): Builder
     {
-        return $query->where(
-            'status',
-            self::STATUS_COMPLETED
-        );
+        $today = now()->toDateString();
+        $currentTime = now()->format('H:i:s');
+
+        return $query->where(function (Builder $query) use ($today, $currentTime): void {
+            $query
+                ->where('status', self::STATUS_COMPLETED)
+                ->orWhere(function (Builder $query) use ($today, $currentTime): void {
+                    $query
+                        ->where('status', self::STATUS_ACTIVE)
+                        ->where(function (Builder $query) use ($today, $currentTime): void {
+                            $query
+                                ->whereDate('event_date', '<', $today)
+                                ->orWhere(function (Builder $query) use ($today, $currentTime): void {
+                                    $query
+                                        ->whereDate('event_date', $today)
+                                        ->whereNotNull('end_time')
+                                        ->whereTime('end_time', '<', $currentTime);
+                                });
+                        });
+                });
+        });
+    }
+
+    public function scopeCancelled(Builder $query): Builder
+    {
+        return $query->where('status', self::STATUS_CANCELLED);
+    }
+
+    /**
+     * Apply any calculated display-status filter consistently.
+     */
+    public function scopeWithDisplayStatus(Builder $query, ?string $status): Builder
+    {
+        return match ($status) {
+            self::STATUS_ACTIVE => $query->active(),
+            self::STATUS_UPCOMING => $query->upcoming(),
+            self::STATUS_COMPLETED => $query->completed(),
+            self::STATUS_DRAFT => $query->draft(),
+            self::STATUS_CANCELLED => $query->cancelled(),
+            default => $query,
+        };
     }
 
     public function scopePubliclyVisible(Builder $query): Builder
@@ -311,7 +392,16 @@ class Event extends Model
     {
         return $query
             ->publiclyVisible()
-            ->whereDate('event_date', '>=', now()->toDateString())
+            ->upcoming()
+            ->orderBy('event_date')
+            ->orderBy('start_time');
+    }
+
+    public function scopeActivePublic(Builder $query): Builder
+    {
+        return $query
+            ->publiclyVisible()
+            ->active()
             ->orderBy('event_date')
             ->orderBy('start_time');
     }
@@ -320,8 +410,9 @@ class Event extends Model
     {
         return $query
             ->publiclyVisible()
-            ->whereDate('event_date', '<', now()->toDateString())
+            ->completed()
             ->orderByDesc('event_date')
+            ->orderByDesc('end_time')
             ->orderByDesc('start_time');
     }
 
@@ -483,24 +574,152 @@ class Event extends Model
     |--------------------------------------------------------------------------
     */
 
+    public function getStartsAtAttribute(): ?Carbon
+    {
+        if (! $this->event_date) {
+            return null;
+        }
+
+        $startsAt = $this->event_date->copy()->startOfDay();
+
+        if ($this->start_time) {
+            $startsAt->setTime(
+                $this->start_time->hour,
+                $this->start_time->minute,
+                $this->start_time->second
+            );
+        }
+
+        return $startsAt;
+    }
+
+    public function getEndsAtAttribute(): ?Carbon
+    {
+        if (! $this->event_date) {
+            return null;
+        }
+
+        $endsAt = $this->event_date->copy()->endOfDay();
+
+        if ($this->end_time) {
+            $endsAt->setTime(
+                $this->end_time->hour,
+                $this->end_time->minute,
+                $this->end_time->second
+            );
+        }
+
+        return $endsAt;
+    }
+
+    public function getDisplayStatusAttribute(): string
+    {
+        if ($this->status === self::STATUS_CANCELLED) {
+            return self::STATUS_CANCELLED;
+        }
+
+        if ($this->status === self::STATUS_DRAFT) {
+            return self::STATUS_DRAFT;
+        }
+
+        if ($this->status === self::STATUS_COMPLETED) {
+            return self::STATUS_COMPLETED;
+        }
+
+        if (! $this->starts_at || ! $this->ends_at) {
+            return $this->status ?: self::STATUS_DRAFT;
+        }
+
+        $now = now();
+
+        if ($now->greaterThan($this->ends_at)) {
+            return self::STATUS_COMPLETED;
+        }
+
+        if ($now->betweenIncluded($this->starts_at, $this->ends_at)) {
+            return self::STATUS_ACTIVE;
+        }
+
+        return self::STATUS_UPCOMING;
+    }
+
+    public function getDisplayStatusLabelAttribute(): string
+    {
+        return match ($this->display_status) {
+            self::STATUS_ACTIVE => 'Active',
+            self::STATUS_COMPLETED => 'Completed',
+            self::STATUS_DRAFT => 'Draft',
+            self::STATUS_CANCELLED => 'Cancelled',
+            self::STATUS_UPCOMING => 'Upcoming',
+            default => ucfirst(str_replace('_', ' ', (string) $this->display_status)),
+        };
+    }
+
+    public function getDisplayStatusClassesAttribute(): string
+    {
+        return match ($this->display_status) {
+            self::STATUS_ACTIVE =>
+                'border border-emerald-200 bg-emerald-50 text-emerald-700',
+
+            self::STATUS_UPCOMING =>
+                'border border-orange-200 bg-orange-50 text-orange-700',
+
+            self::STATUS_COMPLETED =>
+                'border border-blue-200 bg-blue-50 text-blue-700',
+
+            self::STATUS_DRAFT =>
+                'border border-slate-200 bg-slate-100 text-slate-600',
+
+            self::STATUS_CANCELLED =>
+                'border border-red-200 bg-red-50 text-red-700',
+
+            default =>
+                'border border-slate-200 bg-slate-50 text-slate-600',
+        };
+    }
+
+    public function getDisplayStatusDotClassesAttribute(): string
+    {
+        return match ($this->display_status) {
+            self::STATUS_ACTIVE => 'bg-emerald-500',
+            self::STATUS_UPCOMING => 'bg-[#FD9618]',
+            self::STATUS_COMPLETED => 'bg-[#213B73]',
+            self::STATUS_DRAFT => 'bg-slate-400',
+            self::STATUS_CANCELLED => 'bg-red-500',
+            default => 'bg-slate-400',
+        };
+    }
+
+    public function getDisplayStatusIconAttribute(): string
+    {
+        return match ($this->display_status) {
+            self::STATUS_ACTIVE => 'heroicon-o-bolt',
+            self::STATUS_UPCOMING => 'heroicon-o-clock',
+            self::STATUS_COMPLETED => 'heroicon-o-check-circle',
+            self::STATUS_DRAFT => 'heroicon-o-pencil-square',
+            self::STATUS_CANCELLED => 'heroicon-o-x-circle',
+            default => 'heroicon-o-information-circle',
+        };
+    }
+
     public function isDraft(): bool
     {
-        return $this->status === self::STATUS_DRAFT;
+        return $this->display_status === self::STATUS_DRAFT;
     }
 
     public function isActive(): bool
     {
-        return $this->status === self::STATUS_ACTIVE;
+        return $this->display_status === self::STATUS_ACTIVE;
     }
 
     public function isCompleted(): bool
     {
-        return $this->status === self::STATUS_COMPLETED;
+        return $this->display_status === self::STATUS_COMPLETED;
     }
 
     public function isCancelled(): bool
     {
-        return $this->status === self::STATUS_CANCELLED;
+        return $this->display_status === self::STATUS_CANCELLED;
     }
 
     public function isPublic(): bool
@@ -517,68 +736,29 @@ class Event extends Model
 
     public function isUpcoming(): bool
     {
-        return $this->event_date
-            ? $this->event_date->isToday() || $this->event_date->isFuture()
-            : false;
+        return $this->display_status === self::STATUS_UPCOMING;
     }
 
     public function isPast(): bool
     {
-        return $this->event_date
-            ? $this->event_date->isPast() && ! $this->event_date->isToday()
-            : false;
+        return $this->display_status === self::STATUS_COMPLETED;
     }
 
     public function isHappeningNow(): bool
     {
-        if (! $this->event_date || ! $this->event_date->isToday()) {
-            return false;
-        }
-
-        if ($this->status === self::STATUS_COMPLETED) {
-            return false;
-        }
-
-        $now = now();
-
-        $startsAt = $this->event_date->copy()->startOfDay();
-
-        if ($this->start_time) {
-            $startsAt->setTime(
-                $this->start_time->hour,
-                $this->start_time->minute,
-                $this->start_time->second
-            );
-        }
-
-        $endsAt = $this->event_date->copy()->endOfDay();
-
-        if ($this->end_time) {
-            $endsAt->setTime(
-                $this->end_time->hour,
-                $this->end_time->minute,
-                $this->end_time->second
-            );
-        }
-
-        return $now->betweenIncluded($startsAt, $endsAt);
+        return $this->display_status === self::STATUS_ACTIVE;
     }
 
     public function getPublicStatusLabelAttribute(): string
     {
-        if ($this->status === self::STATUS_COMPLETED || $this->isPast()) {
-            return 'Completed';
-        }
-
-        if ($this->isHappeningNow()) {
-            return 'Happening Now';
-        }
-
-        if ($this->event_date?->isToday()) {
-            return 'Today';
-        }
-
-        return 'Upcoming';
+        return match ($this->display_status) {
+            self::STATUS_ACTIVE => 'Happening Now',
+            self::STATUS_COMPLETED => 'Completed',
+            self::STATUS_DRAFT => 'Draft',
+            self::STATUS_CANCELLED => 'Cancelled',
+            self::STATUS_UPCOMING => $this->event_date?->isToday() ? 'Today' : 'Upcoming',
+            default => 'Upcoming',
+        };
     }
 
     /*
@@ -812,7 +992,7 @@ class Event extends Model
 
     public function getStatusDisplayAttribute(): string
     {
-        return self::statuses()[$this->status] ?? ucfirst(str_replace('_', ' ', (string) $this->status));
+        return $this->display_status_label;
     }
 
     public function getVenueDisplayAttribute(): string

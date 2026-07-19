@@ -1,4 +1,4 @@
-<?php
+PublicEventController.php<?php
 
 namespace App\Http\Controllers;
 
