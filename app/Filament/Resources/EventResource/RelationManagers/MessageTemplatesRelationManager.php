@@ -34,7 +34,7 @@ class MessageTemplatesRelationManager extends RelationManager
     {
         $user = auth()->user();
 
-        if (! $user) {
+        if (! $user || ! ($user->canSendMessages() ?? false)) {
             return false;
         }
 
@@ -46,7 +46,12 @@ class MessageTemplatesRelationManager extends RelationManager
             return (int) ($ownerRecord->user_id ?? 0) === (int) $user->id;
         }
 
-        return false;
+        /*
+         * Event Manager and Message Sender access is already controlled by
+         * the parent Event resource. Once they can open this event, allow
+         * them to review and edit its message templates.
+         */
+        return true;
     }
 
     private const TYPE_WELCOME_CHECKIN = 'welcome_checkin';
@@ -279,6 +284,7 @@ class MessageTemplatesRelationManager extends RelationManager
             ->defaultSort('updated_at', 'desc')
             ->striped()
             ->recordAction('edit')
+            ->recordUrl(null)
             ->emptyStateIcon('heroicon-o-chat-bubble-left-right')
             ->emptyStateHeading('No message templates yet')
             ->emptyStateDescription('Create default templates first, then customize them for this event.')
@@ -449,10 +455,11 @@ class MessageTemplatesRelationManager extends RelationManager
             ->actions([
                 Tables\Actions\EditAction::make()
                     ->visible(fn (MessageTemplate $record): bool => $this->canManageMessageTemplate($record))
-                    ->label('Edit')
+                    ->label('Edit Message')
                     ->icon('heroicon-o-pencil-square')
                     ->color('primary')
                     ->button()
+                    ->tooltip('Edit this message template')
                     ->modalHeading(fn (MessageTemplate $record): string => 'Edit Template: ' . $record->name)
                     ->modalDescription('Customize the message wording, placeholders, status, WhatsApp template name, and buttons.')
                     ->modalWidth('6xl')
@@ -503,6 +510,7 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->modalWidth('4xl')
                     ->modalSubmitAction(false)
                     ->modalCancelActionLabel('Close')
+                    ->modalDescription('Review the rendered message. Use Edit Message from the Actions column to update it.')
                     ->modalContent(function (MessageTemplate $record): HtmlString {
                         AuditLogService::record(
                             action: 'message_template.previewed',
@@ -759,7 +767,11 @@ class MessageTemplatesRelationManager extends RelationManager
             return (int) ($event?->user_id ?? 0) === (int) $user->id;
         }
 
-        return false;
+        /*
+         * Other messaging roles, such as Event Manager and Message Sender,
+         * may edit templates for events they can already access.
+         */
+        return true;
     }
 
     protected function canManageMessageTemplate(?MessageTemplate $record = null): bool

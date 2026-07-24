@@ -216,6 +216,38 @@
             border-radius: 12px;
         }
 
+        .scanner-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 24px;
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .scanner-status-dot {
+            width: 9px;
+            height: 9px;
+            flex: 0 0 auto;
+            border-radius: 999px;
+            background: var(--muted);
+        }
+
+        .scanner-status.active .scanner-status-dot {
+            background: var(--green);
+            box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+        }
+
+        .scanner-status.warning .scanner-status-dot {
+            background: var(--yellow);
+        }
+
+        .scanner-status.error .scanner-status-dot {
+            background: var(--red);
+        }
+
         .actions {
             display: flex;
             gap: 10px;
@@ -232,6 +264,11 @@
             font-size: 14px;
             font-weight: 800;
             touch-action: manipulation;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.62;
         }
 
         button:focus-visible,
@@ -883,16 +920,37 @@
 
             <div id="reader"></div>
 
+            <div id="scannerStatus" class="scanner-status" aria-live="polite">
+                <span class="scanner-status-dot"></span>
+                <span id="scannerStatusText">Camera is not running.</span>
+            </div>
+
             <div class="actions">
-                <button type="button" class="btn-primary" onclick="startScanner()">Start Scanner</button>
-                <button type="button" class="btn-light" onclick="stopScanner()">Stop Scanner</button>
+                <button
+                    type="button"
+                    id="startScannerButton"
+                    class="btn-primary"
+                    onclick="startScanner()"
+                >
+                    Start Scanner
+                </button>
+
+                <button
+                    type="button"
+                    id="stopScannerButton"
+                    class="btn-light"
+                    onclick="stopScanner()"
+                    disabled
+                >
+                    Stop Scanner
+                </button>
             </div>
         </div>
 
         <div class="panel">
             <h2 class="panel-title">Manual Search</h2>
 
-            <form id="manualSearchForm" class="search-box" onsubmit="manualVerify(event)">
+            <form id="manualSearchForm" class="search-box">
                 <input
                     type="text"
                     id="manualInput"
@@ -922,7 +980,7 @@
     <div class="panel footer-panel">
         <h2 class="panel-title">Recent Check-ins</h2>
 
-        <div class="recent-list">
+        <div id="recentCheckInsList" class="recent-list">
             @forelse($recentCheckIns as $invitee)
                 <div class="recent-item">
                     <div class="recent-name">{{ $invitee->name }}</div>
@@ -935,7 +993,7 @@
                     </div>
                 </div>
             @empty
-                <div class="recent-meta">No check-ins yet.</div>
+                <div id="recentCheckInsEmpty" class="recent-meta">No check-ins yet.</div>
             @endforelse
         </div>
     </div>
@@ -1032,13 +1090,20 @@
 <script>
     let html5QrCode = null;
     let selectedInviteeId = null;
+    let selectedInvitee = null;
     let remainingGuests = 0;
     let scannerRunning = false;
+    let scannerStarting = false;
+    let scannerStopping = false;
+    let verificationInProgress = false;
+    let checkInInProgress = false;
     let lastScannedValue = null;
+    let lastScannedAt = 0;
+    let verifyAbortController = null;
 
-    const verifyUrl = "{{ route('gate.check-in.verify', $event) }}";
-    const confirmUrl = "{{ route('gate.check-in.confirm', $event) }}";
-    const csrfToken = "{{ csrf_token() }}";
+    const verifyUrl = @json(route('gate.check-in.verify', $event));
+    const confirmUrl = @json(route('gate.check-in.confirm', $event));
+    const csrfToken = @json(csrf_token());
 
     function escapeHtml(value) {
         if (value === null || value === undefined || value === '') {
@@ -1053,14 +1118,61 @@
             .replaceAll("'", '&#039;');
     }
 
+    function numberValue(value, fallback = 0) {
+        const parsed = Number(value);
+
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function setScannerStatus(type, message) {
+        const status = document.getElementById('scannerStatus');
+        const text = document.getElementById('scannerStatusText');
+
+        if (status) {
+            status.className = `scanner-status ${type || ''}`.trim();
+        }
+
+        if (text) {
+            text.innerText = message;
+        }
+    }
+
+    function updateScannerButtons() {
+        const startButton = document.getElementById('startScannerButton');
+        const stopButton = document.getElementById('stopScannerButton');
+
+        if (startButton) {
+            startButton.disabled = scannerRunning || scannerStarting || scannerStopping;
+            startButton.innerText = scannerStarting ? 'Starting...' : 'Start Scanner';
+        }
+
+        if (stopButton) {
+            stopButton.disabled = !scannerRunning || scannerStopping;
+            stopButton.innerText = scannerStopping ? 'Stopping...' : 'Stop Scanner';
+        }
+    }
+
+    function setManualSearchBusy(busy) {
+        const input = document.getElementById('manualInput');
+        const button = document.querySelector('#manualSearchForm button[type="submit"]');
+
+        if (input) {
+            input.disabled = busy;
+        }
+
+        if (button) {
+            button.disabled = busy;
+            button.innerText = busy ? 'Searching...' : 'Search';
+        }
+    }
+
     function hideStickyCheckInBar() {
         const bar = document.getElementById('stickyCheckInBar');
+        const button = document.getElementById('stickyConfirmButton');
 
         if (bar) {
             bar.classList.remove('active');
         }
-
-        const button = document.getElementById('stickyConfirmButton');
 
         if (button) {
             button.disabled = false;
@@ -1075,36 +1187,43 @@
         const selectEl = document.getElementById('stickyGuestCount');
         const button = document.getElementById('stickyConfirmButton');
 
-        if (!bar || !invitee || !selectEl) {
+        if (!bar || !invitee || !selectEl || !nameEl || !summaryEl) {
             return;
         }
 
-        const remaining = Math.max(Number(invitee.remaining_guests || 0), 0);
-        const checkedIn = Number(invitee.checked_in_count || 0);
-        const gateLimit = Number(invitee.gate_limit || invitee.allowed_guests || 1);
+        const remaining = Math.max(numberValue(invitee.remaining_guests), 0);
+        const checkedIn = Math.max(numberValue(invitee.checked_in_count), 0);
+        const gateLimit = Math.max(
+            numberValue(invitee.gate_limit, numberValue(invitee.allowed_guests, 1)),
+            1
+        );
 
         nameEl.innerText = invitee.name || 'Selected invitee';
         summaryEl.innerText = `Remaining: ${remaining} • Checked in: ${checkedIn}/${gateLimit}`;
-
         selectEl.innerHTML = '';
 
-        for (let i = 1; i <= remaining; i++) {
+        for (let count = 1; count <= remaining; count++) {
             const option = document.createElement('option');
-            option.value = i;
-            option.textContent = i === 1 ? '1 guest' : `${i} guests`;
+            option.value = String(count);
+            option.textContent = count === 1 ? '1 guest' : `${count} guests`;
             selectEl.appendChild(option);
         }
 
         if (button) {
             button.disabled = remaining <= 0;
-            button.innerText = 'Confirm Check-in';
+            button.innerText = remaining <= 0
+                ? 'Guest limit reached'
+                : 'Confirm Check-in';
         }
 
-        if (remaining > 0) {
-            bar.classList.add('active');
-        } else {
-            bar.classList.remove('active');
-        }
+        bar.classList.toggle('active', remaining > 0);
+    }
+
+    function clearSelection() {
+        selectedInviteeId = null;
+        selectedInvitee = null;
+        remainingGuests = 0;
+        hideStickyCheckInBar();
     }
 
     function showResult(type, title, message, invitee = null) {
@@ -1114,49 +1233,57 @@
         const infoEl = document.getElementById('inviteeInfo');
         const guestControl = document.getElementById('guestControl');
 
-        box.className = 'result ' + type;
-        titleEl.innerText = title;
-        messageEl.innerText = message;
+        if (!box || !titleEl || !messageEl || !infoEl || !guestControl) {
+            return;
+        }
+
+        box.className = `result ${type || 'error'}`;
+        titleEl.innerText = title || 'Result';
+        messageEl.innerText = message || '';
         infoEl.innerHTML = '';
         guestControl.style.display = 'none';
 
-        selectedInviteeId = null;
-        remainingGuests = 0;
-        hideStickyCheckInBar();
+        clearSelection();
 
-        if (invitee) {
-            selectedInviteeId = invitee.id;
-            remainingGuests = Number(invitee.remaining_guests || 0);
+        if (!invitee) {
+            return;
+        }
 
-            infoEl.innerHTML = `
-                <div class="info-row"><span>Name</span><span>${escapeHtml(invitee.name)}</span></div>
-                <div class="info-row"><span>Phone</span><span>${escapeHtml(invitee.phone)}</span></div>
-                <div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>
-                <div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>
-                <div class="info-row"><span>RSVP</span><span>${escapeHtml(invitee.rsvp_status || 'pending')}</span></div>
-                <div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>
-                <div class="info-row"><span>Confirmed Guests</span><span>${escapeHtml(invitee.confirmed_guests ?? '-')}</span></div>
-                <div class="info-row"><span>Gate Limit</span><span>${escapeHtml(invitee.gate_limit || invitee.allowed_guests)}</span></div>
-                <div class="info-row"><span>Checked In</span><span>${escapeHtml(invitee.checked_in_count)}</span></div>
-                <div class="info-row"><span>Remaining</span><span>${escapeHtml(invitee.remaining_guests)}</span></div>
-                <div class="info-row"><span>Table</span><span>${escapeHtml(invitee.table_number)}</span></div>
-                <div class="info-row"><span>Category</span><span>${escapeHtml(invitee.category)}</span></div>
-            `;
+        selectedInvitee = invitee;
+        selectedInviteeId = invitee.id;
+        remainingGuests = Math.max(numberValue(invitee.remaining_guests), 0);
 
-            if (type === 'success' && remainingGuests > 0) {
-                guestControl.style.display = 'block';
-                showStickyCheckInBar(invitee);
-            }
+        infoEl.innerHTML = `
+            <div class="info-row"><span>Name</span><span>${escapeHtml(invitee.name)}</span></div>
+            <div class="info-row"><span>Phone</span><span>${escapeHtml(invitee.phone)}</span></div>
+            <div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>
+            <div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>
+            <div class="info-row"><span>RSVP</span><span>${escapeHtml(invitee.rsvp_status || 'pending')}</span></div>
+            <div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>
+            <div class="info-row"><span>Confirmed Guests</span><span>${escapeHtml(invitee.confirmed_guests ?? '-')}</span></div>
+            <div class="info-row"><span>Gate Limit</span><span>${escapeHtml(invitee.gate_limit ?? invitee.allowed_guests)}</span></div>
+            <div class="info-row"><span>Checked In</span><span>${escapeHtml(invitee.checked_in_count)}</span></div>
+            <div class="info-row"><span>Remaining</span><span>${escapeHtml(invitee.remaining_guests)}</span></div>
+            <div class="info-row"><span>Table</span><span>${escapeHtml(invitee.table_number)}</span></div>
+            <div class="info-row"><span>Category</span><span>${escapeHtml(invitee.category)}</span></div>
+        `;
+
+        if (type === 'success' && remainingGuests > 0) {
+            guestControl.style.display = 'block';
+            showStickyCheckInBar(invitee);
         }
     }
-
 
     function showCheckInPopup(response) {
         const popup = document.getElementById('checkInPopup');
         const header = document.getElementById('popupHeader');
         const icon = document.getElementById('popupIcon');
 
-        const success = response.success_message || {};
+        if (!popup || !header || !icon) {
+            return;
+        }
+
+        const details = response.success_message || {};
         const invitee = response.invitee || {};
         const status = response.status || 'success';
 
@@ -1173,67 +1300,94 @@
         }
 
         document.getElementById('popupTitle').innerText =
-            success.heading || response.title || 'Check-in Result';
+            details.heading || response.title || 'Check-in Result';
 
         document.getElementById('popupMessage').innerText =
-            response.message || success.body || 'Operation completed.';
+            response.message || details.body || 'Operation completed.';
 
         document.getElementById('popupInviteeName').innerText =
-            success.invitee_name || invitee.name || '-';
+            details.invitee_name || invitee.name || '-';
 
         document.getElementById('popupCardType').innerText =
-            success.card_type || invitee.card_type || 'N/A';
+            details.card_type || invitee.card_type || 'N/A';
 
         document.getElementById('popupTableNumber').innerText =
-            success.table_number || invitee.table_number || 'N/A';
+            details.table_number || invitee.table_number || 'N/A';
 
-        const totalCheckedIn = success.total_checked_in ?? invitee.checked_in_count ?? 0;
-        const allowedGuests = success.allowed_guests ?? invitee.allowed_guests ?? 1;
+        const totalCheckedIn =
+            details.total_checked_in ?? invitee.checked_in_count ?? 0;
+
+        const allowedGuests =
+            details.allowed_guests ??
+            invitee.gate_limit ??
+            invitee.allowed_guests ??
+            1;
 
         document.getElementById('popupCheckedIn').innerText =
-            totalCheckedIn + ' / ' + allowedGuests;
+            `${totalCheckedIn} / ${allowedGuests}`;
 
         document.getElementById('popupRemaining').innerText =
-            success.remaining_guests ?? invitee.remaining_guests ?? 0;
+            details.remaining_guests ?? invitee.remaining_guests ?? 0;
 
         document.getElementById('popupCategory').innerText =
-            success.category || invitee.category || 'N/A';
+            details.category || invitee.category || 'N/A';
 
         document.getElementById('popupGuestsNow').innerText =
-            success.guests_checked_in_now ?? '-';
+            details.guests_checked_in_now ?? '-';
 
-        const checkedInTime = success.checked_in_time || invitee.checked_in_at || invitee.last_check_in || null;
+        const checkedInTime =
+            details.checked_in_time ||
+            invitee.checked_in_at ||
+            invitee.last_check_in ||
+            null;
 
         document.getElementById('popupTime').innerText =
-            checkedInTime ? 'Checked in at ' + checkedInTime : '';
+            checkedInTime ? `Checked in at ${checkedInTime}` : '';
 
         popup.classList.add('active');
+        document.body.style.overflow = 'hidden';
     }
 
     function closeCheckInPopup() {
         const popup = document.getElementById('checkInPopup');
 
-        popup.classList.remove('active');
-
-        selectedInviteeId = null;
-        remainingGuests = 0;
-        lastScannedValue = null;
-
-        const manualInput = document.getElementById('manualInput');
-
-        if (manualInput) {
-            manualInput.value = '';
-            manualInput.focus();
+        if (popup) {
+            popup.classList.remove('active');
         }
 
+        document.body.style.overflow = '';
+        resetForNextGuest();
+    }
+
+    function resetForNextGuest() {
+        clearSelection();
+        lastScannedValue = null;
+        lastScannedAt = 0;
+
+        const input = document.getElementById('manualInput');
         const resultBox = document.getElementById('resultBox');
         const inviteeInfo = document.getElementById('inviteeInfo');
         const guestControl = document.getElementById('guestControl');
 
-        resultBox.className = 'result';
-        inviteeInfo.innerHTML = '';
-        guestControl.style.display = 'none';
-        hideStickyCheckInBar();
+        if (input) {
+            input.value = '';
+        }
+
+        if (resultBox) {
+            resultBox.className = 'result';
+        }
+
+        if (inviteeInfo) {
+            inviteeInfo.innerHTML = '';
+        }
+
+        if (guestControl) {
+            guestControl.style.display = 'none';
+        }
+
+        if (window.matchMedia('(min-width: 769px)').matches && input) {
+            input.focus();
+        }
 
         startScanner();
     }
@@ -1245,19 +1399,15 @@
             return '';
         }
 
-        // QR scanners may return a full URL such as /gate/verify/{token} or /i/{shortCode}.
-        // Keep manual serial/phone/name unchanged, but extract the useful last URL segment when needed.
         try {
-            if (value.startsWith('http://') || value.startsWith('https://')) {
+            if (/^https?:\/\//i.test(value)) {
                 const url = new URL(value);
                 const parts = url.pathname.split('/').filter(Boolean);
 
-                if (parts.length > 0) {
-                    return parts[parts.length - 1];
-                }
+                return parts.at(-1) || value;
             }
         } catch (error) {
-            // Ignore URL parsing errors and use the original value.
+            console.warn('QR URL parsing warning:', error);
         }
 
         return value;
@@ -1276,8 +1426,8 @@
             status: 'error',
             title: response.ok ? 'Invalid Response' : 'Request Failed',
             message: response.ok
-                ? 'The server did not return JSON. Please check the gate verify route.'
-                : `Server returned HTTP ${response.status}. Please check route, login session, or controller response.`,
+                ? 'The server returned an invalid response.'
+                : `Server returned HTTP ${response.status}. Please sign in again or contact the administrator.`,
             debug: text,
         };
     }
@@ -1286,9 +1436,26 @@
         value = normalizeSearchValue(value);
 
         if (!value) {
-            showResult('error', 'Missing Input', 'Please scan or enter a serial number, phone, name, or short code.');
+            showResult(
+                'error',
+                'Missing Input',
+                'Please scan or enter a serial number, phone, name, or short code.'
+            );
             return;
         }
+
+        if (verificationInProgress || checkInInProgress) {
+            return;
+        }
+
+        verificationInProgress = true;
+        setManualSearchBusy(true);
+
+        if (verifyAbortController) {
+            verifyAbortController.abort();
+        }
+
+        verifyAbortController = new AbortController();
 
         showResult('warning', 'Searching...', 'Please wait while we verify this invitee.');
 
@@ -1296,6 +1463,7 @@
             const response = await fetch(verifyUrl, {
                 method: 'POST',
                 credentials: 'same-origin',
+                signal: verifyAbortController.signal,
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
@@ -1305,8 +1473,8 @@
                 body: JSON.stringify({
                     scanned_value: value,
                     search: value,
-                    source: source,
-                })
+                    source,
+                }),
             });
 
             const data = await readJsonResponse(response);
@@ -1323,40 +1491,65 @@
                     ...data,
                     title: data.title || 'Card Already Used',
                     message: data.message || 'This invitation card has already been used.',
-                    status: 'warning'
+                    status: 'warning',
                 });
             }
         } catch (error) {
-            showResult('error', 'Connection Error', 'Could not verify this invitee. Please check your internet connection and try again.');
+            if (error.name !== 'AbortError') {
+                showResult(
+                    'error',
+                    'Connection Error',
+                    'Could not verify this invitee. Check the connection and try again.'
+                );
+            }
+        } finally {
+            verificationInProgress = false;
+            setManualSearchBusy(false);
         }
     }
 
-    function manualVerify(event = null) {
-        if (event) {
-            event.preventDefault();
-        }
+    function manualVerify(event) {
+        event.preventDefault();
 
         const input = document.getElementById('manualInput');
-        const value = input ? input.value : '';
+        const value = input?.value || '';
 
-        verifyValue(value, 'manual');
+        stopScanner().finally(() => verifyValue(value, 'manual'));
     }
 
     async function confirmCheckIn() {
-        if (!selectedInviteeId) {
-            showResult('error', 'No Invitee Selected', 'Please scan or search for an invitee first.');
+        if (!selectedInviteeId || checkInInProgress) {
+            if (!selectedInviteeId) {
+                showResult(
+                    'error',
+                    'No Invitee Selected',
+                    'Please scan or search for an invitee first.'
+                );
+            }
+
             return;
         }
 
         const guestCountInput = document.getElementById('stickyGuestCount');
-        const guestCount = parseInt((guestCountInput && guestCountInput.value) || '1');
+        const guestCount = Number.parseInt(guestCountInput?.value || '1', 10);
 
-        if (guestCount < 1 || guestCount > remainingGuests) {
-            showResult('error', 'Invalid Guest Count', `Guest count must be between 1 and ${remainingGuests}.`);
+        if (
+            !Number.isInteger(guestCount) ||
+            guestCount < 1 ||
+            guestCount > remainingGuests
+        ) {
+            showResult(
+                'error',
+                'Invalid Guest Count',
+                `Guest count must be between 1 and ${remainingGuests}.`,
+                selectedInvitee
+            );
             return;
         }
 
         const confirmButton = document.getElementById('stickyConfirmButton');
+
+        checkInInProgress = true;
 
         if (confirmButton) {
             confirmButton.disabled = true;
@@ -1366,21 +1559,24 @@
         try {
             const response = await fetch(confirmUrl, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': csrfToken,
                     'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
                 body: JSON.stringify({
                     invitee_id: selectedInviteeId,
-                    guest_count: guestCount
-                })
+                    guest_count: guestCount,
+                }),
             });
 
-            const data = await response.json();
+            const data = await readJsonResponse(response);
 
             if (data.status === 'success') {
                 hideStickyCheckInBar();
+                prependRecentCheckIn(data);
                 showCheckInPopup(data);
                 return;
             }
@@ -1391,88 +1587,176 @@
                     ...data,
                     title: data.title || 'Card Already Used',
                     message: data.message || 'This invitation card has already been used.',
-                    status: 'warning'
+                    status: 'warning',
                 });
                 return;
-            }
-
-            if (confirmButton) {
-                confirmButton.disabled = false;
-                confirmButton.innerText = 'Confirm Check-in';
             }
 
             showResult(
                 data.status || 'error',
                 data.title || 'Check-in Failed',
                 data.message || 'Check-in could not be completed.',
-                data.invitee || null
+                data.invitee || selectedInvitee
             );
         } catch (error) {
-            if (confirmButton) {
+            showResult(
+                'error',
+                'Check-in Failed',
+                'Could not complete check-in. Please try again.',
+                selectedInvitee
+            );
+        } finally {
+            checkInInProgress = false;
+
+            if (confirmButton && !document.getElementById('checkInPopup')?.classList.contains('active')) {
                 confirmButton.disabled = false;
                 confirmButton.innerText = 'Confirm Check-in';
             }
+        }
+    }
 
-            showResult('error', 'Check-in Failed', 'Could not complete check-in. Please try again.');
+    function prependRecentCheckIn(response) {
+        const list = document.getElementById('recentCheckInsList');
+        const details = response.success_message || {};
+        const invitee = response.invitee || {};
+
+        if (!list) {
+            return;
+        }
+
+        document.getElementById('recentCheckInsEmpty')?.remove();
+
+        const name = details.invitee_name || invitee.name || 'Invitee';
+        const serial = invitee.serial_number || 'No Serial';
+        const total = details.total_checked_in ?? invitee.checked_in_count ?? 1;
+        const time = details.checked_in_time || new Date().toLocaleString();
+
+        const item = document.createElement('div');
+        item.className = 'recent-item';
+        item.innerHTML = `
+            <div class="recent-name">${escapeHtml(name)}</div>
+            <div class="recent-meta">
+                ${escapeHtml(serial)} · ${escapeHtml(total)} guest(s) · ${escapeHtml(time)}
+            </div>
+        `;
+
+        list.prepend(item);
+
+        while (list.children.length > 10) {
+            list.lastElementChild?.remove();
         }
     }
 
     async function startScanner() {
-        if (scannerRunning) {
+        if (scannerRunning || scannerStarting || scannerStopping) {
             return;
         }
 
-        if (!html5QrCode) {
-            html5QrCode = new Html5Qrcode("reader");
+        if (typeof Html5Qrcode === 'undefined') {
+            setScannerStatus('error', 'Scanner library failed to load. Use manual search.');
+            showResult(
+                'error',
+                'Scanner Unavailable',
+                'The QR scanner library did not load. Refresh the page or use manual search.'
+            );
+            return;
         }
 
-        const viewportWidth = Math.max(
-            document.documentElement.clientWidth || 0,
-            window.innerWidth || 0
-        );
-
-        const qrSize = viewportWidth <= 390
-            ? 210
-            : viewportWidth <= 600
-                ? 230
-                : 250;
-
-        const config = {
-            fps: 10,
-            qrbox: {
-                width: qrSize,
-                height: qrSize
-            },
-            aspectRatio: 1.0,
-            disableFlip: false
-        };
+        scannerStarting = true;
+        updateScannerButtons();
+        setScannerStatus('warning', 'Starting camera...');
 
         try {
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode('reader', {
+                    verbose: false,
+                });
+            }
+
+            const viewportWidth = Math.max(
+                document.documentElement.clientWidth || 0,
+                window.innerWidth || 0
+            );
+
+            const qrSize = viewportWidth <= 390
+                ? 200
+                : viewportWidth <= 600
+                    ? 225
+                    : 250;
+
             await html5QrCode.start(
-                { facingMode: "environment" },
-                config,
+                { facingMode: { ideal: 'environment' } },
+                {
+                    fps: 12,
+                    qrbox: {
+                        width: qrSize,
+                        height: qrSize,
+                    },
+                    aspectRatio: 1,
+                    disableFlip: false,
+                },
                 async (decodedText) => {
-                    if (lastScannedValue === decodedText) {
+                    const now = Date.now();
+
+                    if (
+                        verificationInProgress ||
+                        checkInInProgress ||
+                        (
+                            lastScannedValue === decodedText &&
+                            now - lastScannedAt < 3000
+                        )
+                    ) {
                         return;
                     }
 
                     lastScannedValue = decodedText;
+                    lastScannedAt = now;
 
                     await stopScanner();
                     await verifyValue(decodedText, 'scanner');
+                },
+                () => {
+                    // Frame-level decode failures are expected while scanning.
                 }
             );
 
             scannerRunning = true;
+            setScannerStatus('active', 'Camera active. Point it at the QR code.');
         } catch (error) {
-            showResult('error', 'Camera Error', 'Could not start camera. Use manual search instead.');
+            scannerRunning = false;
+
+            const permissionDenied =
+                error?.name === 'NotAllowedError' ||
+                String(error).toLowerCase().includes('permission');
+
+            setScannerStatus(
+                'error',
+                permissionDenied
+                    ? 'Camera permission was denied.'
+                    : 'Camera could not be started.'
+            );
+
+            showResult(
+                'error',
+                permissionDenied ? 'Camera Permission Required' : 'Camera Error',
+                permissionDenied
+                    ? 'Allow camera access in the browser, then press Start Scanner.'
+                    : 'Could not start the camera. Use manual search or try again.'
+            );
+        } finally {
+            scannerStarting = false;
+            updateScannerButtons();
         }
     }
 
     async function stopScanner() {
-        if (!html5QrCode || !scannerRunning) {
+        if (!html5QrCode || !scannerRunning || scannerStopping) {
             return;
         }
+
+        scannerStopping = true;
+        updateScannerButtons();
+        setScannerStatus('warning', 'Stopping camera...');
 
         try {
             await html5QrCode.stop();
@@ -1480,34 +1764,52 @@
             console.warn('Scanner stop warning:', error);
         } finally {
             scannerRunning = false;
+            scannerStopping = false;
+            updateScannerButtons();
+            setScannerStatus('', 'Camera is not running.');
         }
     }
 
     const manualSearchForm = document.getElementById('manualSearchForm');
-    const manualInput = document.getElementById('manualInput');
+    const popup = document.getElementById('checkInPopup');
 
-    if (manualSearchForm) {
-        manualSearchForm.addEventListener('submit', manualVerify);
-    }
+    manualSearchForm?.addEventListener('submit', manualVerify);
 
-    if (manualInput) {
-        manualInput.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter') {
-                manualVerify(event);
-            }
-        });
-    }
+    popup?.addEventListener('click', function (event) {
+        if (event.target === popup) {
+            closeCheckInPopup();
+        }
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && popup?.classList.contains('active')) {
+            closeCheckInPopup();
+        }
+    });
+
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            stopScanner();
+        }
+    });
+
+    window.addEventListener('beforeunload', function () {
+        verifyAbortController?.abort();
+
+        if (html5QrCode && scannerRunning) {
+            html5QrCode.stop().catch(() => {});
+        }
+    });
 
     document.addEventListener('DOMContentLoaded', function () {
-        const manualInput = document.getElementById('manualInput');
+        updateScannerButtons();
 
-        if (manualInput) {
-            manualInput.focus();
+        if (window.matchMedia('(min-width: 769px)').matches) {
+            document.getElementById('manualInput')?.focus();
         }
 
         startScanner();
     });
-
 </script>
 
 </body>
