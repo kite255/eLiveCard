@@ -13,6 +13,25 @@
         $scannerUrl = $scannerEvent
             ? route('gate.check-in.show', ['event' => $scannerEvent->getKey()])
             : null;
+
+        $checkInDashboardUrl = $selectedEvent
+            ? \App\Filament\Resources\EventResource::getUrl(
+                'check-in-dashboard',
+                ['record' => $selectedEvent]
+            )
+            : null;
+
+        $eventWorkspaceUrl = $selectedEvent
+            ? \App\Filament\Resources\EventResource::getUrl(
+                'view',
+                ['record' => $selectedEvent]
+            )
+            : null;
+
+        $remainingGateGuests = max(
+            (int) $totalAllowedGuests - (int) $checkedInGuests,
+            0
+        );
     @endphp
 
     <style>
@@ -1104,6 +1123,103 @@
         .snapshot-active { color: #15803D; background: #DCFCE7; }
         .snapshot-upcoming { color: #C2410C; background: #FFEDD5; }
 
+
+        .elive-officer-events {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .elive-officer-event {
+            min-width: 0;
+            padding: 15px;
+        }
+
+        .elive-officer-event-title {
+            color: #213B73;
+            font-size: 15px;
+            font-weight: 900;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
+
+        .elive-officer-event-meta {
+            margin-top: 7px;
+            color: #64748B;
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
+        }
+
+        .elive-officer-event-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 13px;
+        }
+
+        .elive-officer-link {
+            min-height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            border-radius: 11px;
+            background: #213B73;
+            color: #FFFFFF;
+            font-size: 11px;
+            font-weight: 900;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .elive-officer-link.orange-link {
+            background: #FD9618;
+            color: #111827;
+        }
+
+        .elive-mobile-checkins {
+            display: none;
+        }
+
+        .elive-mobile-checkin {
+            padding: 13px;
+            border: 1px solid #E5E7EB;
+            border-radius: 13px;
+            background: #FFFFFF;
+        }
+
+        .elive-mobile-checkin-name {
+            color: #111827;
+            font-size: 13px;
+            font-weight: 900;
+            overflow-wrap: anywhere;
+        }
+
+        .elive-mobile-checkin-meta {
+            margin-top: 6px;
+            color: #64748B;
+            font-size: 11px;
+            font-weight: 650;
+            line-height: 1.5;
+        }
+
+        .elive-dashboard,
+        .elive-dashboard *,
+        .elive-dashboard *::before,
+        .elive-dashboard *::after {
+            box-sizing: border-box;
+        }
+
+        .elive-dashboard img,
+        .elive-dashboard svg,
+        .elive-dashboard video,
+        .elive-dashboard canvas {
+            max-width: 100%;
+        }
+
         @media (max-width: 1280px) {
             .elive-hero-grid {
                 grid-template-columns: 1fr;
@@ -1195,6 +1311,23 @@
                 grid-template-columns: 1fr 1fr;
             }
 
+            .elive-officer-events {
+                grid-template-columns: 1fr;
+            }
+
+            .elive-officer-event-actions {
+                grid-template-columns: 1fr;
+            }
+
+            .elive-table-wrap {
+                display: none;
+            }
+
+            .elive-mobile-checkins {
+                display: grid;
+                gap: 9px;
+            }
+
             .elive-section-header {
                 flex-direction: column;
                 align-items: flex-start;
@@ -1204,10 +1337,402 @@
                 width: fit-content;
             }
         }
+
+        @media (max-width: 520px) {
+            .elive-content {
+                padding: 10px;
+            }
+
+            .elive-hero {
+                padding: 16px;
+                border-radius: 16px;
+            }
+
+            .elive-hero h1 {
+                font-size: 22px;
+            }
+
+            .elive-kpis,
+            .elive-selected-event,
+            .elive-rsvp-summary,
+            .elive-channel-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .elive-filter-card,
+            .elive-section {
+                padding: 14px;
+            }
+
+            .elive-filter-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .elive-clear-btn,
+            .elive-select {
+                width: 100%;
+                min-height: 48px;
+            }
+
+            .elive-btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .elive-hero-actions {
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 
     <div class="elive-dashboard">
         <div class="elive-content">
+            @if ($isCheckInOfficer)
+
+            <section class="elive-hero">
+                <div class="elive-hero-grid">
+                    <div class="elive-hero-icon">
+                        <x-heroicon-o-qr-code />
+                    </div>
+
+                    <div>
+                        <h1>Welcome, {{ $userName }} — Gate Operations</h1>
+                        <p>
+                            Scan invitation cards, search guests manually, confirm guest limits,
+                            and monitor your assigned event check-ins.
+                        </p>
+
+                        <div class="elive-hero-actions">
+                            @if ($scannerUrl)
+                                <a href="{{ $scannerUrl }}" class="elive-btn elive-btn-primary">
+                                    <x-heroicon-o-qr-code style="width:18px;height:18px;" />
+                                    Open QR Scanner
+                                </a>
+                            @endif
+
+                            @if ($checkInDashboardUrl)
+                                <a href="{{ $checkInDashboardUrl }}" class="elive-btn elive-btn-light">
+                                    <x-heroicon-o-magnifying-glass style="width:18px;height:18px;" />
+                                    Manual Guest Search
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="elive-hero-stats">
+                        <div class="elive-hero-stat">
+                            <div class="elive-hero-number">{{ number_format($totalAllowedGuests) }}</div>
+                            <div class="elive-hero-label">Expected</div>
+                        </div>
+
+                        <div class="elive-hero-stat">
+                            <div class="elive-hero-number">{{ number_format($checkedInGuests) }}</div>
+                            <div class="elive-hero-label">Checked In</div>
+                        </div>
+
+                        <div class="elive-hero-stat">
+                            <div class="elive-hero-number">{{ number_format($remainingGateGuests) }}</div>
+                            <div class="elive-hero-label">Remaining</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="elive-card elive-filter-card">
+                <div class="elive-filter-row">
+                    <div class="elive-filter-copy">
+                        <div class="elive-filter-title">Assigned Event</div>
+                        <div class="elive-filter-subtitle">
+                            Select only an event assigned to you for gate check-in.
+                        </div>
+                    </div>
+
+                    <div class="elive-filter-controls">
+                        <select
+                            wire:model.live="selectedEventId"
+                            class="elive-select"
+                            aria-label="Select assigned event"
+                        >
+                            <option value="">Select assigned event</option>
+
+                            @foreach ($eventOptions as $eventId => $eventName)
+                                <option value="{{ $eventId }}">{{ $eventName }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                @if (! $selectedEvent)
+                    <div class="elive-scanner-notice">
+                        <x-heroicon-o-information-circle />
+                        <span>Select an assigned event to activate the scanner and manual search tools.</span>
+                    </div>
+                @endif
+
+                @if ($selectedEvent)
+                    <div class="elive-selected-event">
+                        <div>
+                            <div class="elive-selected-label">Event</div>
+                            <div class="elive-selected-value">
+                                {{ $selectedEvent->title ?? $selectedEvent->name ?? 'Event' }}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="elive-selected-label">Date</div>
+                            <div class="elive-selected-value">
+                                {{ $selectedEvent->event_date
+                                    ? \Illuminate\Support\Carbon::parse($selectedEvent->event_date)->format('d M Y')
+                                    : 'Not set'
+                                }}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="elive-selected-label">Venue</div>
+                            <div class="elive-selected-value">
+                                {{ $selectedEvent->venue_name ?? $selectedEvent->venue_address ?? 'Not set' }}
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="elive-selected-label">Status</div>
+                            <div class="elive-selected-value">
+                                {{ str($selectedEvent->status ?? 'draft')->replace('_', ' ')->title() }}
+                            </div>
+                        </div>
+                    </div>
+                @endif
+            </section>
+
+            <section class="elive-kpis">
+                <div class="elive-card elive-kpi">
+                    <div class="elive-kpi-inner">
+                        <div class="elive-icon blue"><x-heroicon-o-users /></div>
+                        <div>
+                            <div class="elive-kpi-label">Expected Guests</div>
+                            <div class="elive-kpi-value">{{ number_format($totalAllowedGuests) }}</div>
+                            <div class="elive-kpi-note">Selected event allowance</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="elive-card elive-kpi">
+                    <div class="elive-kpi-inner">
+                        <div class="elive-icon green"><x-heroicon-o-check-circle /></div>
+                        <div>
+                            <div class="elive-kpi-label">Guests Checked In</div>
+                            <div class="elive-kpi-value">{{ number_format($checkedInGuests) }}</div>
+                            <div class="elive-kpi-note">{{ $guestCheckInPercent }}% progress</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="elive-card elive-kpi">
+                    <div class="elive-kpi-inner">
+                        <div class="elive-icon orange"><x-heroicon-o-user-plus /></div>
+                        <div>
+                            <div class="elive-kpi-label">Remaining Guests</div>
+                            <div class="elive-kpi-value">{{ number_format($remainingGateGuests) }}</div>
+                            <div class="elive-kpi-note">Remaining allowance</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="elive-card elive-kpi">
+                    <div class="elive-kpi-inner">
+                        <div class="elive-icon purple"><x-heroicon-o-clipboard-document-check /></div>
+                        <div>
+                            <div class="elive-kpi-label">Transactions</div>
+                            <div class="elive-kpi-value">{{ number_format($checkInTransactions) }}</div>
+                            <div class="elive-kpi-note">Recorded check-ins</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="elive-card elive-kpi">
+                    <div class="elive-kpi-inner">
+                        <div class="elive-icon blue"><x-heroicon-o-chart-bar-square /></div>
+                        <div>
+                            <div class="elive-kpi-label">Partial Check-ins</div>
+                            <div class="elive-kpi-value">{{ number_format($partiallyCheckedInInvitees) }}</div>
+                            <div class="elive-kpi-note">Invitees with balance</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="elive-bottom-grid">
+                <section class="elive-card elive-section">
+                    <div class="elive-section-header">
+                        <div>
+                            <div class="elive-section-title">Gate Quick Actions</div>
+                            <div class="elive-section-subtitle">Only assigned-event gate tools are available.</div>
+                        </div>
+                    </div>
+
+                    <div class="elive-actions-list">
+                        @if ($scannerUrl)
+                            <a href="{{ $scannerUrl }}" class="elive-action-item">
+                                <span class="elive-action-left">
+                                    <span class="elive-small-icon orange">
+                                        <x-heroicon-o-qr-code />
+                                    </span>
+                                    <span>
+                                        <span class="elive-action-title">Open QR Scanner</span>
+                                        <span class="elive-action-subtitle">Scan and verify invitation cards</span>
+                                    </span>
+                                </span>
+                                <span style="color:#213B73;font-weight:900;">›</span>
+                            </a>
+                        @endif
+
+                        @if ($checkInDashboardUrl)
+                            <a href="{{ $checkInDashboardUrl }}" class="elive-action-item">
+                                <span class="elive-action-left">
+                                    <span class="elive-small-icon blue">
+                                        <x-heroicon-o-magnifying-glass />
+                                    </span>
+                                    <span>
+                                        <span class="elive-action-title">Manual Guest Search</span>
+                                        <span class="elive-action-subtitle">Search by name, phone or serial number</span>
+                                    </span>
+                                </span>
+                                <span style="color:#213B73;font-weight:900;">›</span>
+                            </a>
+                        @endif
+
+                        <a href="{{ url('/admin/gate-check-in') }}" class="elive-action-item">
+                            <span class="elive-action-left">
+                                <span class="elive-small-icon green">
+                                    <x-heroicon-o-calendar-days />
+                                </span>
+                                <span>
+                                    <span class="elive-action-title">Assigned Events</span>
+                                    <span class="elive-action-subtitle">View all active assignments</span>
+                                </span>
+                            </span>
+                            <span style="color:#213B73;font-weight:900;">›</span>
+                        </a>
+                    </div>
+                </section>
+
+                <section class="elive-card elive-section">
+                    <div class="elive-section-header">
+                        <div>
+                            <div class="elive-section-title">My Recent Check-ins</div>
+                            <div class="elive-section-subtitle">Latest guests processed by your account</div>
+                        </div>
+                    </div>
+
+                    <div class="elive-table-wrap">
+                        <table class="elive-checkin-table">
+                            <thead>
+                                <tr>
+                                    <th>Invitee</th>
+                                    <th>Guests</th>
+                                    <th>Method</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @forelse ($officerRecentCheckIns as $checkIn)
+                                    <tr>
+                                        <td>{{ $checkIn->invitee?->name ?? 'Unknown invitee' }}</td>
+                                        <td>{{ number_format((int) ($checkIn->guests_checked_in ?? 1)) }}</td>
+                                        <td>{{ str($checkIn->checkin_method ?? 'manual')->headline() }}</td>
+                                        <td>{{ str($checkIn->status ?? 'successful')->headline() }}</td>
+                                        <td>
+                                            {{ $checkIn->checked_in_at
+                                                ? \Illuminate\Support\Carbon::parse($checkIn->checked_in_at)->format('H:i')
+                                                : '—'
+                                            }}
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" style="padding:22px;text-align:center;color:#64748B;">
+                                            No check-ins recorded yet.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="elive-mobile-checkins">
+                        @forelse ($officerRecentCheckIns as $checkIn)
+                            <article class="elive-mobile-checkin">
+                                <div class="elive-mobile-checkin-name">
+                                    {{ $checkIn->invitee?->name ?? 'Unknown invitee' }}
+                                </div>
+                                <div class="elive-mobile-checkin-meta">
+                                    {{ (int) ($checkIn->guests_checked_in ?? 1) }} guest(s)
+                                    · {{ str($checkIn->checkin_method ?? 'manual')->headline() }}
+                                    · {{ $checkIn->checked_in_at
+                                        ? \Illuminate\Support\Carbon::parse($checkIn->checked_in_at)->format('H:i')
+                                        : '—'
+                                    }}
+                                </div>
+                            </article>
+                        @empty
+                            <div class="elive-empty">No check-ins recorded yet.</div>
+                        @endforelse
+                    </div>
+                </section>
+            </div>
+
+            <section class="elive-card elive-section" style="margin-top:12px;">
+                <div class="elive-section-header">
+                    <div>
+                        <div class="elive-section-title">Assigned Events</div>
+                        <div class="elive-section-subtitle">Events currently available for gate operations</div>
+                    </div>
+                </div>
+
+                <div class="elive-officer-events">
+                    @forelse ($accessibleEvents as $event)
+                        <article class="elive-card elive-officer-event">
+                            <div class="elive-officer-event-title">
+                                {{ $event->title ?? $event->name ?? 'Untitled Event' }}
+                            </div>
+
+                            <div class="elive-officer-event-meta">
+                                {{ $event->event_date
+                                    ? \Illuminate\Support\Carbon::parse($event->event_date)->format('d M Y')
+                                    : 'Date not set'
+                                }}
+                                <br>
+                                {{ $event->venue_name ?? $event->venue_address ?? 'Venue not set' }}
+                            </div>
+
+                            <div class="elive-officer-event-actions">
+                                <a
+                                    href="{{ route('gate.check-in.show', $event) }}"
+                                    class="elive-officer-link orange-link"
+                                >
+                                    Scanner
+                                </a>
+
+                                <a
+                                    href="{{ \App\Filament\Resources\EventResource::getUrl('check-in-dashboard', ['record' => $event]) }}"
+                                    class="elive-officer-link"
+                                >
+                                    Search
+                                </a>
+                            </div>
+                        </article>
+                    @empty
+                        <div class="elive-empty">No assigned events found.</div>
+                    @endforelse
+                </div>
+            </section>
+
+            @else
+
             <section class="elive-hero">
                 <div class="elive-hero-grid">
                     <div class="elive-hero-icon">
@@ -1215,17 +1740,19 @@
                     </div>
 
                     <div>
-                        <h1>Professional Event Command Center</h1>
+                        <h1>Welcome, {{ $userName }} — Event Command Center</h1>
                         <p>
-                            Manage events, invitations, RSVPs, SMS communications and guest check-ins
-                            from one powerful dashboard.
+                            Manage accessible events, invitations, RSVPs, messages, approvals and guest check-ins
+                            from one professional dashboard.
                         </p>
 
                         <div class="elive-hero-actions">
-                            <a href="{{ url('/admin/events/create') }}" class="elive-btn elive-btn-primary">
-                                <x-heroicon-o-plus style="width: 18px; height: 18px;" />
-                                Create Event
-                            </a>
+                            @if ($isSuperAdmin || $isEventManager)
+                                <a href="{{ url('/admin/events/create') }}" class="elive-btn elive-btn-primary">
+                                    <x-heroicon-o-plus style="width: 18px; height: 18px;" />
+                                    Create Event
+                                </a>
+                            @endif
 
                             @if ($scannerUrl)
                                 <a href="{{ $scannerUrl }}" class="elive-btn elive-btn-light">
@@ -1684,18 +2211,20 @@
                     </div>
 
                     <div class="elive-actions-list">
-                        <a href="{{ url('/admin/events/create') }}" class="elive-action-item">
-                            <span class="elive-action-left">
-                                <span class="elive-small-icon blue">
-                                    <x-heroicon-o-calendar-days />
+                        @if ($isSuperAdmin || $isEventManager)
+                            <a href="{{ url('/admin/events/create') }}" class="elive-action-item">
+                                <span class="elive-action-left">
+                                    <span class="elive-small-icon blue">
+                                        <x-heroicon-o-calendar-days />
+                                    </span>
+                                    <span>
+                                        <span class="elive-action-title">Create New Event</span>
+                                        <span class="elive-action-subtitle">Set up a new event</span>
+                                    </span>
                                 </span>
-                                <span>
-                                    <span class="elive-action-title">Create New Event</span>
-                                    <span class="elive-action-subtitle">Set up a new event</span>
-                                </span>
-                            </span>
-                            <span style="color:#213B73;font-weight:900;">›</span>
-                        </a>
+                                <span style="color:#213B73;font-weight:900;">›</span>
+                            </a>
+                        @endif
 
                         <a href="{{ url('/admin/events') }}" class="elive-action-item">
                             <span class="elive-action-left">
@@ -1923,6 +2452,8 @@
                 <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View Message Logs</a>
                 <a href="{{ url('/admin/rsvp-report') }}" class="elive-link">Open Reports</a>
             </div>
+
+            @endif
         </div>
     </div>
 </x-filament-panels::page>

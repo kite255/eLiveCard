@@ -1,10 +1,81 @@
 <x-filament-panels::page>
     @php
         $event = $this->record;
+        $user = auth()->user();
+
+        $isCheckInOfficer = $user?->isCheckInOfficer() ?? false;
+        $canManageEvent = $user?->canManageEvent($event) ?? false;
+        $canCheckIn = $user?->canCheckInForEvent($event) ?? false;
+
         $eventImageUrl = $this->getEventImageUrl();
         $stats = $this->getWorkspaceStatCards();
         $quickActions = $this->getWorkspaceQuickActions();
         $digitalPageSettings = $this->getInviteeDigitalPageSettings();
+
+        $officerExpectedGuests = (int) $event->invitees()->sum('allowed_guests');
+        $officerCheckedInGuests = (int) $event->invitees()->sum('checked_in_count');
+        $officerRemainingGuests = max(
+            $officerExpectedGuests - $officerCheckedInGuests,
+            0
+        );
+        $officerTransactions = (int) $event->checkIns()->count();
+
+        $officerStats = [
+            [
+                'label' => 'Expected Guests',
+                'value' => number_format($officerExpectedGuests),
+                'description' => 'Total guest allowance',
+                'icon' => 'heroicon-o-users',
+                'tone' => 'blue',
+            ],
+            [
+                'label' => 'Guests Checked In',
+                'value' => number_format($officerCheckedInGuests),
+                'description' => 'Guests admitted',
+                'icon' => 'heroicon-o-check-badge',
+                'tone' => 'green',
+            ],
+            [
+                'label' => 'Remaining Guests',
+                'value' => number_format($officerRemainingGuests),
+                'description' => 'Guest capacity remaining',
+                'icon' => 'heroicon-o-user-plus',
+                'tone' => 'amber',
+            ],
+            [
+                'label' => 'Transactions',
+                'value' => number_format($officerTransactions),
+                'description' => 'Recorded check-in attempts',
+                'icon' => 'heroicon-o-clipboard-document-check',
+                'tone' => 'sky',
+            ],
+        ];
+
+        $officerQuickActions = [
+            [
+                'title' => 'Check-in Dashboard',
+                'description' => 'Search guests and review gate activity',
+                'hint' => $officerTransactions . ' transactions',
+                'icon' => 'heroicon-o-chart-bar-square',
+                'tone' => 'blue',
+                'url' => \App\Filament\Resources\EventResource::getUrl(
+                    'check-in-dashboard',
+                    ['record' => $event]
+                ),
+                'new_tab' => false,
+            ],
+            [
+                'title' => 'Gate Check-in',
+                'description' => 'Scan and verify invitation QR codes',
+                'hint' => 'Open scanner',
+                'icon' => 'heroicon-o-qr-code',
+                'tone' => 'orange',
+                'url' => route('gate.check-in.entry', [
+                    'event' => $event->getKey(),
+                ]),
+                'new_tab' => true,
+            ],
+        ];
     @endphp
 
     <style>
@@ -15,9 +86,36 @@
             --elive-muted: #64748B;
             --elive-border: #E5E7EB;
             --elive-soft: #F8FAFC;
+            width: 100%;
+            min-width: 0;
+            overflow-x: hidden;
+        }
+
+        .elive-workspace,
+        .elive-workspace *,
+        .elive-workspace *::before,
+        .elive-workspace *::after {
+            box-sizing: border-box;
+        }
+
+        .elive-workspace img,
+        .elive-workspace svg,
+        .elive-workspace video,
+        .elive-workspace canvas {
+            max-width: 100%;
+        }
+
+        .elive-workspace a,
+        .elive-workspace button,
+        .elive-workspace input,
+        .elive-workspace select,
+        .elive-workspace textarea {
+            max-width: 100%;
         }
 
         .elive-card {
+            min-width: 0;
+            overflow: hidden;
             border: 1px solid var(--elive-border);
             border-radius: 18px;
             background: #FFFFFF;
@@ -142,8 +240,10 @@
 
         .elive-event-meta-item {
             display: inline-flex;
-            align-items: center;
+            align-items: flex-start;
+            min-width: 0;
             gap: 6px;
+            overflow-wrap: anywhere;
         }
 
         .elive-event-meta-item svg {
@@ -162,7 +262,8 @@
         }
 
         .elive-action-button {
-            min-height: 42px;
+            width: 100%;
+            min-height: 46px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -174,7 +275,9 @@
             background: #FFFFFF;
             font-size: 11px;
             font-weight: 900;
+            text-align: center;
             text-decoration: none;
+            overflow-wrap: anywhere;
             transition: .18s ease;
         }
 
@@ -208,6 +311,14 @@
             display: grid;
             grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 12px;
+        }
+
+        .elive-stats-grid.elive-officer-stats {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .elive-officer-stats + .elive-quick-wrap .elive-quick-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .elive-stat {
@@ -300,7 +411,7 @@
 
         .elive-quick-action {
             min-width: 0;
-            min-height: 72px;
+            min-height: 78px;
             display: flex;
             align-items: center;
             gap: 11px;
@@ -334,22 +445,24 @@
         }
 
         .elive-quick-title {
+            display: block;
             color: var(--elive-text);
             font-size: 11px;
             font-weight: 900;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            line-height: 1.35;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
 
         .elive-quick-description {
+            display: block;
             margin-top: 3px;
             color: var(--elive-muted);
             font-size: 9px;
             font-weight: 600;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            line-height: 1.4;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
 
         .elive-quick-hint {
@@ -455,21 +568,34 @@
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
 
+            .elive-stats-grid.elive-officer-stats {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+
             .elive-quick-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
             }
+
+            .elive-officer-stats + .elive-quick-wrap .elive-quick-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
-        @media (max-width: 1050px) {
+        @media (max-width: 1180px) {
             .elive-event-summary {
                 grid-template-columns: 1fr;
             }
 
             .elive-event-actions {
-                grid-template-columns: repeat(4, minmax(0, 1fr));
+                grid-template-columns: repeat(2, minmax(0, 1fr));
                 padding: 16px 0 0;
                 border-top: 1px solid #E5E7EB;
                 border-left: 0;
+            }
+
+            .elive-stats-grid,
+            .elive-stats-grid.elive-officer-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
             .elive-bottom-grid {
@@ -478,28 +604,180 @@
 
             .elive-relations {
                 grid-column: 1 / -1;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
             }
         }
 
-        @media (max-width: 760px) {
+        @media (max-width: 860px) {
+            .elive-event-summary {
+                gap: 16px;
+                padding: 16px;
+            }
+
+            .elive-event-main {
+                align-items: flex-start;
+            }
+
+            .elive-event-image {
+                width: 128px;
+                height: 108px;
+            }
+
+            .elive-event-meta {
+                gap: 10px 14px;
+            }
+
+            .elive-quick-grid,
+            .elive-officer-stats + .elive-quick-wrap .elive-quick-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .elive-bottom-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .elive-stat {
+                padding: 14px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .elive-workspace {
+                margin-inline: 0;
+            }
+
+            .elive-card {
+                border-radius: 16px;
+            }
+
+            .elive-event-summary {
+                padding: 14px;
+            }
+
             .elive-event-main {
                 flex-direction: column;
+                gap: 14px;
             }
 
             .elive-event-image {
                 width: 100%;
-                height: 190px;
+                height: clamp(180px, 54vw, 240px);
+                border-radius: 12px;
+            }
+
+            .elive-event-copy {
+                width: 100%;
+                padding: 0;
+            }
+
+            .elive-event-name {
+                font-size: 20px;
+                overflow-wrap: anywhere;
+            }
+
+            .elive-event-meta {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 10px;
+                margin-top: 14px;
+                font-size: 12px;
             }
 
             .elive-event-actions,
             .elive-stats-grid,
+            .elive-stats-grid.elive-officer-stats,
             .elive-quick-grid,
+            .elive-officer-stats + .elive-quick-wrap .elive-quick-grid,
             .elive-bottom-grid {
                 grid-template-columns: 1fr;
             }
 
             .elive-event-actions {
-                gap: 8px;
+                gap: 9px;
+                padding-top: 14px;
+            }
+
+            .elive-action-button {
+                min-height: 48px;
+                padding: 12px 14px;
+                font-size: 12px;
+            }
+
+            .elive-stat {
+                min-height: 86px;
+            }
+
+            .elive-stat-icon {
+                width: 44px;
+                height: 44px;
+            }
+
+            .elive-stat-value {
+                font-size: 24px;
+            }
+
+            .elive-section-header {
+                padding: 14px 14px 10px;
+            }
+
+            .elive-quick-grid {
+                gap: 10px;
+                padding: 0 12px 12px;
+            }
+
+            .elive-quick-action {
+                min-height: 76px;
+                padding: 12px;
+            }
+
+            .elive-quick-icon {
+                width: 42px;
+                height: 42px;
+            }
+
+            .elive-info-card {
+                padding: 14px;
+            }
+
+            .elive-info-row {
+                flex-direction: column;
+                gap: 5px;
+                font-size: 11px;
+            }
+
+            .elive-info-value {
+                width: 100%;
+                text-align: left;
+                overflow-wrap: anywhere;
+            }
+
+            .elive-relations {
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+        }
+
+        @media (max-width: 390px) {
+            .elive-event-summary {
+                padding: 12px;
+            }
+
+            .elive-event-name {
+                font-size: 18px;
+            }
+
+            .elive-stat {
+                padding: 12px;
+            }
+
+            .elive-stat-value {
+                font-size: 22px;
+            }
+
+            .elive-action-button {
+                font-size: 11px;
             }
         }
 
@@ -603,48 +881,77 @@
             </div>
 
             <div class="elive-event-actions">
-                @if ($this->canEditEvent())
+                @if ($isCheckInOfficer)
+                    @if ($canCheckIn)
+                        <a
+                            href="{{ \App\Filament\Resources\EventResource::getUrl(
+                                'check-in-dashboard',
+                                ['record' => $event]
+                            ) }}"
+                            class="elive-action-button elive-action-primary"
+                        >
+                            @svg('heroicon-o-chart-bar-square')
+                            Check-in Dashboard
+                        </a>
+
+                        <a
+                            href="{{ route('gate.check-in.entry', [
+                                'event' => $event->getKey(),
+                            ]) }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="elive-action-button elive-action-warning"
+                        >
+                            @svg('heroicon-o-qr-code')
+                            Gate Check-in
+                        </a>
+                    @endif
+                @else
+                    @if ($this->canEditEvent())
+                        <a
+                            href="{{ $this->getEditEventUrl() }}"
+                            class="elive-action-button"
+                        >
+                            @svg('heroicon-o-pencil-square')
+                            Edit Event
+                        </a>
+                    @endif
+
+                    @if ($this->canSendEventMessages())
+                        <a
+                            href="{{ $this->getMessageCenterUrl() }}"
+                            class="elive-action-button elive-action-primary"
+                        >
+                            @svg('heroicon-o-envelope')
+                            Message Center
+                        </a>
+                    @endif
+
                     <a
-                        href="{{ $this->getEditEventUrl() }}"
-                        class="elive-action-button"
+                        href="{{ $this->getInviteeResponsesUrl() }}"
+                        class="elive-action-button elive-action-success"
                     >
-                        @svg('heroicon-o-pencil-square')
-                        Edit Event
+                        @svg('heroicon-o-chat-bubble-left-right')
+                        RSVP Responses
                     </a>
+
+                    @if ($canCheckIn)
+                        <a
+                            href="{{ $this->getGateCheckInUrl() }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="elive-action-button elive-action-warning"
+                        >
+                            @svg('heroicon-o-qr-code')
+                            Gate Check-in
+                        </a>
+                    @endif
                 @endif
-
-                @if ($this->canSendEventMessages())
-                    <a
-                        href="{{ $this->getMessageCenterUrl() }}"
-                        class="elive-action-button elive-action-primary"
-                    >
-                        @svg('heroicon-o-envelope')
-                        Message Center
-                    </a>
-                @endif
-
-                <a
-                    href="{{ $this->getInviteeResponsesUrl() }}"
-                    class="elive-action-button elive-action-success"
-                >
-                    @svg('heroicon-o-chat-bubble-left-right')
-                    RSVP Responses
-                </a>
-
-                <a
-                    href="{{ $this->getGateCheckInUrl() }}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="elive-action-button elive-action-warning"
-                >
-                    @svg('heroicon-o-qr-code')
-                    Gate Check-in
-                </a>
             </div>
         </section>
 
-        <section class="elive-stats-grid">
-            @foreach ($stats as $stat)
+        <section class="elive-stats-grid {{ $isCheckInOfficer ? 'elive-officer-stats' : '' }}">
+            @foreach (($isCheckInOfficer ? $officerStats : $stats) as $stat)
                 <article class="elive-card elive-stat">
                     <span class="elive-stat-icon elive-tone-{{ $stat['tone'] }}">
                         @svg($stat['icon'])
@@ -671,12 +978,15 @@
             <div class="elive-section-header">
                 <h3 class="elive-section-title">Quick Actions</h3>
                 <p class="elive-section-description">
-                    Manage the complete event workflow from one place.
+                    {{ $isCheckInOfficer
+                        ? 'Use the assigned gate tools for this event.'
+                        : 'Manage the complete event workflow from one place.'
+                    }}
                 </p>
             </div>
 
             <div class="elive-quick-grid">
-                @foreach ($quickActions as $action)
+                @foreach (($isCheckInOfficer ? $officerQuickActions : $quickActions) as $action)
                     <a
                         href="{{ $action['url'] }}"
                         @if (($action['new_tab'] ?? false) === true)
@@ -709,6 +1019,7 @@
             </div>
         </section>
 
+        @if (! $isCheckInOfficer)
         <section class="elive-bottom-grid">
             <article class="elive-card elive-info-card">
                 <div class="elive-info-heading">
@@ -832,6 +1143,7 @@
                     :page-class="static::class"
                 />
             </section>
+        @endif
         @endif
     </div>
 </x-filament-panels::page>

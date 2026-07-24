@@ -134,7 +134,7 @@ class SendEventMessage extends Page
     {
         $invitees = $this->record
             ->invitees()
-            ->whereDoesntHave('generatedCards', fn ($query) => $query->where('status', 'generated'))
+            ->whereDoesntHave('generatedCards', fn (Builder $query): Builder => $query->where('status', 'generated'))
             ->get();
 
         if ($invitees->isEmpty()) {
@@ -450,18 +450,23 @@ class SendEventMessage extends Page
     {
         return $this->record
             ->invitees()
+            ->getQuery()
             ->with(['event', 'cardType'])
             ->whereNotNull('phone')
             ->where('phone', '!=', '')
             ->whereNotNull('short_code')
             ->where('short_code', '!=', '')
-            ->whereHas('generatedCards', fn ($query) => $query->where('status', 'generated'));
+            ->whereHas(
+                'generatedCards',
+                fn (Builder $query): Builder => $query->where('status', 'generated')
+            );
     }
 
     protected function basicSmsInviteesQuery(): Builder
     {
         return $this->record
             ->invitees()
+            ->getQuery()
             ->with(['event', 'cardType'])
             ->whereNotNull('phone')
             ->where('phone', '!=', '');
@@ -576,7 +581,7 @@ class SendEventMessage extends Page
 
     public function getMissingCardsCountProperty(): int
     {
-        return $this->record->invitees()->whereDoesntHave('generatedCards', fn ($query) => $query->where('status', 'generated'))->count();
+        return $this->record->invitees()->whereDoesntHave('generatedCards', fn (Builder $query): Builder => $query->where('status', 'generated'))->count();
     }
 
     public function getEligibleSmsInviteesCountProperty(): int

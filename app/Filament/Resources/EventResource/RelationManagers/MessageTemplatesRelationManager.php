@@ -56,54 +56,62 @@ class MessageTemplatesRelationManager extends RelationManager
 
     private const PLACEHOLDERS = [
         '#NAME#',
+        '#PHONE#',
         '#EVENT_NAME#',
         '#EVENT_DATE#',
         '#EVENT_TIME#',
-        '#EVENT_VENUE#',
-        '#INVITATION_LINK#',
-        '#RSVP_LINK#',
-        '#SERIAL_NUMBER#',
-        '#CARD_TYPE#',
+        '#VENUE#',
+        '#VENUE_ADDRESS#',
         '#LOCATION_LINK#',
-        '#GUEST_COUNT#',
+        '#DRESS_CODE#',
+        '#CARD_TYPE#',
+        '#ALLOWED_GUESTS#',
         '#TABLE_NUMBER#',
+        '#CATEGORY#',
+        '#SERIAL_NUMBER#',
+        '#PRIVATE_INVITATION_URL#',
+        '#RSVP_URL#',
+        '#ORGANIZER_PHONE#',
     ];
 
     private const PLACEHOLDER_DESCRIPTIONS = [
         '#NAME#' => 'Invitee name',
+        '#PHONE#' => 'Invitee phone number',
         '#EVENT_NAME#' => 'Event name',
         '#EVENT_DATE#' => 'Event date',
         '#EVENT_TIME#' => 'Event time',
-        '#EVENT_VENUE#' => 'Venue name',
-        '#INVITATION_LINK#' => 'Private invitee page / card link',
-        '#RSVP_LINK#' => 'RSVP confirmation link',
-        '#SERIAL_NUMBER#' => 'Invitee serial number',
-        '#CARD_TYPE#' => 'Card type such as Single, Family, VIP',
-        '#LOCATION_LINK#' => 'Google Maps / venue link',
-        '#GUEST_COUNT#' => 'Allowed guest count',
+        '#VENUE#' => 'Venue name',
+        '#VENUE_ADDRESS#' => 'Venue address',
+        '#LOCATION_LINK#' => 'Google Maps or venue location link',
+        '#DRESS_CODE#' => 'Event dress code',
+        '#CARD_TYPE#' => 'Card type such as Single, Family, VIP, or VVIP',
+        '#ALLOWED_GUESTS#' => 'Maximum number of allowed guests',
         '#TABLE_NUMBER#' => 'Assigned table number',
+        '#CATEGORY#' => 'Invitee category',
+        '#SERIAL_NUMBER#' => 'Invitee serial number',
+        '#PRIVATE_INVITATION_URL#' => 'Private invitation page and personalized card link',
+        '#RSVP_URL#' => 'Private RSVP confirmation link',
+        '#ORGANIZER_PHONE#' => 'Organizer contact phone number',
     ];
 
     private const SAMPLE_VALUES = [
         '#NAME#' => 'Joel Mwasiposya',
         '#PHONE#' => '255768461644',
         '#EVENT_NAME#' => 'Joel Wedding Ceremony',
-        '#EVENT_DATE#' => '25/06/2026',
-        '#EVENT_TIME#' => '18:00',
-        '#EVENT_VENUE#' => 'Victoria Place',
+        '#EVENT_DATE#' => '25 July 2026',
+        '#EVENT_TIME#' => '06:00 PM',
+        '#VENUE#' => 'Victoria Place',
         '#VENUE_ADDRESS#' => 'Dar es Salaam',
         '#LOCATION_LINK#' => 'https://maps.google.com/example',
         '#DRESS_CODE#' => 'Smart Casual',
         '#CARD_TYPE#' => 'VIP',
         '#ALLOWED_GUESTS#' => '2',
-        '#GUEST_COUNT#' => '2',
         '#TABLE_NUMBER#' => 'Table 5',
         '#CATEGORY#' => 'Family',
-        '#SERIAL_NUMBER#' => 'ELV-2026-ABC123',
-        '#INVITATION_LINK#' => 'https://staging-digital.elive.co.tz/i/ABC123',
-        '#PRIVATE_INVITATION_URL#' => 'https://staging-digital.elive.co.tz/i/ABC123',
-        '#RSVP_LINK#' => 'https://staging-digital.elive.co.tz/i/ABC123',
-        '#CARD_LINK#' => 'https://staging-digital.elive.co.tz/storage/events/1/generated-cards/sample.jpg',
+        '#SERIAL_NUMBER#' => 'ELV-123456',
+        '#PRIVATE_INVITATION_URL#' => 'https://digital.elive.co.tz/i/ABC123',
+        '#RSVP_URL#' => 'https://digital.elive.co.tz/i/ABC123',
+        '#ORGANIZER_PHONE#' => '+255 745 939 140',
     ];
 
     public function form(Form $form): Form
@@ -196,8 +204,8 @@ class MessageTemplatesRelationManager extends RelationManager
                             ->rows(10)
                             ->required()
                             ->live(debounce: 500)
-                            ->placeholder("Habari #NAME#, umealikwa kwenye #EVENT_NAME#. Fungua kadi yako hapa: #INVITATION_LINK#")
-                            ->helperText('Recommended placeholders: #NAME#, #EVENT_NAME#, #EVENT_DATE#, #EVENT_TIME#, #EVENT_VENUE#, #INVITATION_LINK#, #RSVP_LINK#, #SERIAL_NUMBER#.')
+                            ->placeholder("Habari #NAME#, umealikwa kwenye #EVENT_NAME#. Fungua kadi yako hapa: #PRIVATE_INVITATION_URL#")
+                            ->helperText('Recommended placeholders: #NAME#, #EVENT_NAME#, #EVENT_DATE#, #EVENT_TIME#, #VENUE#, #PRIVATE_INVITATION_URL#, #RSVP_URL#, #SERIAL_NUMBER#.')
                             ->columnSpanFull(),
 
                         Forms\Components\Placeholder::make('live_preview')
@@ -363,12 +371,14 @@ class MessageTemplatesRelationManager extends RelationManager
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('content')
-                    ->label('Preview')
+                    ->label('Message')
                     ->formatStateUsing(fn (?string $state): string => Str::limit(
                         str_replace(["\r\n", "\n", "\r"], ' ', (string) $state),
-                        100,
+                        120,
                     ))
                     ->tooltip(fn (MessageTemplate $record): ?string => $record->content)
+                    ->copyable()
+                    ->copyMessage('Message copied')
                     ->wrap()
                     ->searchable(),
             ])
@@ -784,42 +794,109 @@ class MessageTemplatesRelationManager extends RelationManager
                 'channel' => MessageTemplate::CHANNEL_SMS,
                 'type' => MessageTemplate::TYPE_INVITATION,
                 'name' => 'SMS Invitation',
-                'content' => "Habari #NAME#, umealikwa kwenye #EVENT_NAME#.\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #EVENT_VENUE#\nFungua kadi yako hapa: #INVITATION_LINK#",
+                'content' => "Habari #NAME#,
+
+Umealikwa kwenye #EVENT_NAME#.
+
+Tarehe: #EVENT_DATE#
+Muda: #EVENT_TIME#
+Ukumbi: #VENUE#
+
+Fungua kadi yako hapa:
+#PRIVATE_INVITATION_URL#
+
+Tafadhali thibitisha mahudhurio yako kupitia link hiyo.
+
+eLive Card",
             ],
             'sms_rsvp_pending' => [
                 'label' => 'SMS RSVP Pending Reminder',
                 'channel' => MessageTemplate::CHANNEL_SMS,
                 'type' => MessageTemplate::TYPE_RSVP_PENDING_REMINDER,
                 'name' => 'SMS RSVP Pending Reminder',
-                'content' => "Habari #NAME#, tunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\nTafadhali fungua link hii: #RSVP_LINK#",
+                'content' => "Habari #NAME#,
+
+Tunakukumbusha kuthibitisha mahudhurio yako kwenye #EVENT_NAME#.
+
+Tarehe: #EVENT_DATE#
+Muda: #EVENT_TIME#
+Ukumbi: #VENUE#
+
+Thibitisha mahudhurio yako hapa:
+#RSVP_URL#
+
+eLive Card",
             ],
             'sms_attending' => [
                 'label' => 'SMS One Day Before Reminder',
                 'channel' => MessageTemplate::CHANNEL_SMS,
                 'type' => MessageTemplate::TYPE_ATTENDING_REMINDER,
                 'name' => 'SMS One Day Before Reminder',
-                'content' => "Habari #NAME#, tunakukumbusha kuhusu #EVENT_NAME# tarehe #EVENT_DATE# saa #EVENT_TIME#.\nUkumbi: #EVENT_VENUE#\nKadi yako: #INVITATION_LINK#",
+                'content' => "Habari #NAME#,
+
+Tunakukumbusha kuwa #EVENT_NAME# ni kesho.
+
+Tarehe: #EVENT_DATE#
+Muda: #EVENT_TIME#
+Ukumbi: #VENUE#
+
+Ramani:
+#LOCATION_LINK#
+
+Fungua kadi yako:
+#PRIVATE_INVITATION_URL#
+
+Tunatarajia kukuona.
+
+eLive Card",
             ],
             'sms_event_day' => [
                 'label' => 'SMS Event Day Reminder',
                 'channel' => MessageTemplate::CHANNEL_SMS,
                 'type' => MessageTemplate::TYPE_EVENT_DAY_REMINDER,
                 'name' => 'SMS Event Day Reminder',
-                'content' => "Habari #NAME#, leo ni siku ya #EVENT_NAME#.\nTafadhali njoo na kadi yako au serial number: #SERIAL_NUMBER#\nLocation: #LOCATION_LINK#",
+                'content' => "Habari #NAME#,
+
+Leo ni #EVENT_NAME#.
+
+Muda: #EVENT_TIME#
+Ukumbi: #VENUE#
+
+Ramani:
+#LOCATION_LINK#
+
+Tafadhali fika na kadi yako:
+#PRIVATE_INVITATION_URL#
+
+eLive Card",
             ],
             'sms_welcome_checkin' => [
                 'label' => 'SMS Welcome After Check-in',
                 'channel' => MessageTemplate::CHANNEL_SMS,
                 'type' => self::TYPE_WELCOME_CHECKIN,
                 'name' => 'SMS Welcome After Check-in',
-                'content' => "Karibu #NAME# kwenye #EVENT_NAME#.\nTunafurahi kuwa nawe. Furahia tukio.",
+                'content' => "Karibu #NAME# kwenye #EVENT_NAME#.
+
+Tumefurahi kuwa pamoja nawe katika siku hii muhimu.
+
+Meza yako: #TABLE_NUMBER#
+
+Furahia tukio.
+
+eLive Card",
             ],
             'sms_thank_you' => [
                 'label' => 'SMS Thank You Message',
                 'channel' => MessageTemplate::CHANNEL_SMS,
                 'type' => self::TYPE_THANK_YOU,
                 'name' => 'SMS Thank You Message',
-                'content' => "Habari #NAME#, asante kwa kuhudhuria #EVENT_NAME#.\nTunashukuru sana kwa muda wako, upendo wako, na ushiriki wako.",
+                'content' => "Asante #NAME# kwa kuhudhuria #EVENT_NAME#.
+
+Uwepo wako umefanya tukio hili kuwa la kipekee na lenye kumbukumbu nzuri.
+
+Tunathamini muda wako na ushiriki wako.
+
+eLive Card",
             ],
             'whatsapp_invitation_en' => [
                 'label' => 'WhatsApp Invitation English',
@@ -830,13 +907,20 @@ class MessageTemplatesRelationManager extends RelationManager
 
 You are invited to #EVENT_NAME#.
 
-Your card type is #CARD_TYPE#.
-Venue: #EVENT_VENUE#
+Date: #EVENT_DATE#
 Time: #EVENT_TIME#
+Venue: #VENUE#
+Card type: #CARD_TYPE#
+Allowed guests: #ALLOWED_GUESTS#
 
-Please confirm your attendance by tapping one of the buttons below.
+Open your invitation:
+#PRIVATE_INVITATION_URL#
 
-For the venue map, tap LOCATION.",
+Please confirm your attendance using the buttons below.
+
+For directions, tap LOCATION.
+
+eLive Card",
                 'whatsapp_template_name' => 'event_invitation_en',
                 'whatsapp_language_code' => 'en',
                 'whatsapp_buttons' => [
@@ -852,15 +936,22 @@ For the venue map, tap LOCATION.",
                 'name' => 'WhatsApp Event Ticket English',
                 'content' => "Hello #NAME#,
 
-Your ticket for #EVENT_NAME# is ready.
+Your invitation card for #EVENT_NAME# is ready.
 
-Ticket type: #CARD_TYPE#
-Venue: #EVENT_VENUE#
+Date: #EVENT_DATE#
 Time: #EVENT_TIME#
+Venue: #VENUE#
+Card type: #CARD_TYPE#
+Serial number: #SERIAL_NUMBER#
 
-Please come with your ticket on the event day. This ticket will be verified at the gate using the QR code.
+Open your card:
+#PRIVATE_INVITATION_URL#
 
-For the venue map, tap LOCATION.",
+Please present the QR code at the gate.
+
+For directions, tap LOCATION.
+
+eLive Card",
                 'whatsapp_template_name' => 'event_ticket_en',
                 'whatsapp_language_code' => 'en',
                 'whatsapp_buttons' => [
@@ -876,17 +967,24 @@ For the venue map, tap LOCATION.",
                 'name' => 'WhatsApp Invitation Swahili',
                 'content' => "Habari #NAME#,
 
-Unakaribishwa kwenye #EVENT_NAME#.
+Umealikwa kwenye #EVENT_NAME#.
 
-Aina ya kadi yako ni #CARD_TYPE#.
-Ukumbi: #EVENT_VENUE#
+Tarehe: #EVENT_DATE#
 Muda: #EVENT_TIME#
+Ukumbi: #VENUE#
+Aina ya kadi: #CARD_TYPE#
+Idadi ya wageni: #ALLOWED_GUESTS#
 
-Tafadhali thibitisha kama utahudhuria kwa kubonyeza mojawapo ya vitufe hapa chini.
+Fungua mwaliko wako:
+#PRIVATE_INVITATION_URL#
 
-Kwa ramani ya ukumbi, bonyeza LOCATION.",
+Tafadhali thibitisha mahudhurio yako kwa kutumia vitufe hapa chini.
+
+Kwa ramani ya ukumbi, bonyeza LOCATION.
+
+eLive Card",
                 'whatsapp_template_name' => 'event_invitation_sw',
-                'whatsapp_language_code' => 'en',
+                'whatsapp_language_code' => 'sw',
                 'whatsapp_buttons' => [
                     'Attending' => 'rsvp_attending',
                     'Not Attending' => 'rsvp_not_attending',
@@ -1254,9 +1352,9 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
             ->implode('');
 
         $smsExamples = [
-            'SMS Invitation' => "Habari #NAME#, umealikwa kwenye #EVENT_NAME#.\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #EVENT_VENUE#\nFungua kadi yako hapa: #INVITATION_LINK#",
-            'SMS RSVP Reminder' => "Habari #NAME#, tunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\nTafadhali fungua link hii: #RSVP_LINK#",
-            'SMS Event Day Reminder' => "Habari #NAME#, leo ni siku ya #EVENT_NAME#.\nUkumbi: #EVENT_VENUE#\nMuda: #EVENT_TIME#\nNjoo na kadi yako au serial number: #SERIAL_NUMBER#.",
+            'SMS Invitation' => "Habari #NAME#, umealikwa kwenye #EVENT_NAME#.\nTarehe: #EVENT_DATE#\nMuda: #EVENT_TIME#\nUkumbi: #VENUE#\nFungua kadi yako hapa: #PRIVATE_INVITATION_URL#",
+            'SMS RSVP Reminder' => "Habari #NAME#, tunakukumbusha kuthibitisha ushiriki wako kwenye #EVENT_NAME#.\nTafadhali fungua link hii: #RSVP_URL#",
+            'SMS Event Day Reminder' => "Habari #NAME#, leo ni siku ya #EVENT_NAME#.\nUkumbi: #VENUE#\nMuda: #EVENT_TIME#\nNjoo na kadi yako au serial number: #SERIAL_NUMBER#.",
             'SMS Thank You' => "Habari #NAME#, asante kwa kuhudhuria #EVENT_NAME#.\nTunashukuru sana kwa muda wako, upendo wako, na ushiriki wako.",
         ];
 
@@ -1269,7 +1367,7 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
 
         return '<div style="display:grid;gap:14px;color:#111827;">'
             . '<div style="background:#F8FAFC;border-left:4px solid #213B73;border-radius:12px;padding:12px;line-height:1.6;">'
-            . '<strong>Recommended:</strong> For SMS, mainly use <code>#NAME#</code>, <code>#EVENT_NAME#</code>, <code>#EVENT_DATE#</code>, <code>#EVENT_TIME#</code>, <code>#EVENT_VENUE#</code>, and <code>#INVITATION_LINK#</code>. Keep SMS short to reduce SMS cost.'
+            . '<strong>Recommended:</strong> For SMS, mainly use <code>#NAME#</code>, <code>#EVENT_NAME#</code>, <code>#EVENT_DATE#</code>, <code>#EVENT_TIME#</code>, <code>#VENUE#</code>, and <code>#PRIVATE_INVITATION_URL#</code>. Keep messages clear and concise to control SMS cost.'
             . '</div>'
             . '<table style="width:100%;border-collapse:collapse;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;overflow:hidden;">'
             . '<thead><tr style="background:#F8FAFC;"><th style="text-align:left;padding:8px 10px;color:#111827;">Placeholder</th><th style="text-align:left;padding:8px 10px;color:#111827;">Meaning</th></tr></thead>'
@@ -1303,7 +1401,7 @@ Kwa ramani ya ukumbi, bonyeza LOCATION.",
         }
 
         return match ($record->type) {
-            MessageTemplate::TYPE_INVITATION => 'Invitation card or private link',
+            MessageTemplate::TYPE_INVITATION => 'Invitation card and private invitation link',
             MessageTemplate::TYPE_RSVP_PENDING_REMINDER => 'Guests who have not confirmed RSVP',
             MessageTemplate::TYPE_ATTENDING_REMINDER => 'Guests who confirmed attendance',
             MessageTemplate::TYPE_EVENT_DAY_REMINDER => 'Event day reminder',

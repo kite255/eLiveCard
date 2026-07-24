@@ -9,10 +9,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 
 class GateVerifyController extends Controller
 {
+    /**
+     * Display the QR verification and guest check-in page.
+     */
     public function show(string $token): View
     {
         $invitee = $this->findInviteeByToken($token);
@@ -23,11 +27,14 @@ class GateVerifyController extends Controller
             ]);
         }
 
+        $this->authorizeGateAccess($invitee);
+
         $validationMessage = $this->validateInviteeForCheckIn($invitee);
 
         if ($validationMessage) {
             return view('gate.invalid', [
                 'message' => $validationMessage,
+                'invitee' => $invitee,
             ]);
         }
 
@@ -56,8 +63,34 @@ class GateVerifyController extends Controller
         ]);
     }
 
-    public function checkIn(Request $request, string $token): RedirectResponse
-    {
+    /**
+     * Record a QR-based guest check-in.
+     */
+    public function checkIn(
+        Request $request,
+        string $token
+    ): RedirectResponse {
+        /*
+        |--------------------------------------------------------------------------
+        | Authorize before starting the transaction
+        |--------------------------------------------------------------------------
+        |
+        | This gives unauthorized users the branded 403 page immediately and
+        | prevents authorization exceptions from being converted into a generic
+        | check-in error message.
+        |
+        */
+        $inviteeForAuthorization = $this->findInviteeByToken($token);
+
+        if (! $inviteeForAuthorization) {
+            return back()->with(
+                'error',
+                'Invalid or unknown QR code.'
+            );
+        }
+
+        $this->authorizeGateAccess($inviteeForAuthorization);
+
         $validated = $request->validate([
             'guests_to_check_in' => [
                 'required',
@@ -91,6 +124,10 @@ class GateVerifyController extends Controller
                     ];
                 }
 
+                /*
+                 * Authorize again after locking the current database record.
+                 * This protects against direct requests and assignment changes.
+                 */
                 $this->authorizeGateAccess($invitee);
 
                 $validationMessage = $this->validateInviteeForCheckIn(
@@ -190,6 +227,12 @@ class GateVerifyController extends Controller
                         .' guest(s) checked in successfully.',
                 ];
             }, 3);
+        } catch (HttpExceptionInterface $exception) {
+            /*
+             * Preserve 403 and other intended HTTP responses so Laravel can
+             * render resources/views/errors/403.blade.php.
+             */
+            throw $exception;
         } catch (Throwable $exception) {
             report($exception);
 
@@ -216,9 +259,14 @@ class GateVerifyController extends Controller
             );
     }
 
+    /**
+     * Locate an invitee using the stored SHA-256 QR token hash.
+     */
     private function findInviteeByToken(string $token): ?Invitee
     {
-        if (blank($token)) {
+        $token = trim($token);
+
+        if ($token === '') {
             return null;
         }
 
@@ -233,45 +281,30 @@ class GateVerifyController extends Controller
             ->first();
     }
 
+    /**
+     * Ensure the authenticated user is allowed to scan for this event.
+     */
     private function authorizeGateAccess(Invitee $invitee): void
     {
         $user = Auth::user();
         $event = $invitee->event;
 
-        abort_unless($user && $event, 403);
+        abort_unless(
+            $user && $event,
+            403,
+            'You must sign in with an authorized event account.'
+        );
 
-        if (
-            method_exists($user, 'isSuperAdmin')
-            && $user->isSuperAdmin()
-        ) {
-            return;
-        }
-
-        if ((int) $event->user_id === (int) $user->id) {
-            return;
-        }
-
-        if (
-            method_exists($event, 'canBeCheckedInBy')
-            && $event->canBeCheckedInBy($user)
-        ) {
-            return;
-        }
-
-        if (
-            method_exists($user, 'canAccessEvent')
-            && $user->canAccessEvent($event)
-            && (
-                ! method_exists($user, 'canScanGuests')
-                || $user->canScanGuests()
-            )
-        ) {
-            return;
-        }
-
-        abort(403);
+        abort_unless(
+            $user->canCheckInForEvent($event),
+            403,
+            'You are not assigned to manage check-in for this event.'
+        );
     }
 
+    /**
+     * Validate the invitee and invitation before admission.
+     */
     private function validateInviteeForCheckIn(
         Invitee $invitee
     ): ?string {

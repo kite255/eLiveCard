@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class Event extends Model
 {
@@ -49,6 +50,9 @@ class Event extends Model
         // Secure client RSVP report sharing
         'rsvp_share_token_hash',
         'rsvp_share_token_encrypted',
+        'rsvp_share_slug',
+        'rsvp_share_short_code_hash',
+        'rsvp_share_short_code_encrypted',
         'rsvp_share_enabled',
         'rsvp_share_expires_at',
         'rsvp_share_show_phone',
@@ -149,8 +153,8 @@ class Event extends Model
     public static function eventAssignmentRoles(): array
     {
         return [
-            'event_admin' => 'Event Admin',
-            'check_in_officer' => 'Check-in Officer',
+            User::ROLE_EVENT_ADMIN => 'Event Manager',
+            User::ROLE_CHECK_IN_OFFICER => 'Check-in Officer',
         ];
     }
 
@@ -217,21 +221,21 @@ class Event extends Model
     public function activeAssignedUsers(): BelongsToMany
     {
         return $this->assignedUsers()
-            ->wherePivot('is_active', true);
+            ->where('event_user.is_active', true);
     }
 
     public function checkInOfficers(): BelongsToMany
     {
         return $this->assignedUsers()
-            ->wherePivot('role', 'check_in_officer')
-            ->wherePivot('is_active', true);
+            ->where('event_user.role', User::ROLE_CHECK_IN_OFFICER)
+            ->where('event_user.is_active', true);
     }
 
     public function eventAdmins(): BelongsToMany
     {
         return $this->assignedUsers()
-            ->wherePivot('role', 'event_admin')
-            ->wherePivot('is_active', true);
+            ->where('event_user.role', User::ROLE_EVENT_ADMIN)
+            ->where('event_user.is_active', true);
     }
 
     public function cardTemplates(): HasMany
@@ -471,15 +475,32 @@ class Event extends Model
             return $query;
         }
 
-        return $query->where(function ($query) use ($user): void {
-            $query
-                ->where('user_id', $user->id)
-                ->orWhereHas('assignedUsers', function ($query) use ($user): void {
-                    $query
+        if ($user->isEventAdmin()) {
+            return $query->where(function (Builder $query) use ($user): void {
+                $query
+                    ->where('user_id', $user->id)
+                    ->orWhereHas('assignedUsers', function (Builder $assignmentQuery) use ($user): void {
+                        $assignmentQuery
+                            ->where('users.id', $user->id)
+                            ->where('event_user.is_active', true)
+                            ->where('event_user.role', User::ROLE_EVENT_ADMIN);
+                    });
+            });
+        }
+
+        if ($user->isCheckInOfficer()) {
+            return $query->whereHas(
+                'assignedUsers',
+                function (Builder $assignmentQuery) use ($user): void {
+                    $assignmentQuery
                         ->where('users.id', $user->id)
-                        ->where('event_user.is_active', true);
-                });
-        });
+                        ->where('event_user.is_active', true)
+                        ->where('event_user.role', User::ROLE_CHECK_IN_OFFICER);
+                }
+            );
+        }
+
+        return $query->whereRaw('1 = 0');
     }
 
     public function scopeCheckInVisibleTo(Builder $query, ?User $user = null): Builder
@@ -511,17 +532,21 @@ class Event extends Model
 
     public function isAssignedTo(User|int|null $user, ?string $role = null): bool
     {
-        $userId = $user instanceof User ? $user->id : $user;
+        $userId = $user instanceof User ? $user->getKey() : $user;
 
         if (! $userId) {
             return false;
         }
 
-        return $this->assignedUsers()
+        $query = $this->assignedUsers()
             ->where('users.id', $userId)
-            ->where('event_user.is_active', true)
-            ->when($role, fn ($query) => $query->where('event_user.role', $role))
-            ->exists();
+            ->where('event_user.is_active', true);
+
+        if (filled($role)) {
+            $query->where('event_user.role', $role);
+        }
+
+        return $query->exists();
     }
 
     public function canBeManagedBy(?User $user): bool
@@ -538,7 +563,7 @@ class Event extends Model
             return true;
         }
 
-        return $this->isAssignedTo($user, 'event_admin');
+        return $this->isAssignedTo($user, User::ROLE_EVENT_ADMIN);
     }
 
     public function canViewAuditLogsBy(?User $user): bool
@@ -578,8 +603,8 @@ class Event extends Model
             ->where('users.id', $user->id)
             ->where('event_user.is_active', true)
             ->whereIn('event_user.role', [
-                'event_admin',
-                'check_in_officer',
+                User::ROLE_EVENT_ADMIN,
+                User::ROLE_CHECK_IN_OFFICER,
             ])
             ->exists();
     }
@@ -785,18 +810,22 @@ class Event extends Model
 
     public function hasValidRsvpShareLink(): bool
     {
-        if (! $this->rsvp_share_enabled) {
+        if (! (bool) $this->rsvp_share_enabled) {
             return false;
         }
 
-        if (! filled($this->rsvp_share_token_hash)) {
+        $hasShortLink = filled($this->rsvp_share_slug)
+            && filled($this->rsvp_share_short_code_hash)
+            && filled($this->rsvp_share_short_code_encrypted);
+
+        $hasLegacyLongLink = filled($this->rsvp_share_token_hash)
+            && filled($this->rsvp_share_token_encrypted);
+
+        if (! $hasShortLink && ! $hasLegacyLongLink) {
             return false;
         }
 
-        return ! (
-            $this->rsvp_share_expires_at
-            && $this->rsvp_share_expires_at->isPast()
-        );
+        return ! $this->rsvpShareHasExpired();
     }
 
     public function generateRsvpShareLink(
@@ -804,10 +833,15 @@ class Event extends Model
         ?bool $showPhone = null
     ): string {
         $plainToken = Str::random(64);
+        $plainShortCode = $this->generateUniqueRsvpShareShortCode();
+        $slug = $this->makeRsvpShareSlug();
 
         $this->forceFill([
             'rsvp_share_token_hash' => hash('sha256', $plainToken),
             'rsvp_share_token_encrypted' => Crypt::encryptString($plainToken),
+            'rsvp_share_slug' => $slug,
+            'rsvp_share_short_code_hash' => hash('sha256', $plainShortCode),
+            'rsvp_share_short_code_encrypted' => Crypt::encryptString($plainShortCode),
             'rsvp_share_enabled' => true,
             'rsvp_share_expires_at' => $expiresAt,
             'rsvp_share_show_phone' => $showPhone
@@ -815,8 +849,8 @@ class Event extends Model
             'rsvp_share_last_generated_at' => now(),
         ])->save();
 
-        return route('public.rsvp-report', [
-            'token' => $plainToken,
+        return route('public.rsvp-report.short', [
+            'share' => $slug . '-' . $plainShortCode,
         ]);
     }
 
@@ -826,21 +860,13 @@ class Event extends Model
             return null;
         }
 
-        if (! filled($this->rsvp_share_token_encrypted)) {
-            return null;
+        $shortUrl = $this->getShortRsvpShareUrl();
+
+        if ($shortUrl) {
+            return $shortUrl;
         }
 
-        try {
-            $plainToken = Crypt::decryptString(
-                $this->rsvp_share_token_encrypted
-            );
-        } catch (\Throwable) {
-            return null;
-        }
-
-        return route('public.rsvp-report', [
-            'token' => $plainToken,
-        ]);
+        return $this->getLegacyLongRsvpShareUrl();
     }
 
     public function ensureRsvpShareLink(
@@ -850,6 +876,20 @@ class Event extends Model
         $existingUrl = $this->rsvp_share_url;
 
         if ($existingUrl) {
+            $changes = [];
+
+            if ($showPhone !== null) {
+                $changes['rsvp_share_show_phone'] = $showPhone;
+            }
+
+            if ($expiresAt !== null) {
+                $changes['rsvp_share_expires_at'] = $expiresAt;
+            }
+
+            if ($changes !== []) {
+                $this->forceFill($changes)->save();
+            }
+
             return $existingUrl;
         }
 
@@ -871,8 +911,12 @@ class Event extends Model
         $this->forceFill([
             'rsvp_share_token_hash' => null,
             'rsvp_share_token_encrypted' => null,
+            'rsvp_share_slug' => null,
+            'rsvp_share_short_code_hash' => null,
+            'rsvp_share_short_code_encrypted' => null,
             'rsvp_share_enabled' => false,
             'rsvp_share_expires_at' => null,
+            'rsvp_share_show_phone' => false,
             'rsvp_share_last_generated_at' => null,
         ])->save();
     }
@@ -883,6 +927,80 @@ class Event extends Model
             $this->rsvp_share_expires_at
             && $this->rsvp_share_expires_at->isPast()
         );
+    }
+
+    private function makeRsvpShareSlug(): string
+    {
+        $slug = Str::slug((string) $this->title);
+
+        if (! filled($slug)) {
+            $slug = 'event';
+        }
+
+        return Str::limit($slug, 80, '');
+    }
+
+    private function generateUniqueRsvpShareShortCode(): string
+    {
+        do {
+            $plainShortCode = Str::random(10);
+            $hash = hash('sha256', $plainShortCode);
+        } while (
+            self::query()
+                ->where('rsvp_share_short_code_hash', $hash)
+                ->exists()
+        );
+
+        return $plainShortCode;
+    }
+
+    private function getShortRsvpShareUrl(): ?string
+    {
+        if (
+            ! filled($this->rsvp_share_slug)
+            || ! filled($this->rsvp_share_short_code_encrypted)
+        ) {
+            return null;
+        }
+
+        try {
+            $plainShortCode = Crypt::decryptString(
+                (string) $this->rsvp_share_short_code_encrypted
+            );
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! filled($plainShortCode)) {
+            return null;
+        }
+
+        return route('public.rsvp-report.short', [
+            'share' => $this->rsvp_share_slug . '-' . $plainShortCode,
+        ]);
+    }
+
+    private function getLegacyLongRsvpShareUrl(): ?string
+    {
+        if (! filled($this->rsvp_share_token_encrypted)) {
+            return null;
+        }
+
+        try {
+            $plainToken = Crypt::decryptString(
+                (string) $this->rsvp_share_token_encrypted
+            );
+        } catch (Throwable) {
+            return null;
+        }
+
+        if (! filled($plainToken)) {
+            return null;
+        }
+
+        return route('public.rsvp-report', [
+            'token' => $plainToken,
+        ]);
     }
 
     /*

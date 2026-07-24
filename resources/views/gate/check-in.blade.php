@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Gate Check-in - {{ $event->title ?? $event->name ?? 'Event' }}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#213B73">
 
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 
@@ -26,12 +27,37 @@
             box-sizing: border-box;
         }
 
+        html {
+            width: 100%;
+            min-height: 100%;
+            overflow-x: hidden;
+        }
+
         body {
+            width: 100%;
+            min-height: 100vh;
             margin: 0;
             padding-top: var(--topbar-height);
-            font-family: Arial, sans-serif;
+            overflow-x: hidden;
+            font-family: Inter, Arial, sans-serif;
             background: var(--bg);
             color: var(--dark);
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        img,
+        video,
+        canvas,
+        svg {
+            max-width: 100%;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
         }
 
         .topbar {
@@ -52,6 +78,7 @@
 
         .topbar-inner {
             width: 100%;
+            min-width: 0;
             max-width: 1100px;
             margin: 0 auto;
             display: flex;
@@ -89,11 +116,14 @@
         }
 
         .brand {
+            min-width: 0;
+            color: #FFFFFF;
             font-size: 24px;
             font-weight: 800;
-            line-height: 1;
-            color: #FFFFFF;
+            line-height: 1.15;
             white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .badge {
@@ -107,13 +137,17 @@
         }
 
         .container {
+            width: 100%;
+            min-width: 0;
             max-width: 1100px;
             margin: 20px auto;
-            padding: 0 16px 180px;
+            padding: 0 16px 190px;
         }
 
         .event-card,
         .panel {
+            min-width: 0;
+            overflow: hidden;
             background: var(--white);
             border: 1px solid var(--border);
             border-radius: 14px;
@@ -127,14 +161,18 @@
 
         .event-title {
             margin: 0 0 6px;
+            color: var(--blue);
             font-size: 22px;
             font-weight: 800;
-            color: var(--blue);
+            line-height: 1.25;
+            overflow-wrap: anywhere;
         }
 
         .event-meta {
             color: var(--muted);
             font-size: 14px;
+            line-height: 1.5;
+            overflow-wrap: anywhere;
         }
 
         .grid {
@@ -157,9 +195,21 @@
         #reader {
             width: 100%;
             min-height: 320px;
-            border-radius: 12px;
             overflow: hidden;
+            border-radius: 12px;
             background: #000;
+        }
+
+        #reader > div {
+            width: 100% !important;
+        }
+
+        #reader video,
+        #reader canvas {
+            width: 100% !important;
+            max-height: 520px;
+            object-fit: cover;
+            border-radius: 12px;
         }
 
         #reader video {
@@ -174,12 +224,21 @@
         }
 
         button {
+            min-height: 48px;
             border: none;
             cursor: pointer;
             border-radius: 10px;
             padding: 12px 14px;
-            font-weight: 800;
             font-size: 14px;
+            font-weight: 800;
+            touch-action: manipulation;
+        }
+
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible {
+            outline: 3px solid rgba(33, 59, 115, 0.22);
+            outline-offset: 2px;
         }
 
         .btn-primary {
@@ -206,10 +265,11 @@
         .search-box input,
         .guest-control input {
             width: 100%;
+            min-height: 48px;
             padding: 12px 13px;
             border-radius: 10px;
             border: 1px solid var(--border);
-            font-size: 15px;
+            font-size: 16px;
             outline: none;
         }
 
@@ -282,8 +342,10 @@
         }
 
         .info-row span:last-child {
+            min-width: 0;
             font-weight: 800;
             text-align: right;
+            overflow-wrap: anywhere;
         }
 
         .guest-control {
@@ -320,8 +382,9 @@
         }
 
         .recent-name {
-            font-weight: 800;
             color: var(--dark);
+            font-weight: 800;
+            overflow-wrap: anywhere;
         }
 
         .recent-meta {
@@ -449,6 +512,7 @@
             color: var(--dark);
             font-size: 22px;
             font-weight: 900;
+            overflow-wrap: anywhere;
         }
 
         .popup-grid {
@@ -476,6 +540,7 @@
             color: var(--dark);
             font-size: 16px;
             font-weight: 900;
+            overflow-wrap: anywhere;
         }
 
         .popup-time {
@@ -599,34 +664,7 @@
             box-shadow: none;
         }
 
-        @media (max-width: 600px) {
-            .container {
-                margin-top: 14px;
-                padding-left: 12px;
-                padding-right: 12px;
-                padding-bottom: 190px;
-            }
-
-            #reader {
-                min-height: 260px;
-            }
-
-            .panel {
-                padding: 14px;
-            }
-
-            .sticky-checkin-summary {
-                align-items: stretch;
-                flex-direction: column;
-            }
-
-            .sticky-guest-select label {
-                text-align: left;
-            }
-        }
-
-
-        @media (max-width: 850px) {
+        @media (max-width: 1024px) {
             .grid {
                 grid-template-columns: 1fr;
             }
@@ -635,26 +673,27 @@
                 flex-direction: column;
             }
 
-            button {
+            .search-box button,
+            .actions button {
                 width: 100%;
+            }
+
+            #reader {
+                min-height: 300px;
             }
         }
 
-        @media (max-width: 600px) {
+        @media (max-width: 768px) {
             :root {
-                --topbar-height: 64px;
+                --topbar-height: 66px;
             }
 
             .topbar {
-                padding: 14px;
-            }
-
-            .topbar-inner {
-                align-items: center;
+                padding: 12px 14px;
             }
 
             .brand-logo {
-                width: 82px;
+                width: 84px;
                 max-height: 36px;
             }
 
@@ -670,8 +709,134 @@
                 display: none;
             }
 
+            .container {
+                margin-top: 14px;
+                padding: 0 12px 200px;
+            }
+
+            .event-card,
+            .panel {
+                border-radius: 16px;
+            }
+
+            .panel {
+                padding: 14px;
+            }
+
+            .actions {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #reader {
+                min-height: 270px;
+            }
+
+            .popup-card {
+                max-width: 390px;
+                border-radius: 20px;
+            }
+
+            .popup-header {
+                padding: 20px 16px;
+            }
+
+            .popup-body {
+                padding: 16px;
+            }
+        }
+
+        @media (max-width: 600px) {
             .event-title {
                 font-size: 20px;
+            }
+
+            .actions {
+                grid-template-columns: 1fr;
+            }
+
+            .info-row {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 4px;
+            }
+
+            .info-row span:last-child {
+                text-align: left;
+            }
+
+            .sticky-checkin-summary {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .sticky-guest-select {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .sticky-guest-select label {
+                text-align: left;
+            }
+
+            .popup-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .popup-icon {
+                width: 62px;
+                height: 62px;
+                font-size: 36px;
+            }
+
+            .popup-title {
+                font-size: 22px;
+            }
+
+            .popup-name {
+                font-size: 20px;
+            }
+        }
+
+        @media (max-width: 390px) {
+            :root {
+                --topbar-height: 62px;
+            }
+
+            .topbar {
+                padding: 10px 12px;
+            }
+
+            .brand-logo {
+                width: 72px;
+            }
+
+            .brand {
+                font-size: 18px;
+            }
+
+            .container {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+
+            .event-card,
+            .panel {
+                padding: 12px;
+            }
+
+            #reader {
+                min-height: 240px;
+            }
+
+            .sticky-checkin-bar {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+
+            .sticky-confirm-button {
+                min-height: 50px;
+                font-size: 16px;
             }
         }
     </style>
@@ -1257,14 +1422,29 @@
             return;
         }
 
-        html5QrCode = new Html5Qrcode("reader");
+        if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode("reader");
+        }
+
+        const viewportWidth = Math.max(
+            document.documentElement.clientWidth || 0,
+            window.innerWidth || 0
+        );
+
+        const qrSize = viewportWidth <= 390
+            ? 210
+            : viewportWidth <= 600
+                ? 230
+                : 250;
 
         const config = {
             fps: 10,
             qrbox: {
-                width: 250,
-                height: 250
-            }
+                width: qrSize,
+                height: qrSize
+            },
+            aspectRatio: 1.0,
+            disableFlip: false
         };
 
         try {
@@ -1290,8 +1470,15 @@
     }
 
     async function stopScanner() {
-        if (html5QrCode && scannerRunning) {
+        if (!html5QrCode || !scannerRunning) {
+            return;
+        }
+
+        try {
             await html5QrCode.stop();
+        } catch (error) {
+            console.warn('Scanner stop warning:', error);
+        } finally {
             scannerRunning = false;
         }
     }
@@ -1310,6 +1497,17 @@
             }
         });
     }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const manualInput = document.getElementById('manualInput');
+
+        if (manualInput) {
+            manualInput.focus();
+        }
+
+        startScanner();
+    });
+
 </script>
 
 </body>

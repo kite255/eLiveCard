@@ -18,29 +18,63 @@
 <div
     x-data="{
         loading: false,
+        copied: false,
         enabled: @js($record->hasValidRsvpShareLink()),
         url: @js($record->rsvp_share_url),
         showPhone: @js((bool) $record->rsvp_share_show_phone),
         expiresInDays: '',
+
+        notify(title, type = 'success') {
+            try {
+                if (typeof FilamentNotification !== 'undefined') {
+                    const notification = new FilamentNotification().title(title);
+
+                    if (type === 'danger') {
+                        notification.danger();
+                    } else if (type === 'warning') {
+                        notification.warning();
+                    } else {
+                        notification.success();
+                    }
+
+                    notification.send();
+                    return;
+                }
+            } catch (error) {
+                console.warn('Filament notification unavailable:', error);
+            }
+
+            alert(title);
+        },
+
         async request(method, endpoint, payload = null) {
             this.loading = true;
 
             try {
                 const response = await fetch(endpoint, {
                     method,
+                    credentials: 'same-origin',
                     headers: {
                         'Accept': 'application/json',
                         'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
                         'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content ?? '',
                     },
                     body: payload ? JSON.stringify(payload) : null,
                 });
 
-                const data = await response.json();
+                let data = {};
+
+                try {
+                    data = await response.json();
+                } catch (error) {
+                    data = {};
+                }
 
                 if (! response.ok) {
                     throw new Error(
-                        data.message ?? 'The request could not be completed.'
+                        data.message
+                        ?? `The request failed with status ${response.status}.`
                     );
                 }
 
@@ -49,54 +83,128 @@
                 this.loading = false;
             }
         },
+
         async generate(regenerate = false) {
-            const data = await this.request(
-                'POST',
-                @js($rsvpShareGenerateUrl),
-                {
-                    regenerate,
-                    show_phone: this.showPhone,
-                    expires_in_days: this.expiresInDays || null,
+            try {
+                const data = await this.request(
+                    'POST',
+                    @js($rsvpShareGenerateUrl),
+                    {
+                        regenerate,
+                        show_phone: this.showPhone,
+                        expires_in_days: this.expiresInDays || null,
+                    }
+                );
+
+                if (! data.url) {
+                    throw new Error('The server did not return a client RSVP link.');
                 }
-            );
 
-            this.url = data.url;
-            this.enabled = true;
+                this.url = data.url;
+                this.enabled = true;
 
-            await this.copy();
+                await this.copy(false);
+            } catch (error) {
+                console.error('Unable to generate RSVP link:', error);
+
+                this.notify(
+                    error.message ?? 'Unable to generate the client RSVP link.',
+                    'danger'
+                );
+            }
         },
-        async copy() {
+
+        async copyToClipboard(value) {
+            if (
+                navigator.clipboard
+                && typeof navigator.clipboard.writeText === 'function'
+                && window.isSecureContext
+            ) {
+                await navigator.clipboard.writeText(value);
+                return;
+            }
+
+            const textarea = document.createElement('textarea');
+
+            textarea.value = value;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '-9999px';
+            textarea.style.left = '-9999px';
+            textarea.style.opacity = '0';
+            textarea.style.pointerEvents = 'none';
+
+            document.body.appendChild(textarea);
+
+            textarea.focus();
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length);
+
+            let copiedSuccessfully = false;
+
+            try {
+                copiedSuccessfully = document.execCommand('copy');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+
+            if (! copiedSuccessfully) {
+                throw new Error('Browser clipboard access was denied.');
+            }
+        },
+
+        async copy(generateWhenMissing = true) {
             if (! this.url) {
-                await this.generate(false);
+                if (generateWhenMissing) {
+                    await this.generate(false);
+                }
+
                 return;
             }
 
             try {
-                await navigator.clipboard.writeText(this.url);
-                new FilamentNotification()
-                    .title('Client RSVP link copied')
-                    .success()
-                    .send();
+                await this.copyToClipboard(this.url);
+
+                this.copied = true;
+                this.notify('Client RSVP link copied');
+
+                window.setTimeout(() => {
+                    this.copied = false;
+                }, 2200);
             } catch (error) {
-                window.prompt('Copy this RSVP link:', this.url);
+                console.error('Unable to copy RSVP link:', error);
+
+                window.prompt(
+                    'Copy this client RSVP link:',
+                    this.url
+                );
             }
         },
+
         async disable() {
             if (! confirm('Disable this client RSVP link?')) {
                 return;
             }
 
-            await this.request(
-                'DELETE',
-                @js($rsvpShareDisableUrl)
-            );
+            try {
+                await this.request(
+                    'DELETE',
+                    @js($rsvpShareDisableUrl)
+                );
 
-            this.enabled = false;
+                this.enabled = false;
+                this.url = '';
+                this.copied = false;
 
-            new FilamentNotification()
-                .title('Client RSVP link disabled')
-                .success()
-                .send();
+                this.notify('Client RSVP link disabled');
+            } catch (error) {
+                console.error('Unable to disable RSVP link:', error);
+
+                this.notify(
+                    error.message ?? 'Unable to disable the client RSVP link.',
+                    'danger'
+                );
+            }
         },
     }"
     class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900"
@@ -123,6 +231,7 @@
 
                 <label class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
                     Expires after
+
                     <input
                         type="number"
                         min="1"
@@ -131,6 +240,7 @@
                         placeholder="No expiry"
                         class="w-28 rounded-lg border-gray-300 text-xs dark:border-white/10 dark:bg-gray-800"
                     >
+
                     days
                 </label>
             </div>
@@ -141,10 +251,12 @@
                 type="button"
                 color="primary"
                 icon="heroicon-o-clipboard"
-                x-on:click="copy()"
+                x-on:click.prevent.stop="copy()"
                 x-bind:disabled="loading"
             >
-                Copy Client Link
+                <span x-text="copied ? 'Copied!' : (loading ? 'Working...' : 'Copy Client Link')">
+                    Copy Client Link
+                </span>
             </x-filament::button>
 
             <x-filament::button
@@ -152,10 +264,12 @@
                 color="warning"
                 outlined
                 icon="heroicon-o-arrow-path"
-                x-on:click="generate(true)"
+                x-on:click.prevent.stop="generate(true)"
                 x-bind:disabled="loading"
             >
-                Regenerate
+                <span x-text="loading ? 'Working...' : 'Regenerate'">
+                    Regenerate
+                </span>
             </x-filament::button>
 
             <x-filament::button
@@ -164,7 +278,8 @@
                 outlined
                 icon="heroicon-o-link-slash"
                 x-show="enabled"
-                x-on:click="disable()"
+                x-cloak
+                x-on:click.prevent.stop="disable()"
                 x-bind:disabled="loading"
             >
                 Disable
@@ -175,8 +290,22 @@
     <div
         x-show="url"
         x-cloak
-        class="mt-4 rounded-xl bg-gray-50 p-3 dark:bg-white/5"
+        class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-white/5"
     >
-        <p class="break-all text-xs font-medium text-gray-600 dark:text-gray-300" x-text="url"></p>
+        <div class="flex items-start justify-between gap-3">
+            <p
+                class="min-w-0 flex-1 break-all text-xs font-medium text-gray-600 dark:text-gray-300"
+                x-text="url"
+            ></p>
+
+            <button
+                type="button"
+                class="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-bold text-[#213B73] transition hover:border-[#213B73] hover:bg-[#F8FAFC] dark:border-white/10 dark:bg-gray-900"
+                x-on:click.prevent.stop="copy(false)"
+                x-bind:disabled="loading"
+            >
+                <span x-text="copied ? 'Copied' : 'Copy'">Copy</span>
+            </button>
+        </div>
     </div>
 </div>

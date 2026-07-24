@@ -15,13 +15,12 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 class EventResource extends Resource
 {
     protected static ?string $model = Event::class;
-
-    protected static bool $shouldRegisterNavigation = true;
 
     protected static ?string $navigationIcon = 'heroicon-o-calendar-days';
 
@@ -49,38 +48,109 @@ class EventResource extends Resource
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->canManageEvents() ?? false;
+        return auth()->user()?->hasAnyRole([
+            User::ROLE_SUPER_ADMIN,
+            User::ROLE_EVENT_ADMIN,
+            User::ROLE_CHECK_IN_OFFICER,
+        ]) ?? false;
     }
 
     public static function canViewAny(): bool
     {
-        return auth()->user()?->canManageEvents() ?? false;
+        return static::shouldRegisterNavigation();
     }
 
     public static function canCreate(): bool
     {
-        return auth()->user()?->canManageEvents() ?? false;
+        return auth()->user()?->hasAnyRole([
+            User::ROLE_SUPER_ADMIN,
+            User::ROLE_EVENT_ADMIN,
+        ]) ?? false;
     }
 
-    public static function canEdit($record): bool
+    public static function canEdit(Model $record): bool
     {
-        return auth()->user()?->canManageEvent($record) ?? false;
+        return $record instanceof Event
+            && (auth()->user()?->canManageEvent($record) ?? false);
     }
 
-    public static function canDelete($record): bool
+    public static function canDelete(Model $record): bool
     {
-        return auth()->user()?->isSuperAdmin() ?? false;
+        return $record instanceof Event
+            && (auth()->user()?->isSuperAdmin() ?? false);
     }
 
-    public static function canView($record): bool
+    public static function canView(Model $record): bool
     {
-        return auth()->user()?->canAccessEvent($record) ?? false;
+        if (! $record instanceof Event) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $user->canManageEvent($record);
+        }
+
+        if ($user->isCheckInOfficer()) {
+            return $user->canCheckInForEvent($record);
+        }
+
+        return false;
     }
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
-            ->visibleTo(auth()->user());
+        $query = parent::getEloquentQuery();
+        $user = auth()->user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($user->isEventAdmin()) {
+            return $query->where(function (Builder $query) use ($user): void {
+                $query
+                    ->where('events.user_id', $user->getKey())
+                    ->orWhereHas(
+                        'assignedUsers',
+                        function (Builder $assignment) use ($user): void {
+                            $assignment
+                                ->where('users.id', $user->getKey())
+                                ->where('event_user.is_active', true);
+                        }
+                    );
+            });
+        }
+
+        if ($user->isCheckInOfficer()) {
+            return $query->whereHas(
+                'assignedUsers',
+                function (Builder $assignment) use ($user): void {
+                    $assignment
+                        ->where('users.id', $user->getKey())
+                        ->where(
+                            'event_user.role',
+                            User::ROLE_CHECK_IN_OFFICER
+                        )
+                        ->where('event_user.is_active', true);
+                }
+            );
+        }
+
+        return $query->whereRaw('1 = 0');
     }
 
     public static function form(Form $form): Form
@@ -93,6 +163,7 @@ class EventResource extends Resource
                         Forms\Components\Select::make('user_id')
                             ->label('Event Owner')
                             ->options(fn (): array => User::query()
+                                ->where('is_active', true)
                                 ->whereIn('role', [
                                     User::ROLE_SUPER_ADMIN,
                                     User::ROLE_EVENT_ADMIN,
@@ -106,7 +177,7 @@ class EventResource extends Resource
                             ->disabled(fn (): bool => ! (auth()->user()?->isSuperAdmin() ?? false))
                             ->dehydrated()
                             ->required()
-                            ->helperText('Super Admin can assign the event owner. Event Admin owns their created events automatically.'),
+                            ->helperText('Super Admin can assign the event owner. Event Managers automatically own the events they create.'),
 
                         Forms\Components\TextInput::make('title')
                             ->label('Event Name')
@@ -758,8 +829,16 @@ class EventResource extends Resource
             ->striped()
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(10)
-            ->emptyStateHeading('No events created yet')
-            ->emptyStateDescription('Create your first social event and begin managing invitees, cards, RSVP, messaging, and check-in.')
+            ->emptyStateHeading(fn (): string =>
+                auth()->user()?->isCheckInOfficer()
+                    ? 'No assigned events'
+                    : 'No events created yet'
+            )
+            ->emptyStateDescription(fn (): string =>
+                auth()->user()?->isCheckInOfficer()
+                    ? 'You have not been assigned to an active event for gate check-in. Contact the Event Manager.'
+                    : 'Create your first social event and begin managing invitees, cards, RSVP, messaging, and check-in.'
+            )
             ->emptyStateIcon('heroicon-o-calendar-days')
             ->columns([
                 Tables\Columns\TextColumn::make('title')
@@ -1052,12 +1131,18 @@ class EventResource extends Resource
                 Tables\Actions\ViewAction::make()
                     ->label('Open Workspace')
                     ->icon('heroicon-o-folder-open')
-                    ->color('primary'),
+                    ->color('primary')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canManageEvent($record) ?? false
+                    ),
 
                 Tables\Actions\Action::make('manage_invitees')
                     ->label('Manage Invitees')
                     ->icon('heroicon-o-users')
                     ->color('gray')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canManageEvent($record) ?? false
+                    )
                     ->url(fn (Event $record): string => static::getUrl('view', [
                         'record' => $record,
                         'activeRelationManager' => self::RELATION_INVITEES,
@@ -1067,6 +1152,9 @@ class EventResource extends Resource
                     ->label('Wishes & Photos')
                     ->icon('heroicon-o-photo')
                     ->color('info')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canManageEvent($record) ?? false
+                    )
                     ->badge(fn (Event $record): ?string =>
                         (int) $record->pending_invitee_uploads_count > 0
                             ? (string) $record->pending_invitee_uploads_count
@@ -1087,7 +1175,7 @@ class EventResource extends Resource
                             : null
                     )
                     ->visible(fn (Event $record): bool =>
-                        auth()->user()?->canAccessEvent($record) ?? false
+                        auth()->user()?->isSuperAdmin() ?? false
                     )
                     ->url(fn (Event $record): string => static::getUrl('view', [
                         'record' => $record,
@@ -1110,6 +1198,9 @@ class EventResource extends Resource
                     ->label('RSVP Responses')
                     ->icon('heroicon-o-chat-bubble-left-right')
                     ->color('success')
+                    ->visible(fn (Event $record): bool =>
+                        auth()->user()?->canManageEvent($record) ?? false
+                    )
                     ->url(fn (Event $record): string => static::getUrl('invitee-responses', [
                         'record' => $record,
                     ])),
@@ -1119,7 +1210,7 @@ class EventResource extends Resource
                     ->icon('heroicon-o-chart-bar-square')
                     ->color('success')
                     ->visible(fn (Event $record): bool =>
-                        auth()->user()?->canAccessEvent($record) ?? false
+                        auth()->user()?->canCheckInForEvent($record) ?? false
                     )
                     ->url(fn (Event $record): string => static::getUrl(
                         'check-in-dashboard',
@@ -1131,9 +1222,7 @@ class EventResource extends Resource
                     ->icon('heroicon-o-qr-code')
                     ->color('warning')
                     ->visible(fn (Event $record): bool =>
-                        method_exists($record, 'canBeCheckedInBy')
-                            ? $record->canBeCheckedInBy(auth()->user())
-                            : (auth()->user()?->canAccessEvent($record) ?? false)
+                        auth()->user()?->canCheckInForEvent($record) ?? false
                     )
                     ->url(fn (Event $record): string => route('gate.check-in.entry', [
                         'event' => $record->getKey(),
@@ -1145,7 +1234,7 @@ class EventResource extends Resource
                     ->icon('heroicon-o-chart-bar-square')
                     ->color('gray')
                     ->visible(fn (Event $record): bool =>
-                        auth()->user()?->canAccessEvent($record) ?? false
+                        auth()->user()?->canViewEventReports($record) ?? false
                     )
                     ->url(fn (Event $record): string => url(
                         '/admin/reports?event_id='.$record->getKey()

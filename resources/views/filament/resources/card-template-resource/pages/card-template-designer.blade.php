@@ -57,7 +57,51 @@
         | It uses a real invitee QR code from the same event.
         */
         $defaultSampleQrUrl = 'data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0nMS4wJyBlbmNvZGluZz0nVVRGLTgnPz4KPHN2ZyB3aWR0aD0iMzdtbSIgaGVpZ2h0PSIzN21tIiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCAzNyAzNyIgY2xhc3M9ImVsaXZlLXNhbXBsZS1xciIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMCwwSDFWMUgwek0xLDBIMlYxSDF6TTIsMEgzVjFIMnpNMywwSDRWMUgzek00LDBINVYxSDR6TTUsMEg2VjFINXpNNiwwSDdWMUg2ek05LDBIMTBWMUg5ek0xMCwwSDExVjFIMTB6TTExLDBIMTJWMUgxMXpNMTIsMEgxM1YxSDEyek0xNSwwSDE2VjFIMTV6TTE3LDBIMThWMUgxN3pNMTgsMEgxOVYxSDE4ek0yMSwwSDIyVjFIMjF6TTIyLDBIMjNWMUgyMnpNMjUsMEgyNlYxSDI1ek0yNiwwSDI3VjFIMjZ6TTI3LDBIMjhWMUgyN3pNMjgsMEgyOVYxSDI4ek0zMCwwSDMxVjFIMzB6TTMxLDBIMzJWMUgzMXpNMzIsMEgzM1YxSDMyek0zMywwSDM0VjFIMzN6TTM0LDBIMzVWMUgzNHpNMzUsMEgzNlYxSDM1ek0zNiwwSDM3VjFIMzZ6TTAsMUgxVjJIMHpNNiwxSDdWMkg2ek0xMCwxSDExVjJIMTB6TTExLDFIMTJWMkgxMXpNMTQsMUgxNVYySDE0ek0xNSwxSDE2VjJIMTV6TTE2LDFIMTdWMkgxNnpNMTcsMUgxOFYySDE3ek0xOCwxSDE5VjJIMTh6TTE5LDFIMjBWMkgxOXpNMjMsMUgyNFYySDIzek0yOCwxSDI5VjJIMjh6TTMwLDFIMzFWMkgzMHpNMzYsMUgzN1YySDM2ek0wLDJIMVYzSDB6TTIsMkgzVjNIMnpNMywySDRWM0gzek00LDJINVYzSDR6TTYsMkg3VjNINnpNMTAsMkgxMVYzSDEwek0xNCwySDE1VjNIMTR6TTE5LDJIMjBWM0gxOXpNMjAsMkgyMVYzSDIwek0yMywySDI0VjNIMjN6TTI0LDJIMjVWM0gyNHpNMjYsMkgyN1YzSDI2ek0yOCwySDI5VjNIMjh6TTMwLDJIMzFWM0gzMHpNMzIsMkgzM1YzSDMyek0zMywySDM0VjNIMzN6TTM0LDJIMzVWM0gzNHpNMzYsMkgzN1YzSDM2ek0wLDNIMVY0SDB6TTIsM0gzVjRIMnpNMywzSDRWNEgzek00LDNINVY0SDR6TTYsM0g3VjRINnpNMTEsM0gxMlY0SDExek0xMiwzSDEzVjRIMTJ6TTE0LDNIMTVWNEgxNHpNMTcsM0gxOFY0SDE3ek0yMCwzSDIxVjRIMjB6TTIyLDNIMjNWNEgyMnpNMjMsM0gyNFY0SDIzek0yNiwzSDI3VjRIMjZ6TTMwLDNIMzFWNEgzMHpNMzIsM0gzM1Y0SDMyek0zMywzSDM0VjRIMzN6TTM0LDNIMzVWNEgzNHpNMzYsM0gzN1Y0SDM2ek0wLDRIMVY1SDB6TTIsNEgzVjVIMnpNMyw0SDRWNUgzek00LDRINVY1SDR6TTYsNEg3VjVINnpNOSw0SDEwVjVIOXpNMTEsNEgxMlY1SDExek0xMiw0SDEzVjVIMTJ6TTEzLDRIMTRWNUgxM3pNMTQsNEgxNVY1SDE0ek0xNSw0SDE2VjVIMTV6TTE4LDRIMTlWNUgxOHpNMTksNEgyMFY1SDE5ek0yMCw0SDIxVjVIMjB6TTIzLDRIMjRWNUgyM3pNMjQsNEgyNVY1SDI0ek0yNSw0SDI2VjVIMjV6TTI3LDRIMjhWNUgyN3pNMjgsNEgyOVY1SDI4ek0zMCw0SDMxVjVIMzB6TTMyLDRIMzNWNUgzMnpNMzMsNEgzNFY1SDMzek0zNCw0SDM1VjVIMzR6TTM2LDRIMzdWNUgzNnpNMCw1SDFWNkgwek02LDVIN1Y2SDZ6TTgsNUg5VjZIOHpNOSw1SDEwVjZIOXpNMTAsNUgxMVY2SDEwek0xMyw1SDE0VjZIMTN6TTIwLDVIMjFWNkgyMHpNMjEsNUgyMlY2SDIxek0yNiw1SDI3VjZIMjZ6TTI3LDVIMjhWNkgyN3pNMzAsNUgzMVY2SDMwek0zNiw1SDM3VjZIMzZ6TTAsNkgxVjdIMHpNMSw2SDJWN0gxek0yLDZIM1Y3SDJ6TTMsNkg0VjdIM3pNNCw2SDVWN0g0ek01LDZINlY3SDV6TTYsNkg3VjdINnpNOCw2SDlWN0g4ek0xMCw2SDExVjdIMTB6TTEyLDZIMTNWN0gxMnpNMTQsNkgxNVY3SDE0ek0xNiw2SDE3VjdIMTZ6TTE4LDZIMTlWN0gxOHpNMjAsNkgyMVY3SDIwek0yMiw2SDIzVjdIMjJ6TTI0LDZIMjVWN0gyNHpNMjYsNkgyN1Y3SDI2ek0yOCw2SDI5VjdIMjh6TTMwLDZIMzFWN0gzMHpNMzEsNkgzMlY3SDMxek0zMiw2SDMzVjdIMzJ6TTMzLDZIMzRWN0gzM3pNMzQsNkgzNVY3SDM0ek0zNSw2SDM2VjdIMzV6TTM2LDZIMzdWN0gzNnpNMTQsN0gxNVY4SDE0ek0xNiw3SDE3VjhIMTZ6TTE3LDdIMThWOEgxN3pNMTgsN0gxOVY4SDE4ek0yMSw3SDIyVjhIMjF6TTIyLDdIMjNWOEgyMnpNMjYsN0gyN1Y4SDI2ek0yNyw3SDI4VjhIMjd6TTAsOEgxVjlIMHpNMyw4SDRWOUgzek01LDhINlY5SDV6TTYsOEg3VjlINnpNOCw4SDlWOUg4ek0xMCw4SDExVjlIMTB6TTExLDhIMTJWOUgxMXpNMTIsOEgxM1Y5SDEyek0xNiw4SDE3VjlIMTZ6TTE3LDhIMThWOUgxN3pNMTgsOEgxOVY5SDE4ek0xOSw4SDIwVjlIMTl6TTIwLDhIMjFWOUgyMHpNMjUsOEgyNlY5SDI1ek0yNiw4SDI3VjlIMjZ6TTI3LDhIMjhWOUgyN3pNMjksOEgzMFY5SDI5ek0zMSw4SDMyVjlIMzF6TTEsOUgyVjEwSDF6TTIsOUgzVjEwSDJ6TTMsOUg0VjEwSDN6TTQsOUg1VjEwSDR6TTUsOUg2VjEwSDV6TTcsOUg4VjEwSDd6TTExLDlIMTJWMTBIMTF6TTEyLDlIMTNWMTBIMTJ6TTE1LDlIMTZWMTBIMTV6TTE2LDlIMTdWMTBIMTZ6TTE4LDlIMTlWMTBIMTh6TTE5LDlIMjBWMTBIMTl6TTIzLDlIMjRWMTBIMjN6TTI1LDlIMjZWMTBIMjV6TTI2LDlIMjdWMTBIMjZ6TTI3LDlIMjhWMTBIMjd6TTMxLDlIMzJWMTBIMzF6TTMyLDlIMzNWMTBIMzJ6TTMzLDlIMzRWMTBIMzN6TTM0LDlIMzVWMTBIMzR6TTM2LDlIMzdWMTBIMzZ6TTMsMTBINFYxMUgzek01LDEwSDZWMTFINXpNNiwxMEg3VjExSDZ6TTgsMTBIOVYxMUg4ek0xMCwxMEgxMVYxMUgxMHpNMTIsMTBIMTNWMTFIMTJ6TTE0LDEwSDE1VjExSDE0ek0xNSwxMEgxNlYxMUgxNXpNMTgsMTBIMTlWMTFIMTh6TTE5LDEwSDIwVjExSDE5ek0yNywxMEgyOFYxMUgyN3pNMzAsMTBIMzFWMTFIMzB6TTMxLDEwSDMyVjExSDMxek0zNSwxMEgzNlYxMUgzNXpNMzYsMTBIMzdWMTFIMzZ6TTIsMTFIM1YxMkgyek00LDExSDVWMTJINHpNNSwxMUg2VjEySDV6TTksMTFIMTBWMTJIOXpNMTYsMTFIMTdWMTJIMTZ6TTE3LDExSDE4VjEySDE3ek0xOSwxMUgyMFYxMkgxOXpNMjAsMTFIMjFWMTJIMjB6TTIxLDExSDIyVjEySDIxek0yMiwxMUgyM1YxMkgyMnpNMjUsMTFIMjZWMTJIMjV6TTI2LDExSDI3VjEySDI2ek0yNywxMUgyOFYxMkgyN3pNMjksMTFIMzBWMTJIMjl6TTMwLDExSDMxVjEySDMwek0yLDEySDNWMTNIMnpNMywxMkg0VjEzSDN6TTQsMTJINVYxM0g0ek01LDEySDZWMTNINXpNNiwxMkg3VjEzSDZ6TTcsMTJIOFYxM0g3ek04LDEySDlWMTNIOHpNMTUsMTJIMTZWMTNIMTV6TTE2LDEySDE3VjEzSDE2ek0xNywxMkgxOFYxM0gxN3pNMjAsMTJIMjFWMTNIMjB6TTIxLDEySDIyVjEzSDIxek0yMiwxMkgyM1YxM0gyMnpNMjUsMTJIMjZWMTNIMjV6TTI3LDEySDI4VjEzSDI3ek0yOCwxMkgyOVYxM0gyOHpNMjksMTJIMzBWMTNIMjl6TTMwLDEySDMxVjEzSDMwek0zMywxMkgzNFYxM0gzM3pNMzQsMTJIMzVWMTNIMzR6TTM1LDEySDM2VjEzSDM1ek0zNiwxMkgzN1YxM0gzNnpNMCwxM0gxVjE0SDB6TTksMTNIMTBWMTRIOXpNMTAsMTNIMTFWMTRIMTB6TTEzLDEzSDE0VjE0SDEzek0xNCwxM0gxNVYxNEgxNHpNMTUsMTNIMTZWMTRIMTV6TTE4LDEzSDE5VjE0SDE4ek0xOSwxM0gyMFYxNEgxOXpNMjEsMTNIMjJWMTRIMjF6TTIyLDEzSDIzVjE0SDIyek0yNCwxM0gyNVYxNEgyNHpNMjUsMTNIMjZWMTRIMjV6TTI5LDEzSDMwVjE0SDI5ek0zMCwxM0gzMVYxNEgzMHpNMzEsMTNIMzJWMTRIMzF6TTM0LDEzSDM1VjE0SDM0ek0wLDE0SDFWMTVIMHpNMiwxNEgzVjE1SDJ6TTQsMTRINVYxNUg0ek02LDE0SDdWMTVINnpNNywxNEg4VjE1SDd6TTksMTRIMTBWMTVIOXpNMTAsMTRIMTFWMTVIMTB6TTExLDE0SDEyVjE1SDExek0xMywxNEgxNFYxNUgxM3pNMTYsMTRIMTdWMTVIMTZ6TTE5LDE0SDIwVjE1SDE5ek0yMCwxNEgyMVYxNUgyMHpNMjIsMTRIMjNWMTVIMjJ6TTIzLDE0SDI0VjE1SDIzek0yNCwxNEgyNVYxNUgyNHpNMjksMTRIMzBWMTVIMjl6TTMxLDE0SDMyVjE1SDMxek0zMiwxNEgzM1YxNUgzMnpNMzQsMTRIMzVWMTVIMzR6TTAsMTVIMVYxNkgwek0yLDE1SDNWMTZIMnpNMywxNUg0VjE2SDN6TTUsMTVINlYxNkg1ek05LDE1SDEwVjE2SDl6TTEwLDE1SDExVjE2SDEwek0xMywxNUgxNFYxNkgxM3pNMTQsMTVIMTVWMTZIMTR6TTE1LDE1SDE2VjE2SDE1ek0yMCwxNUgyMVYxNkgyMHpNMjEsMTVIMjJWMTZIMjF6TTIzLDE1SDI0VjE2SDIzek0yNCwxNUgyNVYxNkgyNHpNMjYsMTVIMjdWMTZIMjZ6TTI3LDE1SDI4VjE2SDI3ek0yOCwxNUgyOVYxNkgyOHpNMzIsMTVIMzNWMTZIMzJ6TTM1LDE1SDM2VjE2SDM1ek0wLDE2SDFWMTdIMHpNMSwxNkgyVjE3SDF6TTIsMTZIM1YxN0gyek0zLDE2SDRWMTdIM3pNNCwxNkg1VjE3SDR6TTYsMTZIN1YxN0g2ek03LDE2SDhWMTdIN3pNOSwxNkgxMFYxN0g5ek0xMywxNkgxNFYxN0gxM3pNMTQsMTZIMTVWMTdIMTR6TTE2LDE2SDE3VjE3SDE2ek0xOSwxNkgyMFYxN0gxOXpNMjAsMTZIMjFWMTdIMjB6TTI0LDE2SDI1VjE3SDI0ek0zMSwxNkgzMlYxN0gzMXpNMzIsMTZIMzNWMTdIMzJ6TTMzLDE2SDM0VjE3SDMzek0zNCwxNkgzNVYxN0gzNHpNMzYsMTZIMzdWMTdIMzZ6TTAsMTdIMVYxOEgwek0zLDE3SDRWMThIM3pNOCwxN0g5VjE4SDh6TTksMTdIMTBWMThIOXpNMTEsMTdIMTJWMThIMTF6TTEzLDE3SDE0VjE4SDEzek0xNSwxN0gxNlYxOEgxNXpNMTksMTdIMjBWMThIMTl6TTIxLDE3SDIyVjE4SDIxek0yNCwxN0gyNVYxOEgyNHpNMjUsMTdIMjZWMThIMjV6TTI5LDE3SDMwVjE4SDI5ek0zMCwxN0gzMVYxOEgzMHpNMzIsMTdIMzNWMThIMzJ6TTMzLDE3SDM0VjE4SDMzek0zNCwxN0gzNVYxOEgzNHpNMzUsMTdIMzZWMThIMzV6TTM2LDE3SDM3VjE4SDM2ek0wLDE4SDFWMTlIMHpNMywxOEg0VjE5SDN6TTQsMThINVYxOUg0ek02LDE4SDdWMTlINnpNOCwxOEg5VjE5SDh6TTEwLDE4SDExVjE5SDEwek0xMiwxOEgxM1YxOUgxMnpNMTMsMThIMTRWMTlIMTN6TTE0LDE4SDE1VjE5SDE0ek0xOSwxOEgyMFYxOUgxOXpNMjAsMThIMjFWMTlIMjB6TTIyLDE4SDIzVjE5SDIyek0yMywxOEgyNFYxOUgyM3pNMjQsMThIMjVWMTlIMjR6TTMwLDE4SDMxVjE5SDMwek0zMSwxOEgzMlYxOUgzMXpNMzUsMThIMzZWMTlIMzV6TTM2LDE4SDM3VjE5SDM2ek0wLDE5SDFWMjBIMHpNMSwxOUgyVjIwSDF6TTMsMTlINFYyMEgzek00LDE5SDVWMjBINHpNNywxOUg4VjIwSDd6TTEwLDE5SDExVjIwSDEwek0xMywxOUgxNFYyMEgxM3pNMTUsMTlIMTZWMjBIMTV6TTE2LDE5SDE3VjIwSDE2ek0xOSwxOUgyMFYyMEgxOXpNMjAsMTlIMjFWMjBIMjB6TTIzLDE5SDI0VjIwSDIzek0yNiwxOUgyN1YyMEgyNnpNMjcsMTlIMjhWMjBIMjd6TTMxLDE5SDMyVjIwSDMxek0zMiwxOUgzM1YyMEgzMnpNMzQsMTlIMzVWMjBIMzR6TTM1LDE5SDM2VjIwSDM1ek0wLDIwSDFWMjFIMHpNMSwyMEgyVjIxSDF6TTQsMjBINVYyMUg0ek01LDIwSDZWMjFINXpNNiwyMEg3VjIxSDZ6TTcsMjBIOFYyMUg3ek04LDIwSDlWMjFIOHpNOSwyMEgxMFYyMUg5ek0xMCwyMEgxMVYyMUgxMHpNMTMsMjBIMTRWMjFIMTN6TTE2LDIwSDE3VjIxSDE2ek0xOCwyMEgxOVYyMUgxOHpNMTksMjBIMjBWMjFIMTl6TTIzLDIwSDI0VjIxSDIzek0yNSwyMEgyNlYyMUgyNXpNMjgsMjBIMjlWMjFIMjh6TTMwLDIwSDMxVjIxSDMwek0zMiwyMEgzM1YyMUgzMnpNMzQsMjBIMzVWMjFIMzR6TTM1LDIwSDM2VjIxSDM1ek0xLDIxSDJWMjJIMXpNMywyMUg0VjIySDN6TTQsMjFINVYyMkg0ek04LDIxSDlWMjJIOHpNMTAsMjFIMTFWMjJIMTB6TTE1LDIxSDE2VjIySDE1ek0xNywyMUgxOFYyMkgxN3pNMTksMjFIMjBWMjJIMTl6TTIyLDIxSDIzVjIySDIyek0yNCwyMUgyNVYyMkgyNHpNMjgsMjFIMjlWMjJIMjh6TTMwLDIxSDMxVjIySDMwek0zMSwyMUgzMlYyMkgzMXpNMzMsMjFIMzRWMjJIMzN6TTM1LDIxSDM2VjIySDM1ek0zNiwyMUgzN1YyMkgzNnpNMSwyMkgyVjIzSDF6TTIsMjJIM1YyM0gyek02LDIySDdWMjNINnpNNywyMkg4VjIzSDd6TTgsMjJIOVYyM0g4ek05LDIySDEwVjIzSDl6TTExLDIySDEyVjIzSDExek0xMiwyMkgxM1YyM0gxMnpNMTMsMjJIMTRWMjNIMTN6TTE2LDIySDE3VjIzSDE2ek0xOCwyMkgxOVYyM0gxOHpNMTksMjJIMjBWMjNIMTl6TTIwLDIySDIxVjIzSDIwek0yMSwyMkgyMlYyM0gyMXpNMjIsMjJIMjNWMjNIMjJ6TTI0LDIySDI1VjIzSDI0ek0yNSwyMkgyNlYyM0gyNXpNMjYsMjJIMjdWMjNIMjZ6TTI5LDIySDMwVjIzSDI5ek0zMCwyMkgzMVYyM0gzMHpNMCwyM0gxVjI0SDB6TTIsMjNIM1YyNEgyek00LDIzSDVWMjRINHpNNywyM0g4VjI0SDd6TTEwLDIzSDExVjI0SDEwek0xMSwyM0gxMlYyNEgxMXpNMTYsMjNIMTdWMjRIMTZ6TTE4LDIzSDE5VjI0SDE4ek0yMywyM0gyNFYyNEgyM3pNMjQsMjNIMjVWMjRIMjR6TTI1LDIzSDI2VjI0SDI1ek0yOCwyM0gyOVYyNEgyOHpNMzAsMjNIMzFWMjRIMzB6TTM1LDIzSDM2VjI0SDM1ek0wLDI0SDFWMjVIMHpNMSwyNEgyVjI1SDF6TTIsMjRIM1YyNUgyek0zLDI0SDRWMjVIM3pNNSwyNEg2VjI1SDV6TTYsMjRIN1YyNUg2ek0xMCwyNEgxMVYyNUgxMHpNMTEsMjRIMTJWMjVIMTF6TTEzLDI0SDE0VjI1SDEzek0xNCwyNEgxNVYyNUgxNHpNMTYsMjRIMTdWMjVIMTZ6TTE4LDI0SDE5VjI1SDE4ek0yMywyNEgyNFYyNUgyM3pNMjQsMjRIMjVWMjVIMjR6TTI3LDI0SDI4VjI1SDI3ek0zMCwyNEgzMVYyNUgzMHpNMzEsMjRIMzJWMjVIMzF6TTMzLDI0SDM0VjI1SDMzek0zNSwyNEgzNlYyNUgzNXpNMSwyNUgyVjI2SDF6TTUsMjVINlYyNkg1ek03LDI1SDhWMjZIN3pNOSwyNUgxMFYyNkg5ek0xMCwyNUgxMVYyNkgxMHpNMTEsMjVIMTJWMjZIMTF6TTEzLDI1SDE0VjI2SDEzek0xNSwyNUgxNlYyNkgxNXpNMTcsMjVIMThWMjZIMTd6TTE4LDI1SDE5VjI2SDE4ek0yMiwyNUgyM1YyNkgyMnpNMjMsMjVIMjRWMjZIMjN6TTI0LDI1SDI1VjI2SDI0ek0yNSwyNUgyNlYyNkgyNXpNMzEsMjVIMzJWMjZIMzF6TTM0LDI1SDM1VjI2SDM0ek0zNSwyNUgzNlYyNkgzNXpNMzYsMjVIMzdWMjZIMzZ6TTAsMjZIMVYyN0gwek02LDI2SDdWMjdINnpNNywyNkg4VjI3SDd6TTgsMjZIOVYyN0g4ek0xMCwyNkgxMVYyN0gxMHpNMTQsMjZIMTVWMjdIMTR6TTE1LDI2SDE2VjI3SDE1ek0xNiwyNkgxN1YyN0gxNnpNMjAsMjZIMjFWMjdIMjB6TTIxLDI2SDIyVjI3SDIxek0yNSwyNkgyNlYyN0gyNXpNMjYsMjZIMjdWMjdIMjZ6TTI5LDI2SDMwVjI3SDI5ek0zMCwyNkgzMVYyN0gzMHpNMzIsMjZIMzNWMjdIMzJ6TTMzLDI2SDM0VjI3SDMzek0zNiwyNkgzN1YyN0gzNnpNMSwyN0gyVjI4SDF6TTIsMjdIM1YyOEgyek0zLDI3SDRWMjhIM3pNOCwyN0g5VjI4SDh6TTksMjdIMTBWMjhIOXpNMTAsMjdIMTFWMjhIMTB6TTEyLDI3SDEzVjI4SDEyek0xMywyN0gxNFYyOEgxM3pNMTQsMjdIMTVWMjhIMTR6TTE2LDI3SDE3VjI4SDE2ek0xOCwyN0gxOVYyOEgxOHpNMTksMjdIMjBWMjhIMTl6TTIyLDI3SDIzVjI4SDIyek0yMywyN0gyNFYyOEgyM3pNMjUsMjdIMjZWMjhIMjV6TTI5LDI3SDMwVjI4SDI5ek0zMCwyN0gzMVYyOEgzMHpNMzEsMjdIMzJWMjhIMzF6TTM1LDI3SDM2VjI4SDM1ek0zNiwyN0gzN1YyOEgzNnpNMCwyOEgxVjI5SDB6TTEsMjhIMlYyOUgxek0zLDI4SDRWMjlIM3pNNiwyOEg3VjI5SDZ6TTcsMjhIOFYyOUg3ek05LDI4SDEwVjI5SDl6TTE0LDI4SDE1VjI5SDE0ek0xNSwyOEgxNlYyOUgxNXpNMTYsMjhIMTdWMjlIMTZ6TTE3LDI4SDE4VjI5SDE3ek0xOSwyOEgyMFYyOUgxOXpNMjQsMjhIMjVWMjlIMjR6TTI3LDI4SDI4VjI5SDI3ek0yOCwyOEgyOVYyOUgyOHpNMjksMjhIMzBWMjlIMjl6TTMwLDI4SDMxVjI5SDMwek0zMSwyOEgzMlYyOUgzMXpNMzIsMjhIMzNWMjlIMzJ6TTgsMjlIOVYzMEg4ek05LDI5SDEwVjMwSDl6TTExLDI5SDEyVjMwSDExek0xNCwyOUgxNVYzMEgxNHpNMTcsMjlIMThWMzBIMTd6TTIxLDI5SDIyVjMwSDIxek0yMiwyOUgyM1YzMEgyMnpNMjMsMjlIMjRWMzBIMjN6TTI2LDI5SDI3VjMwSDI2ek0yNywyOUgyOFYzMEgyN3pNMjgsMjlIMjlWMzBIMjh6TTMyLDI5SDMzVjMwSDMyek0zMywyOUgzNFYzMEgzM3pNMzUsMjlIMzZWMzBIMzV6TTAsMzBIMVYzMUgwek0xLDMwSDJWMzFIMXpNMiwzMEgzVjMxSDJ6TTMsMzBINFYzMUgzek00LDMwSDVWMzFINHpNNSwzMEg2VjMxSDV6TTYsMzBIN1YzMUg2ek05LDMwSDEwVjMxSDl6TTE3LDMwSDE4VjMxSDE3ek0yMCwzMEgyMVYzMUgyMHpNMjIsMzBIMjNWMzFIMjJ6TTI1LDMwSDI2VjMxSDI1ek0yNiwzMEgyN1YzMUgyNnpNMjcsMzBIMjhWMzFIMjd6TTI4LDMwSDI5VjMxSDI4ek0zMCwzMEgzMVYzMUgzMHpNMzIsMzBIMzNWMzFIMzJ6TTMzLDMwSDM0VjMxSDMzek0zNSwzMEgzNlYzMUgzNXpNMCwzMUgxVjMySDB6TTYsMzFIN1YzMkg2ek04LDMxSDlWMzJIOHpNOSwzMUgxMFYzMkg5ek0xMCwzMUgxMVYzMkgxMHpNMTIsMzFIMTNWMzJIMTJ6TTIxLDMxSDIyVjMySDIxek0yNCwzMUgyNVYzMkgyNHpNMjcsMzFIMjhWMzJIMjd6TTI4LDMxSDI5VjMySDI4ek0zMiwzMUgzM1YzMkgzMnpNMzMsMzFIMzRWMzJIMzN6TTM0LDMxSDM1VjMySDM0ek0zNSwzMUgzNlYzMkgzNXpNMCwzMkgxVjMzSDB6TTIsMzJIM1YzM0gyek0zLDMySDRWMzNIM3pNNCwzMkg1VjMzSDR6TTYsMzJIN1YzM0g2ek0xMCwzMkgxMVYzM0gxMHpNMTMsMzJIMTRWMzNIMTN6TTE0LDMySDE1VjMzSDE0ek0xNSwzMkgxNlYzM0gxNXpNMTcsMzJIMThWMzNIMTd6TTE5LDMySDIwVjMzSDE5ek0yMiwzMkgyM1YzM0gyMnpNMjQsMzJIMjVWMzNIMjR6TTI1LDMySDI2VjMzSDI1ek0yOCwzMkgyOVYzM0gyOHpNMjksMzJIMzBWMzNIMjl6TTMwLDMySDMxVjMzSDMwek0zMSwzMkgzMlYzM0gzMXpNMzIsMzJIMzNWMzNIMzJ6TTMzLDMySDM0VjMzSDMzek0zNiwzMkgzN1YzM0gzNnpNMCwzM0gxVjM0SDB6TTIsMzNIM1YzNEgyek0zLDMzSDRWMzRIM3pNNCwzM0g1VjM0SDR6TTYsMzNIN1YzNEg2ek04LDMzSDlWMzRIOHpNOSwzM0gxMFYzNEg5ek0xMCwzM0gxMVYzNEgxMHpNMTIsMzNIMTNWMzRIMTJ6TTEzLDMzSDE0VjM0SDEzek0xNSwzM0gxNlYzNEgxNXpNMTcsMzNIMThWMzRIMTd6TTE5LDMzSDIwVjM0SDE5ek0yMCwzM0gyMVYzNEgyMHpNMjIsMzNIMjNWMzRIMjJ6TTI1LDMzSDI2VjM0SDI1ek0yNiwzM0gyN1YzNEgyNnpNMjcsMzNIMjhWMzRIMjd6TTMxLDMzSDMyVjM0SDMxek0zMiwzM0gzM1YzNEgzMnpNMzMsMzNIMzRWMzRIMzN6TTM0LDMzSDM1VjM0SDM0ek0wLDM0SDFWMzVIMHpNMiwzNEgzVjM1SDJ6TTMsMzRINFYzNUgzek00LDM0SDVWMzVINHpNNiwzNEg3VjM1SDZ6TTksMzRIMTBWMzVIOXpNMTIsMzRIMTNWMzVIMTJ6TTEzLDM0SDE0VjM1SDEzek0xNiwzNEgxN1YzNUgxNnpNMjAsMzRIMjFWMzVIMjB6TTIyLDM0SDIzVjM1SDIyek0yNiwzNEgyN1YzNUgyNnpNMjcsMzRIMjhWMzVIMjd6TTMxLDM0SDMyVjM1SDMxek0zMiwzNEgzM1YzNUgzMnpNMzQsMzRIMzVWMzVIMzR6TTM2LDM0SDM3VjM1SDM2ek0wLDM1SDFWMzZIMHpNNiwzNUg3VjM2SDZ6TTEwLDM1SDExVjM2SDEwek0xMiwzNUgxM1YzNkgxMnpNMTMsMzVIMTRWMzZIMTN6TTE1LDM1SDE2VjM2SDE1ek0xOCwzNUgxOVYzNkgxOHpNMjEsMzVIMjJWMzZIMjF6TTIyLDM1SDIzVjM2SDIyek0yNCwzNUgyNVYzNkgyNHpNMjUsMzVIMjZWMzZIMjV6TTI3LDM1SDI4VjM2SDI3ek0yOSwzNUgzMFYzNkgyOXpNMzEsMzVIMzJWMzZIMzF6TTM0LDM1SDM1VjM2SDM0ek0wLDM2SDFWMzdIMHpNMSwzNkgyVjM3SDF6TTIsMzZIM1YzN0gyek0zLDM2SDRWMzdIM3pNNCwzNkg1VjM3SDR6TTUsMzZINlYzN0g1ek02LDM2SDdWMzdINnpNOCwzNkg5VjM3SDh6TTksMzZIMTBWMzdIOXpNMTMsMzZIMTRWMzdIMTN6TTE0LDM2SDE1VjM3SDE0ek0xNiwzNkgxN1YzN0gxNnpNMTcsMzZIMThWMzdIMTd6TTE5LDM2SDIwVjM3SDE5ek0yMSwzNkgyMlYzN0gyMXpNMjQsMzZIMjVWMzdIMjR6TTI1LDM2SDI2VjM3SDI1ek0yNywzNkgyOFYzN0gyN3pNMjgsMzZIMjlWMzdIMjh6TTI5LDM2SDMwVjM3SDI5ek0zMCwzNkgzMVYzN0gzMHpNMzUsMzZIMzZWMzdIMzV6TTM2LDM2SDM3VjM3SDM2eiIgaWQ9InFyLXBhdGgiIGZpbGw9IiMwMDAwMDAiIGZpbGwtb3BhY2l0eT0iMSIgZmlsbC1ydWxlPSJub256ZXJvIiBzdHJva2U9Im5vbmUiLz48L3N2Zz4=';
+        /*
+        |--------------------------------------------------------------------------
+        | Safe Demo Values
+        |--------------------------------------------------------------------------
+        | Never expose a real invitee name in the designer or preview.
+        */
         $actualQrUrl = $sampleQrCodeUrl ?: $defaultSampleQrUrl;
+
+        $designValues = [
+            'name' => 'Invitee Name',
+            'card_type' => 'DOUBLE',
+            'guest_count' => '2 Guests',
+            'allowed_guests' => '2',
+            'table_number' => 'Table 5',
+            'category' => 'Family',
+            'serial_number' => 'ELV-2026-001',
+            'event_name' => $template->event?->title ?: 'Wedding Ceremony',
+            'event_date' => optional($template->event?->event_date)->format('d M Y')
+                ?: '25 Dec 2026',
+            'event_time' => filled($template->event?->start_time)
+                ? \Illuminate\Support\Carbon::parse($template->event->start_time)->format('h:i A')
+                : '04:00 PM',
+            'event_venue' => $template->event?->venue_name
+                ?: $template->event?->venue
+                ?: 'Royal Hall',
+        ];
+
+        $previewValues = [
+            'name' => 'John Amazon Mwasakafyuka',
+            'card_type' => 'DOUBLE',
+            'guest_count' => '2 Guests',
+            'allowed_guests' => '2',
+            'table_number' => 'Table 5',
+            'category' => 'Family',
+            'serial_number' => 'ELV-2026-001',
+            'event_name' => $template->event?->title ?: 'Wedding Ceremony',
+            'event_date' => optional($template->event?->event_date)->format('d M Y')
+                ?: '25 Dec 2026',
+            'event_time' => filled($template->event?->start_time)
+                ? \Illuminate\Support\Carbon::parse($template->event->start_time)->format('h:i A')
+                : '04:00 PM',
+            'event_venue' => $template->event?->venue_name
+                ?: $template->event?->venue
+                ?: 'Royal Hall',
+        ];
     @endphp
 
     <div
@@ -70,6 +114,24 @@
             templateHeight: {{ (int) $templateHeight }},
             sampleQrCodeUrl: @js($actualQrUrl),
             defaultSampleQrCodeUrl: @js($defaultSampleQrUrl),
+            designValues: @js($designValues),
+            previewValues: @js($previewValues),
+            qrDefaults: {
+                size: {{ \App\Models\CardTemplatePlaceholder::DEFAULT_QR_SIZE }},
+                minimumSize: {{ \App\Models\CardTemplatePlaceholder::MIN_QR_SIZE }},
+                maximumSize: {{ \App\Models\CardTemplatePlaceholder::MAX_QR_SIZE }},
+                widthPercent: {{ \App\Models\CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT }},
+                heightPercent: {{ round(
+                    (
+                        \App\Models\CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT
+                        * max(1, (float) $templateWidth)
+                    ) / max(1, (float) $templateHeight),
+                    4
+                ) }},
+                color: @js(\App\Models\CardTemplatePlaceholder::DEFAULT_QR_COLOR),
+                backgroundColor: @js(\App\Models\CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR),
+                minimumContrast: {{ \App\Models\CardTemplatePlaceholder::MIN_SAFE_QR_CONTRAST }},
+            },
         })"
         x-init="init()"
         class="elive-designer"
@@ -87,8 +149,17 @@
             </div>
 
             <div class="designer-actions">
-                <button type="button" @click="syncToLivewire(); $wire.savePositions()" class="btn-primary">
-                    Save Design
+                <button
+                    type="button"
+                    @click="saveDesign()"
+                    class="btn-primary"
+                    :class="{ 'is-disabled': hasUnsafeQrColors() }"
+                    :disabled="hasUnsafeQrColors()"
+                    :title="hasUnsafeQrColors()
+                        ? 'Fix the QR color contrast before saving.'
+                        : 'Save the card design'"
+                >
+                    <span x-text="hasUnsafeQrColors() ? 'Fix QR Colors' : 'Save Design'"></span>
                 </button>
 
                 <button type="button" @click="syncToLivewire(); $wire.previewCard()" class="btn-outline cyan">
@@ -199,21 +270,32 @@
                                         <div
                                             class="qr-preview actual-qr"
                                             :style="{
-                                                backgroundColor: placeholder.qr_background_color || '#ffffff'
+                                                backgroundColor: normalizeHex(
+                                                    placeholder.qr_background_color,
+                                                    qrDefaults.backgroundColor
+                                                )
                                             }"
                                         >
-                                            <template x-if="sampleQrCodeUrl">
-                                                <img :src="sampleQrCodeUrl" alt="Actual QR Code Preview">
-                                            </template>
-
-                                            <template x-if="!sampleQrCodeUrl">
-                                                <img :src="defaultSampleQrCodeUrl" alt="Sample QR Code Preview">
-                                            </template>
+                                            <div
+                                                class="qr-inner"
+                                                :style="{
+                                                    backgroundColor: normalizeHex(
+                                                        placeholder.qr_background_color,
+                                                        qrDefaults.backgroundColor
+                                                    )
+                                                }"
+                                            >
+                                                <img
+                                                    :src="qrPreviewUrl(placeholder)"
+                                                    class="qr-preview-image"
+                                                    alt="QR code"
+                                                >
+                                            </div>
                                         </div>
                                     </template>
 
                                     <template x-if="! isQr(placeholder)">
-                                        <span x-text="previewValue(placeholder)"></span>
+                                        <span x-text="designValue(placeholder)"></span>
                                     </template>
 
                                     <template x-if="selectedKey === key">
@@ -286,13 +368,35 @@
                         </label>
 
                         <label>
-                            Width %
-                            <input type="number" min="1" max="100" step="0.1" x-model.number="current.width_percent">
+                            <span x-text="isQr(current) ? 'QR Visible Size %' : 'Width %'"></span>
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                step="0.1"
+                                x-model.number="current.width_percent"
+                                @input.debounce.150ms="isQr(current) && normalizeCurrentQr()"
+                                @change="isQr(current) && normalizeCurrentQr()"
+                            >
                         </label>
 
                         <label>
                             Height %
-                            <input type="number" min="1" max="100" step="0.1" x-model.number="current.height_percent">
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                step="0.1"
+                                x-model.number="current.height_percent"
+                                :readonly="isQr(current)"
+                                :class="{ 'qr-calculated-field': isQr(current) }"
+                            >
+                            <small
+                                x-show="isQr(current)"
+                                class="field-help"
+                            >
+                                Calculated automatically to keep the QR square.
+                            </small>
                         </label>
 
                         <template x-if="! isQr(current)">
@@ -345,27 +449,117 @@
                         <template x-if="isQr(current)">
                             <label>
                                 QR Output Size
-                                <input type="number" min="40" max="1000" x-model.number="current.qr_size">
+                                <input
+                                    type="number"
+                                    :min="qrDefaults.minimumSize"
+                                    :max="qrDefaults.maximumSize"
+                                    step="1"
+                                    x-model.number="current.qr_size"
+                                    @change="normalizeCurrentQr()"
+                                >
                             </label>
                         </template>
 
                         <template x-if="isQr(current)">
                             <label>
                                 QR Color
-                                <input type="color" x-model="current.qr_color">
+                                <span class="color-input-row">
+                                    <input
+                                        type="color"
+                                        x-model="current.qr_color"
+                                        @input="normalizeCurrentQr()"
+                                    >
+                                    <input
+                                        type="text"
+                                        maxlength="7"
+                                        placeholder="#111827"
+                                        x-model="current.qr_color"
+                                        @change="normalizeCurrentQr()"
+                                    >
+                                </span>
                             </label>
                         </template>
 
                         <template x-if="isQr(current)">
                             <label>
                                 QR Background
-                                <input type="color" x-model="current.qr_background_color">
+                                <span class="color-input-row">
+                                    <input
+                                        type="color"
+                                        x-model="current.qr_background_color"
+                                        @input="normalizeCurrentQr()"
+                                    >
+                                    <input
+                                        type="text"
+                                        maxlength="7"
+                                        placeholder="#FFFFFF"
+                                        x-model="current.qr_background_color"
+                                        @change="normalizeCurrentQr()"
+                                    >
+                                </span>
                             </label>
                         </template>
 
                         <template x-if="isQr(current)">
+                            <div class="qr-color-actions">
+                                <button
+                                    type="button"
+                                    class="btn-small"
+                                    @click="resetCurrentQrColors()"
+                                >
+                                    Reset to Safe Colors
+                                </button>
+
+                                <small>
+                                    Recommended: dark QR foreground on a white background.
+                                </small>
+                            </div>
+                        </template>
+
+                        <template x-if="isQr(current)">
+                            <div
+                                class="qr-contrast-card"
+                                :class="{
+                                    safe: qrHasSafeContrast(current),
+                                    unsafe: ! qrHasSafeContrast(current),
+                                }"
+                            >
+                                <div class="qr-contrast-preview">
+                                    <span
+                                        :style="{
+                                            backgroundColor: normalizeHex(
+                                                current.qr_background_color,
+                                                qrDefaults.backgroundColor
+                                            )
+                                        }"
+                                    >
+                                        <i
+                                            :style="{
+                                                backgroundColor: normalizeHex(
+                                                    current.qr_color,
+                                                    qrDefaults.color
+                                                )
+                                            }"
+                                        ></i>
+                                    </span>
+                                </div>
+
+                                <div>
+                                    <strong x-text="`Contrast ${qrContrastRatio(current).toFixed(2)}:1`"></strong>
+                                    <small
+                                        x-text="
+                                            qrHasSafeContrast(current)
+                                                ? 'Good contrast for reliable scanning.'
+                                                : 'Increase contrast between the QR and its background.'
+                                        "
+                                    ></small>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="isQr(current)">
                             <div class="qr-helper-note">
-                                QR uses the same drag, resize, arrows, visibility, and save controls as the other placeholders.
+                                QR Visible Size controls placement on the card. QR Output Size controls image quality. Foreground and background colors update the preview immediately. Unsafe color combinations cannot be saved.
                             </div>
                         </template>
                     </div>
@@ -402,69 +596,121 @@
             </div>
         </div>
 
-        <div class="preview-modal" x-show="showPreview" x-cloak>
+        <div
+            class="preview-modal"
+            x-show="showPreview"
+            x-cloak
+            @keydown.escape.window="$wire.closePreview()"
+        >
             <div class="preview-backdrop" @click="$wire.closePreview()"></div>
 
-            <div class="preview-card">
+            <div
+                class="preview-card"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="elive-preview-title"
+            >
                 <div class="preview-header">
                     <div>
-                        <h3>Card Preview</h3>
-                        <p>This preview uses sample invitee data and an actual generated QR code.</p>
+                        <div class="preview-title-row">
+                            <h3 id="elive-preview-title">Card Preview</h3>
+
+                            <span class="preview-size-badge">
+                                {{ $templateWidth }} × {{ $templateHeight }} px
+                            </span>
+                        </div>
+
+                        <p>
+                            Responsive preview using sample invitee data and the event QR code.
+                        </p>
                     </div>
 
-                    <button type="button" @click="$wire.closePreview()">×</button>
+                    <button
+                        type="button"
+                        class="preview-close"
+                        aria-label="Close preview"
+                        @click="$wire.closePreview()"
+                    >
+                        ×
+                    </button>
                 </div>
 
-                <div class="preview-body">
-                    <div
-                        class="preview-canvas"
-                        :style="{
-                            width: '{{ $templateWidth }}px',
-                            height: '{{ $templateHeight }}px'
-                        }"
-                    >
-                        @if ($imageUrl)
-                            <img src="{{ $imageUrl }}" class="template-image" alt="Template Preview">
-                        @else
-                            <div class="template-placeholder-bg">
-                                No template image
-                            </div>
-                        @endif
-
-                        <template x-for="(placeholder, key) in placeholders" :key="'preview-' + key">
+                <div class="preview-body" x-ref="previewBody">
+                    <div class="preview-stage">
+                        <div
+                            class="preview-scale-box"
+                            :style="{
+                                width: `${templateWidth * previewScale}px`,
+                                height: `${templateHeight * previewScale}px`
+                            }"
+                        >
                             <div
-                                x-show="placeholder.is_visible"
-                                class="placeholder-box preview-mode"
-                                :class="{ qr: isQr(placeholder) }"
-                                :style="placeholderStyle(placeholder)"
+                                class="preview-canvas"
+                                :style="{
+                                    width: `${templateWidth}px`,
+                                    height: `${templateHeight}px`,
+                                    transform: `scale(${previewScale})`
+                                }"
                             >
-                                <template x-if="isQr(placeholder)">
+                                @if ($imageUrl)
+                                    <img src="{{ $imageUrl }}" class="template-image" alt="Template Preview">
+                                @else
+                                    <div class="template-placeholder-bg">
+                                        No template image
+                                    </div>
+                                @endif
+
+                                <template x-for="(placeholder, key) in placeholders" :key="'preview-' + key">
                                     <div
-                                        class="qr-preview actual-qr"
-                                        :style="{
-                                            backgroundColor: placeholder.qr_background_color || '#ffffff'
-                                        }"
+                                        x-show="placeholder.is_visible"
+                                        class="placeholder-box preview-mode"
+                                        :class="{ qr: isQr(placeholder) }"
+                                        :style="placeholderStyle(placeholder)"
                                     >
-                                        <template x-if="sampleQrCodeUrl">
-                                            <img :src="sampleQrCodeUrl" alt="Actual QR Code Preview">
+                                        <template x-if="isQr(placeholder)">
+                                            <div
+                                                class="qr-preview actual-qr"
+                                                :style="{
+                                                    backgroundColor: normalizeHex(
+                                                        placeholder.qr_background_color,
+                                                        qrDefaults.backgroundColor
+                                                    )
+                                                }"
+                                            >
+                                                <div
+                                                class="qr-inner"
+                                                :style="{
+                                                    backgroundColor: normalizeHex(
+                                                        placeholder.qr_background_color,
+                                                        qrDefaults.backgroundColor
+                                                    )
+                                                }"
+                                            >
+                                                <img
+                                                    :src="qrPreviewUrl(placeholder)"
+                                                    class="qr-preview-image"
+                                                    alt="QR code"
+                                                >
+                                            </div>
+                                            </div>
                                         </template>
 
-                                        <template x-if="!sampleQrCodeUrl">
-                                            <img :src="defaultSampleQrCodeUrl" alt="Sample QR Code Preview">
+                                        <template x-if="! isQr(placeholder)">
+                                            <span x-text="previewValue(placeholder)"></span>
                                         </template>
                                     </div>
                                 </template>
-
-                                <template x-if="! isQr(placeholder)">
-                                    <span x-text="previewValue(placeholder)"></span>
-                                </template>
                             </div>
-                        </template>
+                        </div>
                     </div>
                 </div>
 
                 <div class="preview-footer">
-                    <button type="button" class="btn-primary" @click="$wire.closePreview()">
+                    <button
+                        type="button"
+                        class="btn-primary"
+                        @click="$wire.closePreview()"
+                    >
                         Close Preview
                     </button>
                 </div>
@@ -592,9 +838,22 @@
         }
 
         .btn-primary {
-            background: #0f172a;
+            background: #213B73;
             color: white;
-            border: 1px solid #0f172a;
+            border: 1px solid #213B73;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #172d5a;
+            border-color: #172d5a;
+        }
+
+        .btn-primary.is-disabled,
+        .btn-primary:disabled {
+            cursor: not-allowed;
+            opacity: .62;
+            background: #64748b;
+            border-color: #64748b;
         }
 
         .btn-outline {
@@ -753,13 +1012,21 @@
             flex: 0 0 auto;
         }
 
-        .card-canvas,
-        .preview-canvas {
+        .card-canvas {
             position: relative;
             transform-origin: top left;
             background: #ffffff;
             overflow: hidden;
             border-radius: .25rem;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+        }
+
+        .preview-canvas {
+            position: relative;
+            transform-origin: top left;
+            background: #ffffff;
+            overflow: hidden;
+            border-radius: 0;
             box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
         }
 
@@ -788,7 +1055,7 @@
             position: absolute;
             z-index: 10;
             border: 1.5px dashed rgba(14, 165, 233, .95);
-            background: rgba(255, 255, 255, .42);
+            background: transparent;
             color: #0f172a;
             border-radius: .45rem;
             cursor: move;
@@ -799,15 +1066,22 @@
         }
 
         .placeholder-box.selected {
-            border: 2px solid #f59e0b;
-            box-shadow: 0 0 0 4px rgba(245, 158, 11, .18);
+            border: 2px solid #FD9618;
+            background: rgba(253, 150, 24, .12);
+            box-shadow: 0 0 0 4px rgba(253, 150, 24, .15);
         }
 
         .placeholder-box.preview-mode {
-            border-color: transparent;
-            background: transparent;
+            border: 0;
+            border-radius: 0;
+            background: transparent !important;
             box-shadow: none;
             cursor: default;
+            overflow: visible;
+        }
+
+        .placeholder-box.preview-mode:not(.qr) {
+            padding: 0;
         }
 
         .placeholder-box span {
@@ -817,38 +1091,178 @@
         }
 
         .placeholder-box.qr {
+            display: flex;
             align-items: center;
             justify-content: center;
             padding: 0;
             background: transparent;
+            overflow: hidden;
+        }
+
+        .placeholder-box.qr .qr-preview {
+            width: 100%;
+            height: 100%;
         }
 
         .qr-preview {
+            --qr-frame-padding: 2%;
             width: 100%;
             height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 0;
-            background: #ffffff;
-            border: none;
+            box-sizing: border-box;
+            background: transparent;
+            border: 0;
             border-radius: 0;
             box-shadow: none;
             overflow: hidden;
         }
 
-        .qr-preview.actual-qr img,
-        .qr-preview img {
+        .qr-inner {
             width: 100%;
             height: 100%;
-            object-fit: contain;
-            display: block;
-            background: #ffffff;
-            padding: 3%;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: var(--qr-frame-padding);
             box-sizing: border-box;
-            image-rendering: auto;
+            background: #ffffff;
+            border: 0;
+            border-radius: 0;
+            overflow: hidden;
+        }
+
+        .qr-preview-image {
+            display: block;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            object-position: center;
+            padding: 0;
+            margin: 0;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
             pointer-events: none;
             user-select: none;
+            flex-shrink: 0;
+        }
+
+        .placeholder-box.qr.selected {
+            background: transparent;
+        }
+
+        .color-input-row {
+            display: grid;
+            grid-template-columns: 46px minmax(0, 1fr);
+            gap: .45rem;
+            align-items: center;
+        }
+
+        .color-input-row input[type="color"] {
+            width: 46px;
+            height: 40px;
+            padding: .2rem;
+            cursor: pointer;
+        }
+
+        .color-input-row input[type="text"] {
+            width: 100%;
+            text-transform: uppercase;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        .qr-color-actions {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .75rem;
+            padding: .65rem .75rem;
+            border: 1px solid #dbeafe;
+            border-radius: .8rem;
+            background: #f8fafc;
+        }
+
+        .qr-color-actions small {
+            color: #64748b;
+            font-size: .7rem;
+            line-height: 1.35;
+            text-align: right;
+        }
+
+        .qr-contrast-card {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: .7rem;
+            padding: .75rem;
+            border: 1px solid #dbeafe;
+            border-radius: .85rem;
+            background: #f8fafc;
+        }
+
+        .qr-contrast-card.safe {
+            border-color: #bbf7d0;
+            background: #f0fdf4;
+        }
+
+        .qr-contrast-card.unsafe {
+            border-color: #fecaca;
+            background: #fef2f2;
+        }
+
+        .qr-contrast-card strong {
+            display: block;
+            color: #0f172a;
+            font-size: .8rem;
+        }
+
+        .qr-contrast-card small {
+            display: block;
+            margin-top: .15rem;
+            color: #64748b;
+            font-size: .72rem;
+            line-height: 1.4;
+        }
+
+        .qr-contrast-preview > span {
+            width: 42px;
+            height: 42px;
+            border: 1px solid rgba(15, 23, 42, .12);
+            border-radius: .6rem;
+            display: grid;
+            place-items: center;
+        }
+
+        .qr-contrast-preview i {
+            width: 22px;
+            height: 22px;
+            display: block;
+            clip-path: polygon(
+                0 0, 38% 0, 38% 20%, 62% 20%, 62% 0, 100% 0,
+                100% 38%, 80% 38%, 80% 62%, 100% 62%, 100% 100%,
+                62% 100%, 62% 80%, 38% 80%, 38% 100%, 0 100%,
+                0 62%, 20% 62%, 20% 38%, 0 38%
+            );
+        }
+
+        .qr-helper-note {
+            grid-column: 1 / -1;
+            padding: .7rem .8rem;
+            border-radius: .8rem;
+            background: #eff6ff;
+            color: #1e3a8a;
+            font-size: .75rem;
+            line-height: 1.5;
+            border: 1px solid #bfdbfe;
         }
 
         .qr-fallback {
@@ -1033,6 +1447,19 @@
             background: white;
         }
 
+        .simple-form-grid input.qr-calculated-field {
+            background: #f8fafc;
+            color: #475569;
+            cursor: not-allowed;
+        }
+
+        .field-help {
+            color: #64748b;
+            font-size: .68rem;
+            line-height: 1.35;
+            font-weight: 600;
+        }
+
         .panel-actions {
             display: flex;
             gap: .5rem;
@@ -1079,76 +1506,215 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 2rem;
+            padding: clamp(.5rem, 2vw, 2rem);
         }
 
         .preview-backdrop {
             position: absolute;
             inset: 0;
-            background: rgba(15, 23, 42, .72);
+            background: rgba(15, 23, 42, .78);
+            backdrop-filter: blur(5px);
         }
 
         .preview-card {
             position: relative;
             z-index: 1;
-            width: min(96vw, 860px);
-            max-height: 92vh;
+            width: min(96vw, 1120px);
+            max-height: 95vh;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
-            background: white;
-            border-radius: 1.25rem;
-            box-shadow: 0 30px 90px rgba(0, 0, 0, .35);
+            background: #ffffff;
+            border: 1px solid rgba(255, 255, 255, .28);
+            border-radius: 1.3rem;
+            box-shadow: 0 32px 100px rgba(0, 0, 0, .42);
         }
 
         .preview-header,
         .preview-footer {
+            flex: 0 0 auto;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 1rem;
             padding: 1rem 1.25rem;
+            background: #ffffff;
+        }
+
+        .preview-header {
             border-bottom: 1px solid #e5e7eb;
         }
 
         .preview-footer {
-            border-top: 1px solid #e5e7eb;
-            border-bottom: none;
             justify-content: flex-end;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .preview-title-row {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            flex-wrap: wrap;
         }
 
         .preview-header h3 {
             margin: 0;
-            font-size: 1.1rem;
-            font-weight: 800;
+            color: #111827;
+            font-size: 1.08rem;
+            font-weight: 900;
         }
 
         .preview-header p {
-            margin: .2rem 0 0;
+            margin: .25rem 0 0;
             color: #64748b;
-            font-size: .85rem;
+            font-size: .82rem;
+            line-height: 1.45;
         }
 
-        .preview-header button {
-            width: 36px;
-            height: 36px;
+        .preview-size-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: .25rem .65rem;
+            border: 1px solid #dbe3ef;
             border-radius: 999px;
-            border: 1px solid #e5e7eb;
             background: #f8fafc;
-            font-size: 1.5rem;
+            color: #213B73;
+            font-size: .72rem;
+            font-weight: 850;
+        }
+
+        .preview-close {
+            flex: 0 0 auto;
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #dbe3ef;
+            border-radius: 999px;
+            background: #f8fafc;
+            color: #111827;
+            font-size: 1.45rem;
             line-height: 1;
+            cursor: pointer;
+        }
+
+        .preview-close:hover {
+            border-color: #FD9618;
+            background: #fff7ed;
         }
 
         .preview-body {
-            padding: 1.5rem;
-            background: #f8fafc;
+            min-height: 0;
+            flex: 1 1 auto;
+            padding: clamp(.65rem, 2vw, 1.5rem);
             overflow: auto;
-            max-height: 72vh;
+            background:
+                linear-gradient(45deg, #eef2f7 25%, transparent 25%),
+                linear-gradient(-45deg, #eef2f7 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #eef2f7 75%),
+                linear-gradient(-45deg, transparent 75%, #eef2f7 75%),
+                #f8fafc;
+            background-size: 24px 24px;
+            background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+        }
+
+        .preview-stage {
+            width: 100%;
+            min-height: 100%;
             display: flex;
+            align-items: flex-start;
             justify-content: center;
         }
 
+        .preview-scale-box {
+            position: relative;
+            flex: 0 0 auto;
+        }
+
         .preview-canvas {
-            transform: scale(.8);
-            transform-origin: top center;
-            flex-shrink: 0;
+            position: relative;
+            transform-origin: top left;
+            overflow: hidden;
+            background: #ffffff;
+            border: 1px solid rgba(15, 23, 42, .12);
+            border-radius: 0;
+            box-shadow: 0 18px 50px rgba(15, 23, 42, .22);
+        }
+
+        .preview-canvas > .template-image,
+        .preview-canvas > .template-placeholder-bg {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center center;
+            border-radius: 0;
+        }
+
+        .preview-canvas .placeholder-box {
+            transform-origin: top left;
+            border-radius: 0;
+        }
+
+        .preview-canvas .placeholder-box.preview-mode {
+            border: 0;
+            border-radius: 0;
+            background: transparent !important;
+            box-shadow: none;
+            cursor: default;
+        }
+
+        .preview-canvas .placeholder-box.preview-mode:not(.qr) {
+            padding: 0;
+        }
+
+        .preview-canvas .placeholder-box.qr {
+            overflow: hidden;
+            background: transparent !important;
+        }
+
+        .preview-canvas .qr-preview,
+        .preview-canvas .qr-inner,
+        .preview-canvas .qr-preview-image {
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        .preview-canvas .placeholder-box span {
+            font-size: inherit;
+            padding: 0;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        @media (max-width: 700px) {
+            .preview-modal {
+                padding: .35rem;
+            }
+
+            .preview-card {
+                width: 100%;
+                max-height: 98vh;
+                border-radius: .9rem;
+            }
+
+            .preview-header,
+            .preview-footer {
+                padding: .8rem .9rem;
+            }
+
+            .preview-header p {
+                display: none;
+            }
+
+            .preview-body {
+                padding: .55rem;
+            }
+
+
         }
 
         @media (max-width: 1300px) {
@@ -1210,17 +1776,106 @@
                 templateHeight: config.templateHeight,
                 sampleQrCodeUrl: config.sampleQrCodeUrl,
                 defaultSampleQrCodeUrl: config.defaultSampleQrCodeUrl,
+                designValues: config.designValues || {},
+                previewValues: config.previewValues || {},
+                qrDefaults: config.qrDefaults,
 
                 dragging: null,
                 resizing: null,
+                previewScale: 1,
+                previewResizeObserver: null,
+                qrPreviewCache: {},
+                qrPreviewPending: {},
 
                 init() {
+                    Object.values(this.placeholders || {}).forEach((placeholder) => {
+                        if (!this.isQr(placeholder)) {
+                            return;
+                        }
+
+                        placeholder.qr_size = clamp(
+                            Number(
+                                placeholder.qr_size
+                                || this.qrDefaults.size
+                                || 221
+                            ),
+                            Math.max(
+                                221,
+                                Number(this.qrDefaults.minimumSize || 221)
+                            ),
+                            Number(this.qrDefaults.maximumSize || 1200)
+                        );
+
+                        placeholder.qr_color = this.normalizeHex(
+                            placeholder.qr_color,
+                            this.qrDefaults.color
+                        );
+
+                        placeholder.qr_background_color = this.normalizeHex(
+                            placeholder.qr_background_color,
+                            this.qrDefaults.backgroundColor
+                        );
+
+                        const widthPercent = clamp(
+                            Number(
+                                placeholder.width_percent
+                                || this.qrDefaults.widthPercent
+                            ),
+                            1,
+                            100 - Number(placeholder.x_percent || 0)
+                        );
+
+                        const squarePixels =
+                            (widthPercent / 100)
+                            * Math.max(1, Number(this.templateWidth || 1080));
+
+                        placeholder.width_percent = widthPercent;
+
+                        placeholder.height_percent = clamp(
+                            (
+                                squarePixels
+                                / Math.max(1, Number(this.templateHeight || 1920))
+                            ) * 100,
+                            1,
+                            100 - Number(placeholder.y_percent || 0)
+                        );
+                    });
+
                     if (!this.selectedKey && Object.keys(this.placeholders || {}).length > 0) {
                         this.selectedKey = Object.keys(this.placeholders)[0];
                     }
 
                     this.$nextTick(() => {
                         this.fitToScreen();
+                        this.fitPreviewToScreen();
+
+                        if (typeof ResizeObserver !== 'undefined') {
+                            const previewBody = this.$refs?.previewBody;
+
+                            if (previewBody) {
+                                this.previewResizeObserver = new ResizeObserver(
+                                    () => this.fitPreviewToScreen()
+                                );
+
+                                this.previewResizeObserver.observe(previewBody);
+                            }
+                        }
+
+                        this.$watch('showPreview', (visible) => {
+                            if (!visible) {
+                                return;
+                            }
+
+                            this.$nextTick(() => {
+                                this.fitPreviewToScreen();
+                            });
+                        });
+
+                        Object.values(this.placeholders || {}).forEach((placeholder) => {
+                            if (this.isQr(placeholder)) {
+                                this.prepareQrPreview(placeholder);
+                            }
+                        });
                     });
                 },
 
@@ -1234,11 +1889,13 @@
 
                 placeholderKey(placeholder) {
                     return String(
-                        placeholder?.type
+                        placeholder?.placeholder_key
                         || placeholder?.key
-                        || placeholder?.placeholder_key
+                        || placeholder?.type
                         || ''
-                    ).toLowerCase();
+                    )
+                        .trim()
+                        .toLowerCase();
                 },
 
                 isQr(placeholder) {
@@ -1256,6 +1913,12 @@
 
                 selectPlaceholder(key) {
                     this.selectedKey = key;
+
+                    const placeholder = this.placeholders?.[key];
+
+                    if (this.isQr(placeholder)) {
+                        this.prepareQrPreview(placeholder);
+                    }
                 },
 
                 moveSelected(direction, fast = false) {
@@ -1315,6 +1978,38 @@
                     this.zoom = clamp(Math.min(widthZoom, heightZoom, 100), 25, 100);
                 },
 
+                fitPreviewToScreen() {
+                    const previewBody = this.$refs?.previewBody;
+
+                    if (!previewBody || !this.showPreview) {
+                        return;
+                    }
+
+                    const horizontalPadding = 24;
+                    const verticalPadding = 24;
+
+                    const availableWidth = Math.max(
+                        120,
+                        previewBody.clientWidth - horizontalPadding
+                    );
+
+                    const availableHeight = Math.max(
+                        180,
+                        previewBody.clientHeight - verticalPadding
+                    );
+
+                    const widthScale = availableWidth
+                        / Math.max(1, Number(this.templateWidth || 1080));
+
+                    const heightScale = availableHeight
+                        / Math.max(1, Number(this.templateHeight || 1920));
+
+                    this.previewScale = Math.max(
+                        0.05,
+                        Math.min(widthScale, heightScale, 1)
+                    );
+                },
+
                 increaseZoom() {
                     this.zoom = Math.min(160, Number(this.zoom || 100) + 5);
                 },
@@ -1332,9 +2027,15 @@
                         color: placeholder.font_color || '#000000',
                         fontFamily: placeholder.font_family || 'Montserrat',
                         fontSize: `${Number(placeholder.font_size || 16)}px`,
-                        fontWeight: placeholder.font_weight === 'bold' ? '700' : '400',
+                        fontWeight:
+                            placeholder.font_weight === 'bold'
+                                ? '700'
+                                : '400',
                         textAlign: placeholder.text_align || 'center',
-                        justifyContent: this.justifyContent(placeholder.text_align || 'center'),
+                        justifyContent: this.justifyContent(
+                            placeholder.text_align || 'center'
+                        ),
+                        lineHeight: '1.1',
                     };
                 },
 
@@ -1350,23 +2051,328 @@
                     return 'center';
                 },
 
+                designValue(placeholder) {
+                    const key = this.placeholderKey(placeholder);
+
+                    if (key === 'qr_code') {
+                        return 'QR Code';
+                    }
+
+                    return this.designValues[key]
+                        || placeholder.preview_value
+                        || placeholder.label
+                        || 'Placeholder';
+                },
+
                 previewValue(placeholder) {
-                    const values = {
-                        name: 'John Doe',
-                        card_type: 'VIP',
-                        qr_code: 'QR Code',
-                        serial_number: 'ELC-0001',
-                        guest_count: '2 Guests',
-                        allowed_guests: '2',
-                        table_number: 'Table 5',
-                        category: 'Family',
-                        event_name: 'Wedding Ceremony',
-                        event_date: '25 Dec 2026',
-                        event_time: '04:00 PM',
-                        event_venue: 'Royal Hall',
+                    const key = this.placeholderKey(placeholder);
+
+                    if (key === 'qr_code') {
+                        return 'QR Code';
+                    }
+
+                    return this.previewValues[key]
+                        || placeholder.preview_value
+                        || placeholder.label
+                        || 'Placeholder';
+                },
+
+                normalizeCurrentQr() {
+                    if (!this.current || !this.isQr(this.current)) {
+                        return;
+                    }
+
+                    this.current.qr_size = clamp(
+                        Number(
+                            this.current.qr_size
+                            || this.qrDefaults.size
+                            || 221
+                        ),
+                        Math.max(
+                            221,
+                            Number(this.qrDefaults.minimumSize || 221)
+                        ),
+                        Number(this.qrDefaults.maximumSize || 1200)
+                    );
+
+                    this.current.qr_color = this.normalizeHex(
+                        this.current.qr_color,
+                        this.qrDefaults.color
+                    );
+
+                    this.current.qr_background_color = this.normalizeHex(
+                        this.current.qr_background_color,
+                        this.qrDefaults.backgroundColor
+                    );
+
+                    const widthPercent = clamp(
+                        Number(
+                            this.current.width_percent
+                            || this.qrDefaults.widthPercent
+                        ),
+                        1,
+                        100 - Number(this.current.x_percent || 0)
+                    );
+
+                    const squarePixels =
+                        (widthPercent / 100)
+                        * Math.max(1, Number(this.templateWidth || 1080));
+
+                    this.current.width_percent = widthPercent;
+
+                    this.current.height_percent = clamp(
+                        (
+                            squarePixels
+                            / Math.max(1, Number(this.templateHeight || 1920))
+                        ) * 100,
+                        1,
+                        100 - Number(this.current.y_percent || 0)
+                    );
+
+                    this.prepareQrPreview(this.current);
+                },
+
+                resetCurrentQrColors() {
+                    if (!this.current || !this.isQr(this.current)) {
+                        return;
+                    }
+
+                    this.current.qr_color = this.normalizeHex(
+                        this.qrDefaults.color,
+                        '#111827'
+                    );
+
+                    this.current.qr_background_color = this.normalizeHex(
+                        this.qrDefaults.backgroundColor,
+                        '#FFFFFF'
+                    );
+
+                    this.prepareQrPreview(this.current);
+                },
+
+                qrPreviewCacheKey(placeholder) {
+                    const foreground = this.normalizeHex(
+                        placeholder?.qr_color,
+                        this.qrDefaults.color
+                    );
+
+                    const background = this.normalizeHex(
+                        placeholder?.qr_background_color,
+                        this.qrDefaults.backgroundColor
+                    );
+
+                    return `${this.sampleQrCodeUrl}|${foreground}|${background}`;
+                },
+
+                qrPreviewUrl(placeholder) {
+                    if (!placeholder) {
+                        return this.sampleQrCodeUrl || this.defaultSampleQrCodeUrl;
+                    }
+
+                    const cacheKey = this.qrPreviewCacheKey(placeholder);
+
+                    if (!this.qrPreviewCache[cacheKey]) {
+                        this.prepareQrPreview(placeholder);
+                    }
+
+                    return this.qrPreviewCache[cacheKey]
+                        || this.sampleQrCodeUrl
+                        || this.defaultSampleQrCodeUrl;
+                },
+
+                prepareQrPreview(placeholder) {
+                    if (!placeholder || !this.isQr(placeholder)) {
+                        return;
+                    }
+
+                    const source = this.sampleQrCodeUrl || this.defaultSampleQrCodeUrl;
+                    const foreground = this.normalizeHex(
+                        placeholder.qr_color,
+                        this.qrDefaults.color
+                    );
+                    const background = this.normalizeHex(
+                        placeholder.qr_background_color,
+                        this.qrDefaults.backgroundColor
+                    );
+                    const cacheKey = `${source}|${foreground}|${background}`;
+
+                    if (!source || this.qrPreviewCache[cacheKey] || this.qrPreviewPending[cacheKey]) {
+                        return;
+                    }
+
+                    this.qrPreviewPending = {
+                        ...this.qrPreviewPending,
+                        [cacheKey]: true,
                     };
 
-                    return values[placeholder.key] || placeholder.label || 'Placeholder';
+                    const image = new Image();
+
+                    if (!String(source).startsWith('data:')) {
+                        image.crossOrigin = 'anonymous';
+                    }
+
+                    image.onload = () => {
+                        try {
+                            const width = Math.max(1, image.naturalWidth || image.width || 512);
+                            const height = Math.max(1, image.naturalHeight || image.height || 512);
+                            const canvas = document.createElement('canvas');
+                            const context = canvas.getContext('2d', {
+                                willReadFrequently: true,
+                            });
+
+                            canvas.width = width;
+                            canvas.height = height;
+
+                            context.clearRect(0, 0, width, height);
+                            context.drawImage(image, 0, 0, width, height);
+
+                            const imageData = context.getImageData(0, 0, width, height);
+                            const pixels = imageData.data;
+                            const foregroundRgb = this.hexToRgb(foreground);
+                            const backgroundRgb = this.hexToRgb(background);
+
+                            for (let index = 0; index < pixels.length; index += 4) {
+                                const alpha = pixels[index + 3] / 255;
+
+                                if (alpha <= 0) {
+                                    pixels[index] = backgroundRgb.r;
+                                    pixels[index + 1] = backgroundRgb.g;
+                                    pixels[index + 2] = backgroundRgb.b;
+                                    pixels[index + 3] = 255;
+                                    continue;
+                                }
+
+                                const luminance = (
+                                    (0.2126 * pixels[index])
+                                    + (0.7152 * pixels[index + 1])
+                                    + (0.0722 * pixels[index + 2])
+                                ) / 255;
+
+                                const foregroundWeight = 1 - luminance;
+                                const backgroundWeight = luminance;
+
+                                pixels[index] = Math.round(
+                                    (foregroundRgb.r * foregroundWeight)
+                                    + (backgroundRgb.r * backgroundWeight)
+                                );
+                                pixels[index + 1] = Math.round(
+                                    (foregroundRgb.g * foregroundWeight)
+                                    + (backgroundRgb.g * backgroundWeight)
+                                );
+                                pixels[index + 2] = Math.round(
+                                    (foregroundRgb.b * foregroundWeight)
+                                    + (backgroundRgb.b * backgroundWeight)
+                                );
+                                pixels[index + 3] = 255;
+                            }
+
+                            context.putImageData(imageData, 0, 0);
+
+                            this.qrPreviewCache = {
+                                ...this.qrPreviewCache,
+                                [cacheKey]: canvas.toDataURL('image/png'),
+                            };
+                        } catch (error) {
+                            console.warn('Unable to recolor the QR preview.', error);
+
+                            this.qrPreviewCache = {
+                                ...this.qrPreviewCache,
+                                [cacheKey]: source,
+                            };
+                        } finally {
+                            const pending = { ...this.qrPreviewPending };
+                            delete pending[cacheKey];
+                            this.qrPreviewPending = pending;
+                        }
+                    };
+
+                    image.onerror = () => {
+                        this.qrPreviewCache = {
+                            ...this.qrPreviewCache,
+                            [cacheKey]: this.defaultSampleQrCodeUrl || source,
+                        };
+
+                        const pending = { ...this.qrPreviewPending };
+                        delete pending[cacheKey];
+                        this.qrPreviewPending = pending;
+                    };
+
+                    image.src = source;
+                },
+
+                normalizeHex(value, fallback = '#111827') {
+                    let color = String(value || '').trim().toUpperCase();
+
+                    if (!color) {
+                        return String(fallback).toUpperCase();
+                    }
+
+                    if (!color.startsWith('#')) {
+                        color = `#${color}`;
+                    }
+
+                    if (/^#[0-9A-F]{3}$/.test(color)) {
+                        color = `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`;
+                    }
+
+                    return /^#[0-9A-F]{6}$/.test(color)
+                        ? color
+                        : String(fallback).toUpperCase();
+                },
+
+                hexToRgb(hex) {
+                    const normalized = this.normalizeHex(hex, '#000000');
+
+                    return {
+                        r: parseInt(normalized.slice(1, 3), 16),
+                        g: parseInt(normalized.slice(3, 5), 16),
+                        b: parseInt(normalized.slice(5, 7), 16),
+                    };
+                },
+
+                relativeLuminance(hex) {
+                    const rgb = this.hexToRgb(hex);
+
+                    const channels = [rgb.r, rgb.g, rgb.b].map((value) => {
+                        const channel = value / 255;
+
+                        return channel <= 0.03928
+                            ? channel / 12.92
+                            : Math.pow((channel + 0.055) / 1.055, 2.4);
+                    });
+
+                    return (0.2126 * channels[0])
+                        + (0.7152 * channels[1])
+                        + (0.0722 * channels[2]);
+                },
+
+                qrContrastRatio(placeholder) {
+                    if (!placeholder) {
+                        return 1;
+                    }
+
+                    const foreground = this.normalizeHex(
+                        placeholder.qr_color,
+                        this.qrDefaults.color
+                    );
+
+                    const background = this.normalizeHex(
+                        placeholder.qr_background_color,
+                        this.qrDefaults.backgroundColor
+                    );
+
+                    const foregroundLuminance = this.relativeLuminance(foreground);
+                    const backgroundLuminance = this.relativeLuminance(background);
+
+                    const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+                    const darker = Math.min(foregroundLuminance, backgroundLuminance);
+
+                    return (lighter + 0.05) / (darker + 0.05);
+                },
+
+                qrHasSafeContrast(placeholder) {
+                    return this.qrContrastRatio(placeholder)
+                        >= Number(this.qrDefaults.minimumContrast || 4.5);
                 },
 
                 startDrag(event, key) {
@@ -1408,6 +2414,29 @@
                 onResizeMove: null,
 
                 stopInteraction: null,
+
+                hasUnsafeQrColors() {
+                    return Object.values(this.placeholders || {}).some((placeholder) => {
+                        return this.isQr(placeholder)
+                            && Boolean(placeholder.is_visible)
+                            && !this.qrHasSafeContrast(placeholder);
+                    });
+                },
+
+                saveDesign() {
+                    if (this.hasUnsafeQrColors()) {
+                        window.alert(
+                            `The QR foreground and background need at least ${
+                                Number(this.qrDefaults.minimumContrast || 4.5).toFixed(1)
+                            }:1 contrast. Reset to safe colors or select a darker foreground and lighter background.`
+                        );
+
+                        return;
+                    }
+
+                    this.syncToLivewire();
+                    this.$wire.savePositions();
+                },
 
                 syncToLivewire() {
                     this.$wire.set('placeholders', JSON.parse(JSON.stringify(this.placeholders)));
@@ -1475,16 +2504,60 @@
                     );
 
                     if (designer.isQr(item)) {
-                        const maxSquareSize = Math.min(
-                            100 - Number(item.x_percent || 0),
+                        const templateWidth = Math.max(
+                            1,
+                            Number(designer.templateWidth || 1080)
+                        );
+
+                        const templateHeight = Math.max(
+                            1,
+                            Number(designer.templateHeight || 1920)
+                        );
+
+                        const requestedWidthPixels =
+                            (nextWidth / 100) * templateWidth;
+
+                        const requestedHeightPixels =
+                            (nextHeight / 100) * templateHeight;
+
+                        const maximumWidthPixels =
+                            ((100 - Number(item.x_percent || 0)) / 100)
+                            * templateWidth;
+
+                        const maximumHeightPixels =
+                            ((100 - Number(item.y_percent || 0)) / 100)
+                            * templateHeight;
+
+                        const maximumSquarePixels = Math.max(
+                            1,
+                            Math.min(
+                                maximumWidthPixels,
+                                maximumHeightPixels
+                            )
+                        );
+
+                        const squarePixels = clamp(
+                            Math.max(
+                                requestedWidthPixels,
+                                requestedHeightPixels
+                            ),
+                            1,
+                            maximumSquarePixels
+                        );
+
+                        item.width_percent = clamp(
+                            (squarePixels / templateWidth) * 100,
+                            1,
+                            100 - Number(item.x_percent || 0)
+                        );
+
+                        item.height_percent = clamp(
+                            (squarePixels / templateHeight) * 100,
+                            1,
                             100 - Number(item.y_percent || 0)
                         );
 
-                        const squareSize = clamp(Math.max(nextWidth, nextHeight), 1, maxSquareSize);
 
-                        item.width_percent = squareSize;
-                        item.height_percent = squareSize;
-                        item.qr_size = Math.round(squareSize * 10);
                     } else {
                         item.width_percent = nextWidth;
                         item.height_percent = nextHeight;

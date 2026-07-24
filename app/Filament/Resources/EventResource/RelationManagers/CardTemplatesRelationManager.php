@@ -5,9 +5,9 @@ namespace App\Filament\Resources\EventResource\RelationManagers;
 use App\Models\CardTemplate;
 use App\Models\CardTemplatePlaceholder;
 use App\Services\AuditLogService;
+use App\Support\EliveNotification;
 use Filament\Forms;
 use Filament\Forms\Form;
-use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -17,6 +17,10 @@ use Illuminate\Support\Str;
 
 class CardTemplatesRelationManager extends RelationManager
 {
+    /**
+     * Default vertical position for starter QR placeholders.
+     */
+    protected const DEFAULT_QR_Y_PERCENT = 58.0;
     protected static string $relationship = 'cardTemplates';
 
     protected static ?string $title = 'Card Templates';
@@ -65,23 +69,24 @@ class CardTemplatesRelationManager extends RelationManager
         return $form
             ->schema([
                 Forms\Components\Section::make('Template Details')
-                    ->description('Upload the invitation card background image for this event.')
+                    ->description('Upload and configure the invitation card background image for this event.')
+                    ->icon('heroicon-o-photo')
                     ->schema([
                         Forms\Components\TextInput::make('name')
                             ->label('Template Name')
                             ->placeholder('Example: Main Invitation Card')
                             ->required()
-                            ->maxLength(255),
+                            ->maxLength(255)
+                            ->autofocus()
+                            ->columnSpanFull(),
 
                         Forms\Components\FileUpload::make('template_image')
                             ->label('Card Template Image')
                             ->image()
-                            ->required()
+                            ->required(fn (string $operation): bool => $operation === 'create')
                             ->disk('public')
-                            ->directory(fn (): string => 'events/' . $this->getOwnerRecord()->id . '/card-templates')
                             ->visibility('public')
                             ->storeFiles(true)
-                            ->moveFiles()
                             ->saveUploadedFileUsing(function ($file): string {
                                 $directory = 'events/' . $this->getOwnerRecord()->id . '/card-templates';
 
@@ -98,43 +103,45 @@ class CardTemplatesRelationManager extends RelationManager
                                 'image/png',
                                 'image/webp',
                             ])
-                            ->maxSize(25600)
+                            ->maxSize(1536)
                             ->maxFiles(1)
-                            ->imagePreviewHeight('350')
-                            ->loadingIndicatorPosition('left')
-                            ->panelAspectRatio('9:16')
-                            ->panelLayout('integrated')
+                            ->imagePreviewHeight('320')
+                            ->panelLayout('compact')
+                            ->loadingIndicatorPosition('center')
+                            ->uploadButtonPosition('center')
+                            ->uploadProgressIndicatorPosition('center')
                             ->removeUploadedFileButtonPosition('right')
-                            ->uploadButtonPosition('left')
-                            ->uploadProgressIndicatorPosition('left')
-                            ->getUploadedFileNameForStorageUsing(function ($file): string {
-                                $name = pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
-                                $extension = strtolower($file->getClientOriginalExtension());
-
-                                return Str::slug($name) . '-' . now()->format('YmdHis') . '.' . $extension;
-                            })
-                            ->helperText('Use PNG, JPG, or WEBP. Recommended: high quality portrait invitation card, 1080 × 1920. Maximum upload size: 25MB.'),
+                            ->helperText('Upload a high-resolution JPG, PNG, or WEBP image. Recommended: 1080 × 1920 pixels. Maximum size: 1.5 MB.')
+                            ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('width')
                             ->label('Template Width')
                             ->numeric()
                             ->minValue(1)
                             ->default(1080)
-                            ->required(),
+                            ->required()
+                            ->readOnly()
+                            ->suffix('px')
+                            ->helperText('Detected automatically from the uploaded image.'),
 
                         Forms\Components\TextInput::make('height')
                             ->label('Template Height')
                             ->numeric()
                             ->minValue(1)
                             ->default(1920)
-                            ->required(),
+                            ->required()
+                            ->readOnly()
+                            ->suffix('px')
+                            ->helperText('Detected automatically from the uploaded image.'),
 
                         Forms\Components\Select::make('status')
-                            ->label('Status')
+                            ->label('Template Status')
                             ->options(CardTemplate::statuses())
                             ->default(CardTemplate::STATUS_DRAFT)
                             ->required()
-                            ->helperText('Use Active for the template that should be used to generate cards.'),
+                            ->native(false)
+                            ->helperText('Only the active template is used for personalized card generation.')
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
             ]);
@@ -152,6 +159,7 @@ class CardTemplatesRelationManager extends RelationManager
                 Tables\Columns\ImageColumn::make('template_image')
                     ->label('Preview')
                     ->disk('public')
+                    ->visibility('public')
                     ->height(95)
                     ->width(70)
                     ->square(false)
@@ -219,7 +227,9 @@ class CardTemplatesRelationManager extends RelationManager
                     ->label('Upload Template')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->modalHeading('Upload Card Template')
-                    ->modalSubmitActionLabel('Save Template')
+                    ->modalDescription('Upload a high-quality invitation background and configure how it will be used.')
+                    ->modalWidth('4xl')
+                    ->modalSubmitActionLabel('Upload Template')
                     ->visible(fn (): bool => $this->canManageCardTemplates())
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['event_id'] = $this->getOwnerRecord()->id;
@@ -248,8 +258,18 @@ class CardTemplatesRelationManager extends RelationManager
                                 'source' => 'filament_admin',
                             ],
                         );
+
+                        EliveNotification::success(
+                            title: 'Template uploaded successfully',
+                            body: "Image size: {$record->width} × {$record->height} pixels. The template is ready for placeholder design.",
+                            context: $record,
+                            persistent: true,
+                            actionLabel: 'Design Placeholders',
+                            actionUrl: route('card-templates.designer', $record),
+                            openActionInNewTab: true,
+                        );
                     })
-                    ->successNotificationTitle('Card template uploaded successfully'),
+                    ->successNotification(null),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -260,6 +280,10 @@ class CardTemplatesRelationManager extends RelationManager
                     Tables\Actions\EditAction::make()
                         ->label('Edit Template')
                         ->icon('heroicon-o-pencil-square')
+                        ->modalHeading('Edit Card Template')
+                        ->modalDescription('Update the template name, image, dimensions, or status.')
+                        ->modalWidth('4xl')
+                        ->modalSubmitActionLabel('Save Changes')
                         ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->mutateFormDataUsing(function (array $data, CardTemplate $record): array {
                             $this->setImageDimensions($data);
@@ -304,7 +328,17 @@ class CardTemplatesRelationManager extends RelationManager
 
                             return $record;
                         })
-                        ->successNotificationTitle('Card template updated successfully'),
+                        ->after(function (CardTemplate $record): void {
+                            EliveNotification::success(
+                                title: 'Template updated successfully',
+                                body: "The latest template details have been saved. Image size: {$record->width} × {$record->height} pixels.",
+                                context: $record,
+                                actionLabel: 'Design Placeholders',
+                                actionUrl: route('card-templates.designer', $record),
+                                openActionInNewTab: true,
+                            );
+                        })
+                        ->successNotification(null),
 
                     Tables\Actions\Action::make('open_template_image')
                         ->label('Open Image')
@@ -371,11 +405,11 @@ class CardTemplatesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Template set as active')
-                                ->body('This template will now be used for card generation.')
-                                ->success()
-                                ->send();
+                            EliveNotification::success(
+                                title: 'Template set as active',
+                                body: 'This template will now be used for personalized card generation.',
+                                context: $record,
+                            );
                         }),
 
                     Tables\Actions\Action::make('add_starter_placeholders')
@@ -384,7 +418,10 @@ class CardTemplatesRelationManager extends RelationManager
                         ->color('warning')
                         ->requiresConfirmation()
                         ->modalHeading('Add Starter Placeholders')
-                        ->modalDescription('This will add common placeholders: Invitee Name, Card Type, Allowed Guests, QR Code, Serial Number, and Table Number.')
+                        ->modalDescription(
+                            'This will add the common invitation placeholders. '
+                            .'The QR code starts with the universal 200 px, 18% × 18%, dark-on-white configuration.'
+                        )
                         ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->action(function (CardTemplate $record): void {
                             $starterPlaceholders = [
@@ -434,20 +471,42 @@ class CardTemplatesRelationManager extends RelationManager
                                     'sort_order' => 3,
                                 ],
                                 [
-                                    'placeholder_key' => CardTemplatePlaceholder::PLACEHOLDER_QR_CODE,
+                                    'placeholder_key' =>
+                                        CardTemplatePlaceholder::PLACEHOLDER_QR_CODE,
+
                                     'label' => 'QR Code',
-                                    'x_percent' => 50,
-                                    'y_percent' => 73,
-                                    'width_percent' => 22,
-                                    'height_percent' => 22,
-                                    'font_size' => 24,
-                                    'font_color' => '#111827',
+
+                                    'x_percent' => $this->defaultQrXPercent(),
+                                    'y_percent' => $this->defaultQrYPercent(),
+
+                                    'width_percent' =>
+                                        CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
+
+                                    'height_percent' =>
+                                        CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
+
+                                    'font_size' =>
+                                        CardTemplatePlaceholder::DEFAULT_FONT_SIZE,
+
+                                    'font_color' =>
+                                        CardTemplatePlaceholder::DEFAULT_FONT_COLOR,
+
                                     'font_weight' => 'normal',
-                                    'font_family' => CardTemplatePlaceholder::FONT_MONTSERRAT,
+
+                                    'font_family' =>
+                                        CardTemplatePlaceholder::defaultFontFamily(),
+
                                     'text_align' => 'center',
-                                    'qr_size' => 220,
-                                    'qr_color' => '#111827',
-                                    'qr_background_color' => '#FFFFFF',
+
+                                    'qr_size' =>
+                                        CardTemplatePlaceholder::DEFAULT_QR_SIZE,
+
+                                    'qr_color' =>
+                                        CardTemplatePlaceholder::DEFAULT_QR_COLOR,
+
+                                    'qr_background_color' =>
+                                        CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR,
+
                                     'is_visible' => true,
                                     'sort_order' => 4,
                                 ],
@@ -511,14 +570,35 @@ class CardTemplatesRelationManager extends RelationManager
                                 metadata: [
                                     'count' => count($createdOrUpdated),
                                     'placeholders' => $createdOrUpdated,
+                                    'qr_defaults' => [
+                                        'x_percent' => $this->defaultQrXPercent(),
+                                        'y_percent' => $this->defaultQrYPercent(),
+                                        'width_percent' =>
+                                            CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
+                                        'height_percent' =>
+                                            CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
+                                        'qr_size' =>
+                                            CardTemplatePlaceholder::DEFAULT_QR_SIZE,
+                                        'qr_color' =>
+                                            CardTemplatePlaceholder::DEFAULT_QR_COLOR,
+                                        'qr_background_color' =>
+                                            CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR,
+                                    ],
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Starter placeholders added')
-                                ->body('Now open Design Placeholders and drag them to the correct positions.')
-                                ->success()
-                                ->send();
+                            EliveNotification::success(
+                                title: 'Starter placeholders added',
+                                body: count($createdOrUpdated)
+                                    .' placeholders are ready. The QR code uses the universal '
+                                    .CardTemplatePlaceholder::DEFAULT_QR_SIZE
+                                    .' px default and can now be adjusted in the designer.',
+                                context: $record,
+                                persistent: true,
+                                actionLabel: 'Design Placeholders',
+                                actionUrl: route('card-templates.designer', $record),
+                                openActionInNewTab: true,
+                            );
                         }),
 
                     Tables\Actions\Action::make('delete_placeholders')
@@ -555,10 +635,11 @@ class CardTemplatesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Placeholders deleted successfully')
-                                ->success()
-                                ->send();
+                            EliveNotification::warning(
+                                title: 'Placeholders deleted',
+                                body: count($placeholders).' placeholder(s) were removed. The template image was not deleted.',
+                                context: $record,
+                            );
                         }),
 
                     Tables\Actions\Action::make('archive_template')
@@ -582,10 +663,11 @@ class CardTemplatesRelationManager extends RelationManager
                                 newValues: $record->only(['status']),
                             );
 
-                            Notification::make()
-                                ->title('Template archived successfully')
-                                ->success()
-                                ->send();
+                            EliveNotification::info(
+                                title: 'Template archived',
+                                body: 'The template has been removed from active use but its records remain available.',
+                                context: $record,
+                            );
                         }),
 
                     Tables\Actions\Action::make('delete_template')
@@ -598,12 +680,11 @@ class CardTemplatesRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canManageCardTemplates())
                         ->action(function (CardTemplate $record): void {
                             if ($record->generatedCards()->exists()) {
-                                Notification::make()
-                                    ->title('Template cannot be deleted')
-                                    ->body('This template already has generated cards. Archive it instead to keep records safe.')
-                                    ->danger()
-                                    ->persistent()
-                                    ->send();
+                                EliveNotification::danger(
+                                    title: 'Template cannot be deleted',
+                                    body: 'This template already has generated cards. Archive it instead to preserve event records.',
+                                    context: $record,
+                                );
 
                                 return;
                             }
@@ -624,17 +705,25 @@ class CardTemplatesRelationManager extends RelationManager
                                 metadata: $metadata,
                             );
 
-                            if (filled($record->template_image) && Storage::disk('public')->exists($record->template_image)) {
-                                Storage::disk('public')->delete($record->template_image);
+                            $templateImagePath = $this->normalizeTemplateImagePath(
+                                $record->template_image
+                            );
+
+                            if (
+                                filled($templateImagePath)
+                                && Storage::disk('public')->exists($templateImagePath)
+                            ) {
+                                Storage::disk('public')->delete($templateImagePath);
                             }
 
                             $record->placeholders()->delete();
                             $record->delete();
 
-                            Notification::make()
-                                ->title('Template deleted successfully')
-                                ->success()
-                                ->send();
+                            EliveNotification::success(
+                                title: 'Template deleted successfully',
+                                body: 'The template image and placeholder records were removed.',
+                                context: $record->name,
+                            );
                         }),
                 ])
                     ->label('Actions')
@@ -671,13 +760,33 @@ class CardTemplatesRelationManager extends RelationManager
                                 );
                             });
 
-                            Notification::make()
-                                ->title('Selected templates archived successfully')
-                                ->success()
-                                ->send();
+                            EliveNotification::info(
+                                title: 'Selected templates archived',
+                                body: $records->count().' template(s) were archived successfully.',
+                                context: $this->getOwnerRecord(),
+                            );
                         }),
                 ]),
             ]);
+    }
+
+    protected function defaultQrXPercent(): float
+    {
+        return round(
+            (100 - CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT) / 2,
+            4
+        );
+    }
+
+    protected function defaultQrYPercent(): float
+    {
+        $maximumY = 100
+            - CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT;
+
+        return round(
+            min(self::DEFAULT_QR_Y_PERCENT, $maximumY),
+            4
+        );
     }
 
     protected function setImageDimensions(array &$data): void

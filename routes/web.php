@@ -176,9 +176,17 @@ Route::get(
     '/rsvp-report/{token}',
     [PublicRsvpReportController::class, 'show']
 )
-    ->where('token', '[A-Za-z0-9]+')
+    ->where('token', '[A-Za-z0-9]{40,128}')
     ->middleware('throttle:120,1')
     ->name('public.rsvp-report');
+
+Route::get(
+    '/r/{share}',
+    [PublicRsvpReportController::class, 'showShort']
+)
+    ->where('share', '[a-z0-9-]+-[A-Za-z0-9]{10}')
+    ->middleware('throttle:120,1')
+    ->name('public.rsvp-report.short');
 
 /*
 |--------------------------------------------------------------------------

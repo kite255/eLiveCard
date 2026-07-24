@@ -6,6 +6,7 @@ use App\Models\CheckIn;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\SmsLog;
+use App\Models\User;
 use Filament\Pages\Page;
 use Filament\Support\Enums\MaxWidth;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,22 +31,41 @@ class Dashboard extends Page
 
     public ?int $selectedEventId = null;
 
+    protected ?array $accessibleEventIdsCache = null;
+
     public function mount(): void
     {
         $storedEventId = session('elive_dashboard_event_id');
 
         if (
             filled($storedEventId)
-            && Schema::hasTable('events')
-            && Event::query()->whereKey($storedEventId)->exists()
+            && $this->eventQuery()->whereKey($storedEventId)->exists()
         ) {
             $this->selectedEventId = (int) $storedEventId;
+        }
+
+        if ($this->isCheckInOfficer() && blank($this->selectedEventId)) {
+            $this->selectedEventId = $this->eventQuery()
+                ->when(
+                    Schema::hasColumn('events', 'event_date'),
+                    fn (Builder $query) => $query->orderBy('event_date'),
+                )
+                ->value('id');
         }
     }
 
     public function updatedSelectedEventId($value): void
     {
-        $this->selectedEventId = filled($value) ? (int) $value : null;
+        $eventId = filled($value) ? (int) $value : null;
+
+        if (
+            $eventId !== null
+            && ! $this->eventQuery()->whereKey($eventId)->exists()
+        ) {
+            $eventId = null;
+        }
+
+        $this->selectedEventId = $eventId;
 
         session([
             'elive_dashboard_event_id' => $this->selectedEventId,
@@ -76,7 +96,12 @@ class Dashboard extends Page
 
     protected function getViewData(): array
     {
-        $totalEvents = $this->safeCount(Event::class);
+        $user = Auth::user();
+        $isSuperAdmin = $this->isSuperAdmin();
+        $isEventManager = $this->isEventManager();
+        $isCheckInOfficer = $this->isCheckInOfficer();
+
+        $totalEvents = $this->eventQuery()->count();
         $eventsThisMonth = $this->countEventsThisMonth();
 
         $totalInvitees = $this->countInvitees();
@@ -158,7 +183,17 @@ class Dashboard extends Page
         $systemAlerts = $this->getSystemAlerts();
 
         return [
-            'userName' => Auth::user()?->name ?? 'eLive Admin',
+            'userName' => $user?->name ?? 'eLive Admin',
+            'userRoleLabel' => $this->getRoleLabel(),
+            'isSuperAdmin' => $isSuperAdmin,
+            'isEventManager' => $isEventManager,
+            'isCheckInOfficer' => $isCheckInOfficer,
+            'dashboardMode' => $isCheckInOfficer ? 'check_in' : 'management',
+            'accessibleEvents' => $this->getAccessibleEvents(),
+            'officerRecentCheckIns' => $this->getOfficerRecentCheckIns(),
+            'checkInTransactions' => $this->countCheckInTransactions(),
+            'fullyCheckedInInvitees' => $this->countFullyCheckedInInvitees(),
+            'partiallyCheckedInInvitees' => $this->countPartiallyCheckedInInvitees(),
 
             'selectedEventId' => $this->selectedEventId,
             'selectedEvent' => $this->getSelectedEvent(),
@@ -267,7 +302,7 @@ class Dashboard extends Page
                 return [];
             }
 
-            return Event::query()
+            return $this->eventQuery()
                 ->orderBy($labelColumn)
                 ->pluck($labelColumn, 'id')
                 ->mapWithKeys(fn ($label, $id) => [
@@ -292,7 +327,7 @@ class Dashboard extends Page
                 return null;
             }
 
-            return Event::query()->find($this->selectedEventId);
+            return $this->eventQuery()->find($this->selectedEventId);
         } catch (\Throwable $e) {
             report($e);
 
@@ -312,11 +347,11 @@ class Dashboard extends Page
              * Otherwise, prefer an event explicitly marked active.
              */
             if (filled($this->selectedEventId)) {
-                return Event::query()->find($this->selectedEventId);
+                return $this->eventQuery()->find($this->selectedEventId);
             }
 
             if (Schema::hasColumn('events', 'status')) {
-                $activeEvent = Event::query()
+                $activeEvent = $this->eventQuery()
                     ->whereIn('status', [
                         'active',
                         'ongoing',
@@ -341,7 +376,7 @@ class Dashboard extends Page
             $dateColumn = $this->eventDateColumn();
 
             if ($dateColumn) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereDate($dateColumn, today())
                     ->orderBy($dateColumn)
                     ->first();
@@ -368,14 +403,14 @@ class Dashboard extends Page
                 return null;
             }
 
-            $query = Event::query();
+            $query = $this->eventQuery();
 
             /*
              * When an event is selected, find the next event after the selected
              * event's date. Otherwise, find the closest future event.
              */
             if (filled($this->selectedEventId)) {
-                $selectedEvent = Event::query()->find($this->selectedEventId);
+                $selectedEvent = $this->eventQuery()->find($this->selectedEventId);
 
                 if ($selectedEvent && filled($selectedEvent->{$dateColumn})) {
                     $query->whereDate(
@@ -455,11 +490,12 @@ class Dashboard extends Page
     {
         $query = Invitee::query();
 
-        if (
-            filled($this->selectedEventId)
-            && Schema::hasColumn('invitees', 'event_id')
-        ) {
-            $query->where('event_id', $this->selectedEventId);
+        if (Schema::hasColumn('invitees', 'event_id')) {
+            if (filled($this->selectedEventId)) {
+                $query->where('event_id', $this->selectedEventId);
+            } else {
+                $query->whereIn('event_id', $this->accessibleEventIds());
+            }
         }
 
         return $query;
@@ -469,11 +505,12 @@ class Dashboard extends Page
     {
         $query = SmsLog::query();
 
-        if (
-            filled($this->selectedEventId)
-            && Schema::hasColumn('sms_logs', 'event_id')
-        ) {
-            $query->where('event_id', $this->selectedEventId);
+        if (Schema::hasColumn('sms_logs', 'event_id')) {
+            if (filled($this->selectedEventId)) {
+                $query->where('event_id', $this->selectedEventId);
+            } else {
+                $query->whereIn('event_id', $this->accessibleEventIds());
+            }
         }
 
         return $query;
@@ -483,11 +520,12 @@ class Dashboard extends Page
     {
         $query = CheckIn::query();
 
-        if (
-            filled($this->selectedEventId)
-            && Schema::hasColumn('check_ins', 'event_id')
-        ) {
-            $query->where('event_id', $this->selectedEventId);
+        if (Schema::hasColumn('check_ins', 'event_id')) {
+            if (filled($this->selectedEventId)) {
+                $query->where('event_id', $this->selectedEventId);
+            } else {
+                $query->whereIn('event_id', $this->accessibleEventIds());
+            }
         }
 
         return $query;
@@ -546,7 +584,7 @@ class Dashboard extends Page
             }
 
             if (Schema::hasColumn('events', 'event_date')) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereBetween('event_date', [
                         now()->startOfMonth()->toDateString(),
                         now()->endOfMonth()->toDateString(),
@@ -555,7 +593,7 @@ class Dashboard extends Page
             }
 
             if (Schema::hasColumn('events', 'date')) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereBetween('date', [
                         now()->startOfMonth()->toDateString(),
                         now()->endOfMonth()->toDateString(),
@@ -564,7 +602,7 @@ class Dashboard extends Page
             }
 
             if (Schema::hasColumn('events', 'created_at')) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereBetween('created_at', [
                         now()->startOfMonth(),
                         now()->endOfMonth(),
@@ -724,13 +762,13 @@ class Dashboard extends Page
             }
 
             if (filled($this->selectedEventId)) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereKey($this->selectedEventId)
                     ->get();
             }
 
             if (Schema::hasColumn('events', 'event_date')) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereDate('event_date', '>=', now()->toDateString())
                     ->orderBy('event_date')
                     ->limit(5)
@@ -738,14 +776,14 @@ class Dashboard extends Page
             }
 
             if (Schema::hasColumn('events', 'date')) {
-                return Event::query()
+                return $this->eventQuery()
                     ->whereDate('date', '>=', now()->toDateString())
                     ->orderBy('date')
                     ->limit(5)
                     ->get();
             }
 
-            return Event::query()
+            return $this->eventQuery()
                 ->latest()
                 ->limit(5)
                 ->get();
@@ -882,11 +920,12 @@ class Dashboard extends Page
             $query->where('channel', 'whatsapp');
         }
 
-        if (
-            filled($this->selectedEventId)
-            && Schema::hasColumn('message_logs', 'event_id')
-        ) {
-            $query->where('event_id', $this->selectedEventId);
+        if (Schema::hasColumn('message_logs', 'event_id')) {
+            if (filled($this->selectedEventId)) {
+                $query->where('event_id', $this->selectedEventId);
+            } else {
+                $query->whereIn('event_id', $this->accessibleEventIds());
+            }
         }
 
         return $query;
@@ -1347,6 +1386,204 @@ class Dashboard extends Page
         }
 
         return null;
+    }
+
+
+    protected function eventQuery(): Builder
+    {
+        $query = Event::query();
+        $user = Auth::user();
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if ($this->isSuperAdmin()) {
+            return $query;
+        }
+
+        if ($this->isCheckInOfficer()) {
+            return $query->whereHas('assignedUsers', function (Builder $assigned) use ($user): void {
+                $assigned
+                    ->where('users.id', $user->getKey())
+                    ->where('event_user.role', User::ROLE_CHECK_IN_OFFICER)
+                    ->where('event_user.is_active', true);
+            });
+        }
+
+        if ($this->isEventManager()) {
+            return $query->where(function (Builder $eventQuery) use ($user): void {
+                if (Schema::hasColumn('events', 'user_id')) {
+                    $eventQuery->where('events.user_id', $user->getKey());
+                } else {
+                    $eventQuery->whereRaw('1 = 0');
+                }
+
+                $eventQuery->orWhereHas('assignedUsers', function (Builder $assigned) use ($user): void {
+                    $assigned
+                        ->where('users.id', $user->getKey())
+                        ->where('event_user.is_active', true)
+                        ->whereIn('event_user.role', [
+                            User::ROLE_EVENT_ADMIN,
+                            'event_manager',
+                        ]);
+                });
+            });
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    protected function accessibleEventIds(): array
+    {
+        if ($this->accessibleEventIdsCache !== null) {
+            return $this->accessibleEventIdsCache;
+        }
+
+        return $this->accessibleEventIdsCache = $this->eventQuery()
+            ->pluck('events.id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    protected function getAccessibleEvents()
+    {
+        return $this->eventQuery()
+            ->withCount('invitees')
+            ->when(
+                Schema::hasColumn('events', 'event_date'),
+                fn (Builder $query) => $query->orderBy('event_date'),
+            )
+            ->limit($this->isCheckInOfficer() ? 12 : 8)
+            ->get();
+    }
+
+    protected function isSuperAdmin(): bool
+    {
+        $user = Auth::user();
+
+        return $user
+            && (
+                (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+                || ($user->role ?? null) === User::ROLE_SUPER_ADMIN
+            );
+    }
+
+    protected function isEventManager(): bool
+    {
+        $user = Auth::user();
+
+        return $user
+            && ! $this->isCheckInOfficer()
+            && (
+                (method_exists($user, 'isEventAdmin') && $user->isEventAdmin())
+                || in_array($user->role ?? null, [
+                    User::ROLE_EVENT_ADMIN,
+                    'event_manager',
+                ], true)
+            );
+    }
+
+    protected function isCheckInOfficer(): bool
+    {
+        $user = Auth::user();
+
+        return $user
+            && (
+                (method_exists($user, 'isCheckInOfficer') && $user->isCheckInOfficer())
+                || ($user->role ?? null) === User::ROLE_CHECK_IN_OFFICER
+            );
+    }
+
+    protected function getRoleLabel(): string
+    {
+        return match (true) {
+            $this->isSuperAdmin() => 'Super Admin',
+            $this->isCheckInOfficer() => 'Check-in Officer',
+            $this->isEventManager() => 'Event Manager',
+            default => 'User',
+        };
+    }
+
+    protected function countCheckInTransactions(): int
+    {
+        try {
+            return Schema::hasTable('check_ins')
+                ? $this->checkInQuery()->count()
+                : 0;
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
+    }
+
+    protected function countFullyCheckedInInvitees(): int
+    {
+        try {
+            if (! Schema::hasTable('invitees')) {
+                return 0;
+            }
+
+            return $this->inviteeQuery()
+                ->whereColumn('checked_in_count', '>=', 'allowed_guests')
+                ->where('checked_in_count', '>', 0)
+                ->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
+    }
+
+    protected function countPartiallyCheckedInInvitees(): int
+    {
+        try {
+            if (! Schema::hasTable('invitees')) {
+                return 0;
+            }
+
+            return $this->inviteeQuery()
+                ->where('checked_in_count', '>', 0)
+                ->whereColumn('checked_in_count', '<', 'allowed_guests')
+                ->count();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return 0;
+        }
+    }
+
+    protected function getOfficerRecentCheckIns()
+    {
+        try {
+            if (! Schema::hasTable('check_ins')) {
+                return collect();
+            }
+
+            $query = $this->checkInQuery();
+
+            if (
+                $this->isCheckInOfficer()
+                && Schema::hasColumn('check_ins', 'checked_in_by')
+            ) {
+                $query->where('checked_in_by', Auth::id());
+            }
+
+            return $query
+                ->with(['invitee', 'event'])
+                ->orderByDesc(
+                    Schema::hasColumn('check_ins', 'checked_in_at')
+                        ? 'checked_in_at'
+                        : 'created_at'
+                )
+                ->limit(10)
+                ->get();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return collect();
+        }
     }
 
 }

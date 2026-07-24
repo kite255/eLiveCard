@@ -2,8 +2,6 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-
 use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
@@ -18,27 +16,53 @@ class User extends Authenticatable implements FilamentUser
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
+    /*
+    |--------------------------------------------------------------------------
+    | System Roles
+    |--------------------------------------------------------------------------
+    */
+
     public const ROLE_SUPER_ADMIN = 'super_admin';
     public const ROLE_EVENT_ADMIN = 'event_admin';
     public const ROLE_CHECK_IN_OFFICER = 'check_in_officer';
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mass Assignment
+    |--------------------------------------------------------------------------
+    */
 
     protected $fillable = [
         'name',
         'email',
         'password',
         'role',
+        'is_active',
     ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hidden Attributes
+    |--------------------------------------------------------------------------
+    */
 
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Attribute Casts
+    |--------------------------------------------------------------------------
+    */
+
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
         ];
     }
 
@@ -49,7 +73,7 @@ class User extends Authenticatable implements FilamentUser
     */
 
     /**
-     * Events created/owned by this user.
+     * Events created or owned by this user.
      */
     public function events(): HasMany
     {
@@ -59,7 +83,7 @@ class User extends Authenticatable implements FilamentUser
     /**
      * Events assigned to this user through the event_user pivot table.
      *
-     * Pivot fields:
+     * Pivot columns:
      * - role: event_admin / check_in_officer
      * - is_active: true / false
      */
@@ -73,27 +97,44 @@ class User extends Authenticatable implements FilamentUser
             ->withTimestamps();
     }
 
+    /**
+     * All active event assignments for this user.
+     */
     public function activeAssignedEvents(): BelongsToMany
     {
         return $this->assignedEvents()
-            ->wherePivot('is_active', true);
+            ->where('event_user.is_active', true);
     }
 
+    /**
+     * Events assigned to this user as an Event Manager.
+     */
     public function assignedManagedEvents(): BelongsToMany
     {
-        return $this->activeAssignedEvents()
-            ->wherePivot('role', self::ROLE_EVENT_ADMIN);
+        return $this->assignedEvents()
+            ->where('event_user.is_active', true)
+            ->where(
+                'event_user.role',
+                self::ROLE_EVENT_ADMIN
+            );
     }
 
+    /**
+     * Events assigned to this user as a Check-in Officer.
+     */
     public function assignedCheckInEvents(): BelongsToMany
     {
-        return $this->activeAssignedEvents()
-            ->wherePivot('role', self::ROLE_CHECK_IN_OFFICER);
+        return $this->assignedEvents()
+            ->where('event_user.is_active', true)
+            ->where(
+                'event_user.role',
+                self::ROLE_CHECK_IN_OFFICER
+            );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Roles
+    | Role Configuration
     |--------------------------------------------------------------------------
     */
 
@@ -101,7 +142,7 @@ class User extends Authenticatable implements FilamentUser
     {
         return [
             self::ROLE_SUPER_ADMIN => 'Super Admin',
-            self::ROLE_EVENT_ADMIN => 'Event Admin',
+            self::ROLE_EVENT_ADMIN => 'Event Manager',
             self::ROLE_CHECK_IN_OFFICER => 'Check-in Officer',
         ];
     }
@@ -113,16 +154,30 @@ class User extends Authenticatable implements FilamentUser
 
     public function roleLabel(): string
     {
-        return self::roles()[$this->role] ?? str((string) $this->role)
-            ->replace('_', ' ')
-            ->title()
-            ->toString();
+        return self::roles()[$this->role]
+            ?? str((string) $this->role)
+                ->replace('_', ' ')
+                ->title()
+                ->toString();
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Filament Access
+    |--------------------------------------------------------------------------
+    */
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->hasAnyRole(array_keys(self::roles()));
+        return $this->is_active
+            && $this->hasAnyRole(array_keys(self::roles()));
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | General Role Helpers
+    |--------------------------------------------------------------------------
+    */
 
     public function hasRole(string $role): bool
     {
@@ -202,7 +257,7 @@ class User extends Authenticatable implements FilamentUser
 
     /*
     |--------------------------------------------------------------------------
-    | Permission Helpers
+    | Global Permission Helpers
     |--------------------------------------------------------------------------
     */
 
@@ -236,10 +291,7 @@ class User extends Authenticatable implements FilamentUser
 
     public function canManageInvitees(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canImportInvitees(): bool
@@ -249,42 +301,27 @@ class User extends Authenticatable implements FilamentUser
 
     public function canManageCardTypes(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canManageCardDesigns(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canGenerateCards(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canSendMessages(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canManageRsvp(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canScanGuests(): bool
@@ -298,18 +335,12 @@ class User extends Authenticatable implements FilamentUser
 
     public function canViewReports(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canManageInviteeUploads(): bool
     {
-        return $this->hasAnyRole([
-            self::ROLE_SUPER_ADMIN,
-            self::ROLE_EVENT_ADMIN,
-        ]);
+        return $this->canManageEvents();
     }
 
     public function canApproveInviteeUploads(): bool
@@ -323,31 +354,46 @@ class User extends Authenticatable implements FilamentUser
     |--------------------------------------------------------------------------
     */
 
-    public function isAssignedToEvent(Event|int $event, ?string $assignmentRole = null): bool
-    {
-        $eventId = $event instanceof Event ? $event->id : $event;
+    public function isAssignedToEvent(
+        Event|int $event,
+        ?string $assignmentRole = null
+    ): bool {
+        $eventId = $event instanceof Event
+            ? $event->getKey()
+            : $event;
 
         if (! $eventId) {
             return false;
         }
 
-        return $this->assignedEvents()
+        $query = $this->assignedEvents()
             ->where('events.id', $eventId)
-            ->where('event_user.is_active', true)
-            ->when($assignmentRole, function ($query) use ($assignmentRole): void {
-                $query->where('event_user.role', $assignmentRole);
-            })
-            ->exists();
+            ->where('event_user.is_active', true);
+
+        if ($assignmentRole !== null) {
+            $query->where(
+                'event_user.role',
+                $assignmentRole
+            );
+        }
+
+        return $query->exists();
     }
 
     public function isAssignedAsEventAdmin(Event|int $event): bool
     {
-        return $this->isAssignedToEvent($event, self::ROLE_EVENT_ADMIN);
+        return $this->isAssignedToEvent(
+            $event,
+            self::ROLE_EVENT_ADMIN
+        );
     }
 
     public function isAssignedAsCheckInOfficer(Event|int $event): bool
     {
-        return $this->isAssignedToEvent($event, self::ROLE_CHECK_IN_OFFICER);
+        return $this->isAssignedToEvent(
+            $event,
+            self::ROLE_CHECK_IN_OFFICER
+        );
     }
 
     /*
@@ -358,21 +404,11 @@ class User extends Authenticatable implements FilamentUser
 
     public function ownsEvent(Event $event): bool
     {
-        return (int) $event->user_id === (int) $this->id;
+        return (int) $event->user_id === (int) $this->getKey();
     }
 
     /**
-     * General event visibility.
-     *
-     * super_admin:
-     * - Can access all events.
-     *
-     * event_admin:
-     * - Can access owned events.
-     * - Can access events assigned to them in event_user.
-     *
-     * check_in_officer:
-     * - Can access only events assigned to them for check-in.
+     * Determine whether the user may view an event.
      */
     public function canAccessEvent(Event $event): bool
     {
@@ -382,7 +418,7 @@ class User extends Authenticatable implements FilamentUser
 
         if ($this->isEventAdmin()) {
             return $this->ownsEvent($event)
-                || $this->isAssignedToEvent($event);
+                || $this->isAssignedAsEventAdmin($event);
         }
 
         if ($this->isCheckInOfficer()) {
@@ -393,7 +429,7 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Full management access to event admin features.
+     * Determine whether the user may use full event-management features.
      */
     public function canManageEvent(Event $event): bool
     {
@@ -410,7 +446,7 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Gate/check-in access for a specific event.
+     * Determine whether the user may perform check-in for an event.
      */
     public function canCheckInForEvent(Event $event): bool
     {
@@ -420,7 +456,7 @@ class User extends Authenticatable implements FilamentUser
 
         if ($this->isEventAdmin()) {
             return $this->ownsEvent($event)
-                || $this->isAssignedToEvent($event);
+                || $this->isAssignedAsEventAdmin($event);
         }
 
         if ($this->isCheckInOfficer()) {
@@ -431,7 +467,7 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Report access for a specific event.
+     * Determine whether the user may view reports for an event.
      */
     public function canViewEventReports(Event $event): bool
     {

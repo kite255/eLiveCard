@@ -6,6 +6,417 @@
 @source '../**/*.js';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    /*
+    |--------------------------------------------------------------------------
+    | Typography
+    |--------------------------------------------------------------------------
+    */
+
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+
+    /*
+    |--------------------------------------------------------------------------
+    | eLive Card Brand Colors
+    |--------------------------------------------------------------------------
+    */
+
+    --color-elive-blue: #213b73;
+    --color-elive-blue-dark: #172d59;
+    --color-elive-blue-light: #eaf0fb;
+
+    --color-elive-orange: #fd9618;
+    --color-elive-orange-dark: #d97706;
+    --color-elive-orange-light: #fff5e8;
+
+    --color-elive-text: #111827;
+    --color-elive-muted: #64748b;
+    --color-elive-background: #f8fafc;
+    --color-elive-white: #ffffff;
+    --color-elive-border: #e2e8f0;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Application Base
+|--------------------------------------------------------------------------
+*/
+
+html {
+    font-family: var(--font-sans);
+    background: var(--color-elive-background);
+    color: var(--color-elive-text);
+}
+
+body {
+    min-height: 100vh;
+    background: var(--color-elive-background);
+    color: var(--color-elive-text);
+    font-family: var(--font-sans);
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/*
+|--------------------------------------------------------------------------
+| General Utility Classes
+|--------------------------------------------------------------------------
+*/
+
+.elive-text-primary {
+    color: var(--color-elive-blue);
+}
+
+.elive-text-accent {
+    color: var(--color-elive-orange);
+}
+
+.elive-bg-primary {
+    background-color: var(--color-elive-blue);
+}
+
+.elive-bg-accent {
+    background-color: var(--color-elive-orange);
+}
+
+.elive-card {
+    background: var(--color-elive-white);
+    border: 1px solid var(--color-elive-border);
+    border-radius: 1rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.elive-button-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    background: var(--color-elive-blue);
+    color: var(--color-elive-white);
+    font-weight: 700;
+    transition:
+        background-color 150ms ease,
+        box-shadow 150ms ease,
+        transform 150ms ease;
+}
+
+.elive-button-primary:hover {
+    background: var(--color-elive-blue-dark);
+    box-shadow: 0 8px 18px rgba(33, 59, 115, 0.22);
+}
+
+.elive-button-primary:active {
+    transform: translateY(1px);
+}
+
+.elive-button-accent {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.75rem;
+    background: var(--color-elive-orange);
+    color: var(--color-elive-white);
+    font-weight: 700;
+    transition:
+        background-color 150ms ease,
+        box-shadow 150ms ease,
+        transform 150ms ease;
+}
+
+.elive-button-accent:hover {
+    background: var(--color-elive-orange-dark);
+    box-shadow: 0 8px 18px rgba(253, 150, 24, 0.22);
+}
+
+.elive-button-accent:active {
+    transform: translateY(1px);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Filament Notifications
+|--------------------------------------------------------------------------
+| These styles improve the normal Filament notifications without requiring
+| a custom notification service. Existing Notification::make() calls continue
+| working normally.
+*/
+
+.fi-no-notification {
+    overflow: hidden;
+    border: 1px solid var(--color-elive-border);
+    border-inline-start: 5px solid var(--color-elive-blue);
+    border-radius: 1rem;
+    background: var(--color-elive-white);
+    box-shadow:
+        0 20px 45px rgba(15, 23, 42, 0.14),
+        0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.fi-no-notification-title {
+    color: var(--color-elive-text);
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1.35;
+}
+
+.fi-no-notification-body {
+    color: var(--color-elive-muted);
+    font-size: 0.875rem;
+    line-height: 1.55;
+}
+
+.fi-no-notification-icon {
+    flex-shrink: 0;
+}
+
+.fi-no-notification-close-btn {
+    border-radius: 0.5rem;
+    color: var(--color-elive-muted);
+    transition:
+        background-color 150ms ease,
+        color 150ms ease;
+}
+
+.fi-no-notification-close-btn:hover {
+    background: var(--color-elive-background);
+    color: var(--color-elive-text);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Success Notification
+|--------------------------------------------------------------------------
+*/
+
+.fi-no-notification.fi-color-success {
+    border-inline-start-color: var(--color-elive-blue);
+    background:
+        linear-gradient(
+            90deg,
+            rgba(33, 59, 115, 0.055),
+            rgba(255, 255, 255, 0) 35%
+        ),
+        var(--color-elive-white);
+}
+
+.fi-no-notification.fi-color-success .fi-no-notification-title {
+    color: var(--color-elive-blue);
+}
+
+.fi-no-notification.fi-color-success .fi-no-notification-icon {
+    color: var(--color-elive-blue);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Warning Notification
+|--------------------------------------------------------------------------
+*/
+
+.fi-no-notification.fi-color-warning {
+    border-inline-start-color: var(--color-elive-orange);
+    background:
+        linear-gradient(
+            90deg,
+            rgba(253, 150, 24, 0.07),
+            rgba(255, 255, 255, 0) 35%
+        ),
+        var(--color-elive-white);
+}
+
+.fi-no-notification.fi-color-warning .fi-no-notification-title {
+    color: var(--color-elive-orange-dark);
+}
+
+.fi-no-notification.fi-color-warning .fi-no-notification-icon {
+    color: var(--color-elive-orange);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Danger Notification
+|--------------------------------------------------------------------------
+*/
+
+.fi-no-notification.fi-color-danger {
+    border-inline-start-color: #dc2626;
+    background:
+        linear-gradient(
+            90deg,
+            rgba(220, 38, 38, 0.06),
+            rgba(255, 255, 255, 0) 35%
+        ),
+        var(--color-elive-white);
+}
+
+.fi-no-notification.fi-color-danger .fi-no-notification-title {
+    color: #b91c1c;
+}
+
+.fi-no-notification.fi-color-danger .fi-no-notification-icon {
+    color: #dc2626;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Information Notification
+|--------------------------------------------------------------------------
+*/
+
+.fi-no-notification.fi-color-info {
+    border-inline-start-color: var(--color-elive-blue);
+    background:
+        linear-gradient(
+            90deg,
+            rgba(33, 59, 115, 0.05),
+            rgba(255, 255, 255, 0) 35%
+        ),
+        var(--color-elive-white);
+}
+
+.fi-no-notification.fi-color-info .fi-no-notification-title {
+    color: var(--color-elive-blue);
+}
+
+.fi-no-notification.fi-color-info .fi-no-notification-icon {
+    color: var(--color-elive-blue);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Filament Forms
+|--------------------------------------------------------------------------
+*/
+
+.fi-input-wrp {
+    border-radius: 0.75rem;
+}
+
+.fi-input-wrp:focus-within {
+    border-color: var(--color-elive-blue);
+    box-shadow: 0 0 0 1px var(--color-elive-blue);
+}
+
+.fi-fo-field-wrp-label {
+    color: var(--color-elive-text);
+    font-weight: 650;
+}
+
+.fi-fo-field-wrp-helper-text {
+    color: var(--color-elive-muted);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Filament Sections and Cards
+|--------------------------------------------------------------------------
+*/
+
+.fi-section {
+    border-color: var(--color-elive-border);
+    border-radius: 1rem;
+}
+
+.fi-section-header-heading {
+    color: var(--color-elive-text);
+    font-weight: 800;
+}
+
+.fi-section-header-description {
+    color: var(--color-elive-muted);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Filament Tables
+|--------------------------------------------------------------------------
+*/
+
+.fi-ta {
+    border-color: var(--color-elive-border);
+    border-radius: 1rem;
+}
+
+.fi-ta-header-cell {
+    color: var(--color-elive-text);
+    font-weight: 750;
+}
+
+.fi-ta-row:hover {
+    background: rgba(33, 59, 115, 0.025);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Scrollbar
+|--------------------------------------------------------------------------
+*/
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(33, 59, 115, 0.35) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(33, 59, 115, 0.32);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: rgba(33, 59, 115, 0.5);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Responsive Improvements
+|--------------------------------------------------------------------------
+*/
+
+@media (max-width: 640px) {
+    .fi-no-notifications {
+        inset-inline: 0.75rem;
+        width: auto;
+    }
+
+    .fi-no-notification {
+        border-radius: 0.875rem;
+    }
+
+    .fi-no-notification-title {
+        font-size: 0.9rem;
+    }
+
+    .fi-no-notification-body {
+        font-size: 0.82rem;
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Reduced Motion
+|--------------------------------------------------------------------------
+*/
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
 }

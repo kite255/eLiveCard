@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Gate Verification - eLive Card</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#213B73">
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
@@ -41,27 +42,27 @@
     };
 @endphp
 
-<body class="min-h-screen bg-[#F8FAFC] text-[#111827]">
-    <main class="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-4 py-6">
-        <section class="w-full overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-xl">
+<body class="min-h-screen overflow-x-hidden bg-[#F8FAFC] text-[#111827] antialiased">
+    <main class="mx-auto flex min-h-screen w-full max-w-2xl items-center justify-center px-3 py-4 sm:px-4 sm:py-6">
+        <section class="w-full min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl sm:rounded-[2rem]">
             {{-- Header --}}
-            <div class="bg-[#213B73] px-5 py-5 text-white sm:px-6">
-                <div class="flex items-start justify-between gap-4">
+            <div class="bg-[#213B73] px-4 py-5 text-white sm:px-6 sm:py-6">
+                <div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 sm:gap-4">
                     <div class="min-w-0">
                         <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
                             eLive Card Gate Verification
                         </p>
 
-                        <h1 class="mt-2 truncate text-2xl font-black leading-tight sm:text-3xl">
+                        <h1 class="mt-2 break-words text-2xl font-black leading-tight sm:text-3xl">
                             {{ $invitee->name }}
                         </h1>
 
-                        <p class="mt-1 truncate text-sm font-semibold text-white/75">
+                        <p class="mt-1 break-words text-sm font-semibold leading-6 text-white/75">
                             {{ $eventName }}
                         </p>
                     </div>
 
-                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
+                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15 sm:h-12 sm:w-12">
                         <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M20 6 9 17l-5-5" />
                         </svg>
@@ -69,7 +70,7 @@
                 </div>
             </div>
 
-            <div class="space-y-5 p-5 sm:p-6">
+            <div class="space-y-4 p-4 sm:space-y-5 sm:p-6">
                 {{-- Alerts --}}
                 @if (session('success'))
                     <div class="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-bold text-green-800">
@@ -84,25 +85,25 @@
                 @endif
 
                 {{-- Invitee details --}}
-                <div class="grid grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 gap-3 min-[430px]:grid-cols-2">
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div class="text-xs font-black uppercase text-slate-500">Phone</div>
-                        <div class="mt-1 break-all text-sm font-black text-[#111827]">{{ $invitee->phone ?? '—' }}</div>
+                        <div class="mt-1 break-words text-sm font-black leading-5 text-[#111827]">{{ $invitee->phone ?? '—' }}</div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div class="text-xs font-black uppercase text-slate-500">Serial</div>
-                        <div class="mt-1 break-all text-sm font-black text-[#111827]">{{ $invitee->serial_number ?? '—' }}</div>
+                        <div class="mt-1 break-words text-sm font-black leading-5 text-[#111827]">{{ $invitee->serial_number ?? '—' }}</div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div class="text-xs font-black uppercase text-slate-500">Card Type</div>
-                        <div class="mt-1 text-sm font-black text-[#111827]">{{ $invitee->cardType?->name ?? '—' }}</div>
+                        <div class="mt-1 break-words text-sm font-black leading-5 text-[#111827]">{{ $invitee->cardType?->name ?? '—' }}</div>
                     </div>
 
                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <div class="text-xs font-black uppercase text-slate-500">Table</div>
-                        <div class="mt-1 text-sm font-black text-[#111827]">{{ $invitee->table_number ?? '—' }}</div>
+                        <div class="mt-1 break-words text-sm font-black leading-5 text-[#111827]">{{ $invitee->table_number ?? '—' }}</div>
                     </div>
                 </div>
 
@@ -125,29 +126,29 @@
 
                 {{-- Guest limits --}}
                 <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                    <div class="rounded-2xl bg-slate-100 p-4 text-center sm:col-span-1">
+                    <div class="rounded-2xl bg-slate-100 p-3 text-center sm:col-span-1 sm:p-4">
                         <div class="text-[11px] font-black uppercase text-slate-500">Allowed</div>
-                        <div class="mt-1 text-3xl font-black text-[#111827]">{{ $allowedGuestsValue }}</div>
+                        <div class="mt-1 text-2xl font-black text-[#111827] sm:text-3xl">{{ $allowedGuestsValue }}</div>
                     </div>
 
-                    <div class="rounded-2xl bg-blue-50 p-4 text-center sm:col-span-1">
+                    <div class="rounded-2xl bg-blue-50 p-3 text-center sm:col-span-1 sm:p-4">
                         <div class="text-[11px] font-black uppercase text-slate-500">Confirmed</div>
-                        <div class="mt-1 text-3xl font-black text-[#213B73]">{{ $confirmedGuestsValue }}</div>
+                        <div class="mt-1 text-2xl font-black text-[#213B73] sm:text-3xl">{{ $confirmedGuestsValue }}</div>
                     </div>
 
-                    <div class="rounded-2xl bg-orange-50 p-4 text-center sm:col-span-1">
+                    <div class="rounded-2xl bg-orange-50 p-3 text-center sm:col-span-1 sm:p-4">
                         <div class="text-[11px] font-black uppercase text-slate-500">Gate Limit</div>
-                        <div class="mt-1 text-3xl font-black text-[#FD9618]">{{ $gateLimitValue }}</div>
+                        <div class="mt-1 text-2xl font-black text-[#FD9618] sm:text-3xl">{{ $gateLimitValue }}</div>
                     </div>
 
-                    <div class="rounded-2xl bg-green-50 p-4 text-center sm:col-span-1">
+                    <div class="rounded-2xl bg-green-50 p-3 text-center sm:col-span-1 sm:p-4">
                         <div class="text-[11px] font-black uppercase text-slate-500">Checked In</div>
-                        <div class="mt-1 text-3xl font-black text-green-700">{{ $checkedInCountValue }}</div>
+                        <div class="mt-1 text-2xl font-black text-green-700 sm:text-3xl">{{ $checkedInCountValue }}</div>
                     </div>
 
-                    <div class="col-span-2 rounded-2xl bg-[#213B73] p-4 text-center text-white sm:col-span-1">
+                    <div class="col-span-2 rounded-2xl bg-[#213B73] p-3 text-center text-white sm:col-span-1 sm:p-4">
                         <div class="text-[11px] font-black uppercase text-white/70">Remaining</div>
-                        <div class="mt-1 text-3xl font-black">{{ $remainingGuestsValue }}</div>
+                        <div class="mt-1 text-2xl font-black sm:text-3xl">{{ $remainingGuestsValue }}</div>
                     </div>
                 </div>
 
@@ -177,7 +178,7 @@
                                 </label>
 
                                 @if ($remainingGuestsValue <= 6)
-                                    <div class="grid grid-cols-3 gap-3">
+                                    <div class="grid grid-cols-2 gap-3 min-[430px]:grid-cols-3">
                                         @for ($i = 1; $i <= $remainingGuestsValue; $i++)
                                             <label class="cursor-pointer">
                                                 <input
@@ -188,7 +189,7 @@
                                                     @checked($i === 1)
                                                     required
                                                 >
-                                                <span class="flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm font-black text-[#111827] transition peer-checked:border-[#213B73] peer-checked:bg-[#213B73] peer-checked:text-white">
+                                                <span class="flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 text-base font-black text-[#111827] transition peer-checked:border-[#213B73] peer-checked:bg-[#213B73] peer-checked:text-white">
                                                     {{ $i }}
                                                 </span>
                                             </label>
@@ -197,7 +198,7 @@
                                 @else
                                     <select
                                         name="guests_to_check_in"
-                                        class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-base font-black text-[#111827] outline-none focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
+                                        class="w-full min-h-12 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base font-black text-[#111827] outline-none focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
                                         required
                                     >
                                         @for ($i = 1; $i <= $remainingGuestsValue; $i++)
@@ -213,7 +214,7 @@
 
                             <button
                                 type="submit"
-                                class="w-full rounded-2xl bg-green-600 px-5 py-4 text-base font-black text-white shadow-sm transition hover:bg-green-700"
+                                class="w-full min-h-12 rounded-2xl bg-green-600 px-5 py-4 text-base font-black text-white shadow-sm transition hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-200 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 Confirm Check-in
                             </button>
@@ -231,6 +232,15 @@
                         Login to Check In
                     </a>
                 @endauth
+            </div>
+
+            <div class="border-t border-slate-200 bg-slate-50 px-4 py-4 text-center sm:px-6">
+                <a
+                    href="{{ url('/admin/gate-check-in') }}"
+                    class="inline-flex min-h-11 items-center justify-center rounded-xl px-4 text-sm font-black text-[#213B73] transition hover:bg-white"
+                >
+                    Back to Assigned Events
+                </a>
             </div>
         </section>
     </main>

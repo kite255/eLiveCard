@@ -163,6 +163,14 @@ class InviteesRelationManager extends RelationManager
             && $user->isSuperAdmin();
     }
 
+    protected function brandedNotification(): Notification
+    {
+        return Notification::make()
+            ->icon('heroicon-o-check-badge')
+            ->iconColor('primary')
+            ->color('primary');
+    }
+
     public function form(Form $form): Form
     {
         return $form
@@ -174,7 +182,12 @@ class InviteesRelationManager extends RelationManager
                             ->label('Full Name')
                             ->required()
                             ->maxLength(255)
-                            ->placeholder('Example: Guest Name'),
+                            ->placeholder('Example: Guest Name')
+                            ->dehydrateStateUsing(
+                                fn (?string $state): string =>
+                                    trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
+                            )
+                            ->helperText('The invitee name must be unique within this event. Phone numbers may be shared.'),
 
                         Forms\Components\TextInput::make('phone')
                             ->label('Phone Number')
@@ -182,7 +195,7 @@ class InviteesRelationManager extends RelationManager
                             ->required()
                             ->maxLength(30)
                             ->placeholder('Example: 0711111111')
-                            ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111.'),
+                            ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111. The same phone number may be used by multiple invitees.'),
 
                         Forms\Components\TextInput::make('email')
                             ->label('Email')
@@ -707,7 +720,12 @@ class InviteesRelationManager extends RelationManager
                                     ->label('Full Name')
                                     ->required()
                                     ->maxLength(255)
-                                    ->placeholder('Example: Guest Name'),
+                                    ->placeholder('Example: Guest Name')
+                                    ->dehydrateStateUsing(
+                                        fn (?string $state): string =>
+                                            trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
+                                    )
+                                    ->helperText('The name must be unique within this event. A phone number may belong to multiple invitees.'),
 
                                 Forms\Components\TextInput::make('phone')
                                     ->label('Phone Number')
@@ -715,7 +733,7 @@ class InviteesRelationManager extends RelationManager
                                     ->required()
                                     ->maxLength(30)
                                     ->placeholder('Example: 0711111111')
-                                    ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111.'),
+                                    ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111. The same phone number may be used by multiple invitees.'),
 
                                 Forms\Components\TextInput::make('email')
                                     ->label('Email')
@@ -787,7 +805,6 @@ class InviteesRelationManager extends RelationManager
                     ])
                     ->action(function (array $data): void {
                         $this->validateNoDuplicateInviteeName($data['name'] ?? null);
-                        $this->validateNoDuplicateInviteePhone($data['phone'] ?? null);
 
                         $preparedData = $this->prepareInviteeData($data);
 
@@ -806,8 +823,8 @@ class InviteesRelationManager extends RelationManager
 
                         $this->queueAutomaticCardGeneration($invitee);
 
-                        Notification::make()
-                            ->title('Invitee added')
+                        $this->brandedNotification()
+                            ->title('eLive Card • Invitee added')
                             ->body('Serial number, QR code, private link, and card generation have been started automatically.')
                             ->success()
                             ->send();
@@ -874,8 +891,8 @@ class InviteesRelationManager extends RelationManager
                             ],
                         );
 
-                        Notification::make()
-                            ->title($queued > 0 ? 'Card generation started' : 'No missing cards')
+                        $this->brandedNotification()
+                            ->title('eLive Card • ' . ($queued > 0 ? 'Card generation started' : 'No missing cards'))
                             ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
                             ->color($failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info'))
                             ->persistent()
@@ -995,8 +1012,8 @@ class InviteesRelationManager extends RelationManager
                             $selectedTemplate = $this->messageTemplateById((int) $data['message_template_id'], 'whatsapp');
 
                             if (! $selectedTemplate) {
-                                Notification::make()
-                                    ->title('WhatsApp template not found')
+                                $this->brandedNotification()
+                                    ->title('eLive Card • WhatsApp template not found')
                                     ->body('Please choose a valid WhatsApp template.')
                                     ->danger()
                                     ->send();
@@ -1164,8 +1181,8 @@ class InviteesRelationManager extends RelationManager
                         ->label('Refresh Status')
                         ->icon('heroicon-o-arrow-path')
                         ->action(function (): void {
-                            Notification::make()
-                                ->title('Status refreshed')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Status refreshed')
                                 ->body('The invitee and card generation statuses have been refreshed.')
                                 ->success()
                                 ->send();
@@ -1217,7 +1234,12 @@ class InviteesRelationManager extends RelationManager
                                     Forms\Components\TextInput::make('name')
                                         ->label('Full Name')
                                         ->required()
-                                        ->maxLength(255),
+                                        ->maxLength(255)
+                                        ->dehydrateStateUsing(
+                                            fn (?string $state): string =>
+                                                trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
+                                        )
+                                        ->helperText('The name must remain unique within this event. Phone numbers may repeat.'),
 
                                     Forms\Components\TextInput::make('phone')
                                         ->label('Phone Number')
@@ -1297,7 +1319,6 @@ class InviteesRelationManager extends RelationManager
                         ])
                         ->action(function (Invitee $record, array $data): void {
                             $this->validateNoDuplicateInviteeName($data['name'] ?? null, $record->id);
-                            $this->validateNoDuplicateInviteePhone($data['phone'] ?? null, $record->id);
 
                             $data['phone'] = $this->normalizePhone($data['phone'] ?? null);
 
@@ -1372,8 +1393,8 @@ class InviteesRelationManager extends RelationManager
                                 $this->queueAutomaticCardGeneration($record, true);
                             }
 
-                            Notification::make()
-                                ->title('Invitee updated successfully')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee updated successfully')
                                 ->body($shouldRegenerateCard
                                     ? 'Card-related details changed, so card regeneration has started automatically.'
                                     : 'Invitee details updated. Card regeneration was not needed.')
@@ -1391,8 +1412,8 @@ class InviteesRelationManager extends RelationManager
                         ->modalDescription('This will generate the personalized card in the background.')
                         ->action(function (Invitee $record): void {
                             if ($record->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING) {
-                                Notification::make()
-                                    ->title('Card is already generating')
+                                $this->brandedNotification()
+                                    ->title('eLive Card • Card is already generating')
                                     ->warning()
                                     ->send();
 
@@ -1411,8 +1432,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Card generation started')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Card generation started')
                                 ->body('Click Refresh Status after a few seconds to update the Card Gen column from Generating to Generated.')
                                 ->success()
                                 ->send();
@@ -1442,8 +1463,8 @@ class InviteesRelationManager extends RelationManager
                                 description: 'Failed invitation card generation was retried.',
                             );
 
-                            Notification::make()
-                                ->title('Card generation restarted')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Card generation restarted')
                                 ->body('Click Refresh Status after a few seconds to update the Card Gen column.')
                                 ->success()
                                 ->send();
@@ -1460,8 +1481,8 @@ class InviteesRelationManager extends RelationManager
                         ->label('Show Private Link')
                         ->icon('heroicon-o-link')
                         ->action(function ($record) {
-                            Notification::make()
-                                ->title('Private invitee link')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Private invitee link')
                                 ->body(route('invitee.page', $record->short_code))
                                 ->success()
                                 ->persistent()
@@ -1534,8 +1555,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            $notification = Notification::make()
-                                ->title($result['title'])
+                            $notification = $this->brandedNotification()
+                                ->title('eLive Card • ' . $result['title'])
                                 ->body($result['body'])
                                 ->persistent();
 
@@ -1581,8 +1602,8 @@ class InviteesRelationManager extends RelationManager
                                 ]),
                             );
 
-                            Notification::make()
-                                ->title('Invitee marked as attending')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee marked as attending')
                                 ->success()
                                 ->send();
                         }),
@@ -1618,8 +1639,8 @@ class InviteesRelationManager extends RelationManager
                                 ]),
                             );
 
-                            Notification::make()
-                                ->title('Invitee marked as not attending')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee marked as not attending')
                                 ->success()
                                 ->send();
                         }),
@@ -1655,8 +1676,8 @@ class InviteesRelationManager extends RelationManager
                                 ]),
                             );
 
-                            Notification::make()
-                                ->title('RSVP reset to pending')
+                            $this->brandedNotification()
+                                ->title('eLive Card • RSVP reset to pending')
                                 ->success()
                                 ->send();
                         }),
@@ -1684,8 +1705,8 @@ class InviteesRelationManager extends RelationManager
                                 newValues: $record->only(['card_status']),
                             );
 
-                            Notification::make()
-                                ->title('Invitee cancelled successfully')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee cancelled successfully')
                                 ->success()
                                 ->send();
                         }),
@@ -1712,13 +1733,13 @@ class InviteesRelationManager extends RelationManager
 
                                 $record->delete();
 
-                                Notification::make()
-                                    ->title('Invitee deleted successfully')
+                                $this->brandedNotification()
+                                    ->title('eLive Card • Invitee deleted successfully')
                                     ->success()
                                     ->send();
                             } catch (Throwable $e) {
-                                Notification::make()
-                                    ->title('Invitee could not be deleted')
+                                $this->brandedNotification()
+                                    ->title('eLive Card • Invitee could not be deleted')
                                     ->body('This invitee may already have related records such as SMS logs, generated cards, RSVP, or check-in records. Use Cancel Invitee instead.')
                                     ->danger()
                                     ->persistent()
@@ -1790,8 +1811,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('QR regeneration completed')
+                            $this->brandedNotification()
+                                ->title('eLive Card • QR regeneration completed')
                                 ->body("Regenerated: {$regenerated}. Skipped: {$skipped}. Failed: {$failed}.")
                                 ->color($failed > 0 ? 'warning' : 'success')
                                 ->persistent()
@@ -1890,8 +1911,8 @@ class InviteesRelationManager extends RelationManager
                                 }
                             }
 
-                            Notification::make()
-                                ->title($withIssues > 0 ? 'Invitee health check completed with issues' : 'Invitee health check passed')
+                            $this->brandedNotification()
+                                ->title('eLive Card • ' . ($withIssues > 0 ? 'Invitee health check completed with issues' : 'Invitee health check passed'))
                                 ->body($body)
                                 ->color($withIssues > 0 ? 'warning' : 'success')
                                 ->persistent()
@@ -1951,8 +1972,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title($queued > 0 ? 'Missing selected cards queued' : 'No missing selected cards')
+                            $this->brandedNotification()
+                                ->title('eLive Card • ' . ($queued > 0 ? 'Missing selected cards queued' : 'No missing selected cards'))
                                 ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
                                 ->color($failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info'))
                                 ->persistent()
@@ -2004,8 +2025,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Selected card regeneration started')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Selected card regeneration started')
                                 ->body("Queued: {$queued}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
                                 ->color($failed > 0 ? 'warning' : 'success')
                                 ->persistent()
@@ -2043,8 +2064,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Cards marked as sent')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Cards marked as sent')
                                 ->body($marked . ' card(s) marked as sent. ' . $skipped . ' skipped because they have no generated card.')
                                 ->success()
                                 ->send();
@@ -2084,8 +2105,8 @@ class InviteesRelationManager extends RelationManager
                                 );
                             });
 
-                            Notification::make()
-                                ->title('Selected invitees marked as attending')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Selected invitees marked as attending')
                                 ->success()
                                 ->send();
                         }),
@@ -2124,8 +2145,8 @@ class InviteesRelationManager extends RelationManager
                                 );
                             });
 
-                            Notification::make()
-                                ->title('Selected RSVP records reset')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Selected RSVP records reset')
                                 ->success()
                                 ->send();
                         }),
@@ -2154,8 +2175,8 @@ class InviteesRelationManager extends RelationManager
                                 );
                             });
 
-                            Notification::make()
-                                ->title('Selected invitees cancelled successfully')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Selected invitees cancelled successfully')
                                 ->success()
                                 ->send();
                         }),
@@ -2190,8 +2211,8 @@ class InviteesRelationManager extends RelationManager
                                 }
                             }
 
-                            Notification::make()
-                                ->title('Bulk delete completed')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Bulk delete completed')
                                 ->body("Deleted: {$deleted}. Failed: {$failed}. If some failed, use Cancel Selected Invitees.")
                                 ->success()
                                 ->persistent()
@@ -2281,8 +2302,8 @@ class InviteesRelationManager extends RelationManager
                                 ],
                             );
 
-                            Notification::make()
-                                ->title('Selected messages processed')
+                            $this->brandedNotification()
+                                ->title('eLive Card • Selected messages processed')
                                 ->body("Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
                                 ->color($failed > 0 ? 'warning' : 'success')
                                 ->persistent()
@@ -2550,8 +2571,8 @@ class InviteesRelationManager extends RelationManager
         $invitees = $query->get();
 
         if ($invitees->isEmpty()) {
-            Notification::make()
-                ->title('No invitees found')
+            $this->brandedNotification()
+                ->title('eLive Card • No invitees found')
                 ->body('No invitees matched the selected option.')
                 ->warning()
                 ->send();
@@ -2562,8 +2583,8 @@ class InviteesRelationManager extends RelationManager
         $template = $this->resolveMessageTemplate($channel, $templateType, $messageTemplateId);
 
         if (! $template) {
-            Notification::make()
-                ->title('Message template not found')
+            $this->brandedNotification()
+                ->title('eLive Card • Message template not found')
                 ->body("No active {$channel} template found for type: {$templateType}. Please create or activate it in the Message Templates tab.")
                 ->danger()
                 ->persistent()
@@ -2632,8 +2653,8 @@ class InviteesRelationManager extends RelationManager
             ],
         );
 
-        Notification::make()
-            ->title($actionTitle)
+        $this->brandedNotification()
+            ->title('eLive Card • ' . $actionTitle)
             ->body($body)
             ->color($failed > 0 ? 'warning' : 'success')
             ->persistent()
@@ -2840,8 +2861,8 @@ class InviteesRelationManager extends RelationManager
         } catch (Throwable $e) {
             report($e);
 
-            Notification::make()
-                ->title('Invitee saved, but card generation was not started')
+            $this->brandedNotification()
+                ->title('eLive Card • Invitee saved, but card generation was not started')
                 ->body($e->getMessage())
                 ->warning()
                 ->persistent()
@@ -3661,8 +3682,8 @@ class InviteesRelationManager extends RelationManager
     protected function importInviteesFromExcel(mixed $file): void
     {
         if (! $file instanceof TemporaryUploadedFile) {
-            Notification::make()
-                ->title('Invalid Excel upload')
+            $this->brandedNotification()
+                ->title('eLive Card • Invalid Excel upload')
                 ->body('Please upload the Excel file again.')
                 ->danger()
                 ->send();
@@ -3673,8 +3694,8 @@ class InviteesRelationManager extends RelationManager
         $fullPath = $file->getRealPath();
 
         if (! $fullPath || ! file_exists($fullPath)) {
-            Notification::make()
-                ->title('Excel file not found')
+            $this->brandedNotification()
+                ->title('eLive Card • Excel file not found')
                 ->body('The temporary uploaded file could not be found. Please upload again.')
                 ->danger()
                 ->send();
@@ -3686,8 +3707,8 @@ class InviteesRelationManager extends RelationManager
         $rows = collect($spreadsheet->getActiveSheet()->toArray(null, true, true, true));
 
         if ($rows->count() < 2) {
-            Notification::make()
-                ->title('Empty Excel file')
+            $this->brandedNotification()
+                ->title('eLive Card • Empty Excel file')
                 ->body('The Excel file must contain headings and at least one invitee row.')
                 ->danger()
                 ->send();
@@ -3715,8 +3736,8 @@ class InviteesRelationManager extends RelationManager
 
         foreach ($requiredColumns as $column) {
             if (! in_array($column, $headings, true)) {
-                Notification::make()
-                    ->title('Missing required column')
+                $this->brandedNotification()
+                    ->title('eLive Card • Missing required column')
                     ->body("Your Excel file is missing the required column: {$column}")
                     ->danger()
                     ->send();
@@ -3788,16 +3809,12 @@ class InviteesRelationManager extends RelationManager
 
             $existingInvitee = Invitee::query()
                 ->where('event_id', $eventId)
-                ->where(function (Builder $query) use ($normalizedName, $phone): void {
-                    $query
-                        ->whereRaw('LOWER(TRIM(name)) = ?', [$normalizedName])
-                        ->orWhere('phone', $phone);
-                })
+                ->whereRaw('LOWER(TRIM(name)) = ?', [$normalizedName])
                 ->first();
 
             if ($existingInvitee) {
                 $skipped++;
-                $errors[] = "Row {$rowNumber}: invitee name or phone already exists for this event.";
+                $errors[] = "Row {$rowNumber}: invitee name '{$name}' already exists for this event.";
                 continue;
             }
 
@@ -3861,8 +3878,8 @@ class InviteesRelationManager extends RelationManager
             ],
         );
 
-        Notification::make()
-            ->title('Excel import completed')
+        $this->brandedNotification()
+            ->title('eLive Card • Excel import completed')
             ->body($message)
             ->success()
             ->persistent()
@@ -3999,6 +4016,16 @@ class InviteesRelationManager extends RelationManager
     {
         $data['event_id'] = $this->getOwnerRecord()->id;
 
+        $data['name'] = trim(
+            preg_replace('/\s+/', ' ', (string) ($data['name'] ?? '')) ?? ''
+        );
+
+        if ($data['name'] === '') {
+            throw ValidationException::withMessages([
+                'name' => 'Invitee name is required.',
+            ]);
+        }
+
         $data['phone'] = $this->normalizePhone($data['phone'] ?? null);
 
         if (! $data['phone']) {
@@ -4067,39 +4094,12 @@ class InviteesRelationManager extends RelationManager
         }
     }
 
-    protected function validateNoDuplicateInviteePhone(
-        ?string $phone,
-        ?int $ignoreInviteeId = null,
-    ): void {
-        $normalizedPhone = $this->normalizePhone($phone);
-
-        if (blank($normalizedPhone)) {
-            return;
-        }
-
-        $exists = Invitee::query()
-            ->where('event_id', $this->getOwnerRecord()->getKey())
-            ->when(
-                $ignoreInviteeId,
-                fn (Builder $query): Builder =>
-                    $query->whereKeyNot($ignoreInviteeId)
-            )
-            ->where('phone', $normalizedPhone)
-            ->exists();
-
-        if ($exists) {
-            throw ValidationException::withMessages([
-                'phone' => 'This phone number already belongs to another invitee in this event.',
-            ]);
-        }
-    }
-
     protected function normalizeName(string $name): string
     {
         $name = trim($name);
-        $name = preg_replace('/\s+/', ' ', $name);
+        $name = preg_replace('/\s+/', ' ', $name) ?? '';
 
-        return strtolower($name);
+        return mb_strtolower($name);
     }
 
     protected function generateUniqueSerialNumber(): string

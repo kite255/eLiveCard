@@ -19,14 +19,25 @@ class CardGenerationService
 {
     /**
      * Maximum working width/height for generated cards.
-     * This prevents GD memory errors when the uploaded template image is very large.
+     *
+     * 3200px keeps portrait invitations sharp while still reducing the chance
+     * of GD memory exhaustion for unusually large source images.
      */
-    protected int $maxWorkingDimension = 2400;
+    protected int $maxWorkingDimension = 3200;
 
     /**
      * JPEG quality for final generated cards.
+     *
+     * Quality 95 provides sharp text, logos, and QR edges without the excessive
+     * file size normally produced by quality 100.
      */
-    protected int $jpegQuality = 88;
+    protected int $jpegQuality = 95;
+
+    /**
+     * Safe margin used to prevent text and QR placeholders from touching or
+     * extending beyond the visible card edges.
+     */
+    protected float $safeMarginPercent = 3.0;
 
     public function generateForInvitee(Invitee $invitee): GeneratedCard
     {
@@ -38,10 +49,24 @@ class CardGenerationService
             throw new \Exception('Invitee does not belong to an event.');
         }
 
-        $template = $event->cardTemplates()
-            ->when(Schema::hasColumn('card_templates', 'status'), function ($query) {
-                $query->whereIn('status', ['active', 'published', 'draft']);
-            })
+        $templateQuery = $event->cardTemplates();
+
+        $template = Schema::hasColumn('card_templates', 'status')
+            ? (clone $templateQuery)
+                ->whereIn('status', ['active', 'published'])
+                ->latest('id')
+                ->first()
+            : null;
+
+        $template ??= (clone $templateQuery)
+            ->when(
+                Schema::hasColumn('card_templates', 'status'),
+                fn ($query) => $query->where('status', 'draft')
+            )
+            ->latest('id')
+            ->first();
+
+        $template ??= $templateQuery
             ->latest('id')
             ->first();
 
@@ -122,7 +147,19 @@ class CardGenerationService
 
             $path = $this->buildGeneratedCardPath($template, $invitee);
 
-            Storage::disk('public')->put($path, (string) $image->toJpeg($this->jpegQuality));
+            $encodedCard = $image->toJpeg(
+                quality: $this->jpegQuality,
+                progressive: true
+            );
+
+            Storage::disk('public')->makeDirectory(
+                dirname($path)
+            );
+
+            Storage::disk('public')->put(
+                $path,
+                (string) $encodedCard
+            );
 
             $generatedCard = GeneratedCard::updateOrCreate(
                 [
@@ -293,11 +330,28 @@ class CardGenerationService
         int $imageWidth,
         int $imageHeight
     ): void {
-        $x = $this->percentToPixels($placeholder->x_percent ?? 0, $imageWidth);
-        $y = $this->percentToPixels($placeholder->y_percent ?? 0, $imageHeight);
+        $text = trim($text);
 
-        $boxWidth = max(10, $this->percentToPixels($placeholder->width_percent ?? 20, $imageWidth));
-        $boxHeight = max(10, $this->percentToPixels($placeholder->height_percent ?? 5, $imageHeight));
+        /*
+        |--------------------------------------------------------------------------
+        | Ignore accidental decorative fragments
+        |--------------------------------------------------------------------------
+        | Prevent isolated bullets or punctuation from appearing as black dots
+        | when a placeholder contains no meaningful value.
+        */
+        if ($text === '' || preg_match('/^[\p{P}\p{S}\s]+$/u', $text)) {
+            return;
+        }
+
+        [$x, $y, $boxWidth, $boxHeight] = $this->resolveSafePlaceholderBox(
+            placeholder: $placeholder,
+            imageWidth: $imageWidth,
+            imageHeight: $imageHeight,
+            defaultWidthPercent: 20,
+            defaultHeightPercent: 5,
+            minimumWidth: 10,
+            minimumHeight: 10,
+        );
 
         $fontSize = max(8, (int) ($placeholder->font_size ?: 24));
         $fontColor = $this->normalizeHexColor($placeholder->font_color ?: '#000000');
@@ -311,19 +365,31 @@ class CardGenerationService
             fontWeight: $fontWeight
         );
 
-        $lines = $this->wrapTextToBox(
+        /*
+        |--------------------------------------------------------------------------
+        | Auto-fit text
+        |--------------------------------------------------------------------------
+        | Reduce the font only when needed so long names, venues, categories,
+        | and contact details remain within their placeholder boxes.
+        */
+        [$fontSize, $lines] = $this->fitTextToBox(
             text: $text,
             boxWidth: $boxWidth,
-            fontSize: $fontSize,
-            fontFile: $fontFile
+            boxHeight: $boxHeight,
+            initialFontSize: $fontSize,
+            fontFile: $fontFile,
         );
 
-        $lineHeight = max(10, (int) round($fontSize * 1.25));
+        $lineHeight = max(10, (int) round($fontSize * 1.22));
         $textBlockHeight = max($lineHeight, count($lines) * $lineHeight);
         $startY = $y + max(0, (int) round(($boxHeight - $textBlockHeight) / 2));
 
         foreach ($lines as $index => $line) {
             $lineY = $startY + ($index * $lineHeight);
+
+            if ($lineY + $lineHeight > $y + $boxHeight) {
+                break;
+            }
 
             $drawX = match ($textAlign) {
                 'left' => $x,
@@ -357,45 +423,330 @@ class CardGenerationService
         int $imageWidth,
         int $imageHeight
     ): void {
-        $x = $this->percentToPixels($placeholder->x_percent ?? 0, $imageWidth);
-        $y = $this->percentToPixels($placeholder->y_percent ?? 0, $imageHeight);
+        [$x, $y, $boxWidth, $boxHeight] = $this->resolveSafePlaceholderBox(
+            placeholder: $placeholder,
+            imageWidth: $imageWidth,
+            imageHeight: $imageHeight,
+            defaultWidthPercent: CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
+            defaultHeightPercent: CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
+            minimumWidth: 40,
+            minimumHeight: 40,
+        );
 
-        $boxWidth = max(40, $this->percentToPixels($placeholder->width_percent ?? 15, $imageWidth));
-        $boxHeight = max(40, $this->percentToPixels($placeholder->height_percent ?? 15, $imageHeight));
+        $maxBoxSize = max(1, min($boxWidth, $boxHeight));
 
-        $maxBoxSize = min($boxWidth, $boxHeight);
-        $requestedQrSize = (int) ($placeholder->qr_size ?: $maxBoxSize);
-        $qrSize = max(40, min($requestedQrSize, $maxBoxSize, 800));
+        /*
+        |--------------------------------------------------------------------------
+        | QR size protection
+        |--------------------------------------------------------------------------
+        | Keep the QR fully inside the placeholder so its background does not
+        | overlap nearby event text or other placeholders.
+        */
+        $requestedQrSize = (int) (
+            $placeholder->qr_size
+            ?: CardTemplatePlaceholder::DEFAULT_QR_SIZE
+        );
 
-        if ($maxBoxSize < 80) {
-            $qrSize = $maxBoxSize;
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | Match the designer placeholder size
+        |--------------------------------------------------------------------------
+        | The placeholder controls the QR's visible physical size.
+        | qr_size is treated as an output-quality preference, not as a limit
+        | that can make the generated QR smaller than the designed box.
+        */
+        $padding = max(
+            2,
+            (int) round($maxBoxSize * 0.015)
+        );
+
+        $availableQrSize = max(
+            1,
+            $maxBoxSize - ($padding * 2)
+        );
+
+        $qrSize = min(
+            $availableQrSize,
+            CardTemplatePlaceholder::MAX_QR_SIZE
+        );
 
         $qrFullPath = $this->getInviteeQrFullPath($invitee);
 
         if (! $qrFullPath || ! file_exists($qrFullPath)) {
-            throw new \Exception('QR code image not found for invitee: ' . ($invitee->name ?: $invitee->id));
+            throw new \Exception(
+                'QR code image not found for invitee: '
+                .($invitee->name ?: $invitee->id)
+            );
         }
 
-        $qrImage = $manager->read($qrFullPath)->resize($qrSize, $qrSize);
+        $qrColor = $this->normalizeHexColor(
+            $placeholder->qr_color
+                ?: CardTemplatePlaceholder::DEFAULT_QR_COLOR
+        );
 
-        $placeX = $x + (int) round(($boxWidth - $qrSize) / 2);
-        $placeY = $y + (int) round(($boxHeight - $qrSize) / 2);
+        $qrBackgroundColor = $this->normalizeHexColor(
+            $placeholder->qr_background_color
+                ?: CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR
+        );
 
-        // Add a small white background/padding behind the QR so it scans better on busy card designs.
-        $padding = max(4, (int) round($qrSize * 0.04));
-        $backgroundSize = $qrSize + ($padding * 2);
-        $backgroundX = $placeX - $padding;
-        $backgroundY = $placeY - $padding;
+        if (! $this->hasSafeQrContrast(
+            foregroundHex: $qrColor,
+            backgroundHex: $qrBackgroundColor,
+        )) {
+            Log::warning('Unsafe QR contrast detected. Falling back to secure defaults.', [
+                'template_id' => $placeholder->card_template_id,
+                'placeholder_id' => $placeholder->id,
+                'invitee_id' => $invitee->id,
+                'qr_color' => $qrColor,
+                'qr_background_color' => $qrBackgroundColor,
+            ]);
+
+            $qrColor = CardTemplatePlaceholder::DEFAULT_QR_COLOR;
+            $qrBackgroundColor = CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR;
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Colored QR rendering
+        |--------------------------------------------------------------------------
+        | Rebuild the existing secure QR as a crisp two-color PNG using nearest
+        | neighbour sampling. This prevents blurred modules and applies the
+        | placeholder's selected QR and background colors.
+        */
+        $qrBinary = $this->buildColoredQrPng(
+            sourcePath: $qrFullPath,
+            size: $qrSize,
+            foregroundHex: $qrColor,
+            backgroundHex: $qrBackgroundColor,
+        );
+
+        $qrImage = $manager->read($qrBinary);
+
+        $backgroundSize = $maxBoxSize;
+
+        $backgroundX = $x + (int) round(
+            ($boxWidth - $backgroundSize) / 2
+        );
+
+        $backgroundY = $y + (int) round(
+            ($boxHeight - $backgroundSize) / 2
+        );
+
+        $placeX = $backgroundX + (int) round(
+            ($backgroundSize - $qrSize) / 2
+        );
+
+        $placeY = $backgroundY + (int) round(
+            ($backgroundSize - $qrSize) / 2
+        );
 
         if (method_exists($image, 'drawRectangle')) {
-            $image->drawRectangle($backgroundX, $backgroundY, function ($rectangle) use ($backgroundSize): void {
-                $rectangle->size($backgroundSize, $backgroundSize);
-                $rectangle->background('#FFFFFF');
-            });
+            $image->drawRectangle(
+                $backgroundX,
+                $backgroundY,
+                function ($rectangle) use (
+                    $backgroundSize,
+                    $qrBackgroundColor
+                ): void {
+                    $rectangle->size($backgroundSize, $backgroundSize);
+                    $rectangle->background($qrBackgroundColor);
+                }
+            );
         }
 
-        $image->place($qrImage, 'top-left', $placeX, $placeY);
+        $image->place(
+            $qrImage,
+            'top-left',
+            $placeX,
+            $placeY
+        );
+    }
+
+    /**
+     * Build a sharp, recolored QR PNG from the existing secure QR image.
+     */
+    protected function buildColoredQrPng(
+        string $sourcePath,
+        int $size,
+        string $foregroundHex,
+        string $backgroundHex,
+    ): string {
+        if (! function_exists('imagecreatefromstring')) {
+            throw new \RuntimeException(
+                'The GD extension is required for colored QR generation.'
+            );
+        }
+
+        $sourceContents = @file_get_contents($sourcePath);
+
+        if ($sourceContents === false) {
+            throw new \RuntimeException(
+                'Unable to read the invitee QR image.'
+            );
+        }
+
+        $source = @imagecreatefromstring($sourceContents);
+
+        if ($source === false) {
+            throw new \RuntimeException(
+                'The invitee QR image could not be decoded.'
+            );
+        }
+
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+
+        $size = max(1, min(
+            $size,
+            CardTemplatePlaceholder::MAX_QR_SIZE
+        ));
+
+        $target = imagecreatetruecolor($size, $size);
+
+        if ($target === false) {
+            imagedestroy($source);
+
+            throw new \RuntimeException(
+                'Unable to create the colored QR image.'
+            );
+        }
+
+        [$foregroundRed, $foregroundGreen, $foregroundBlue] =
+            $this->hexToRgb($foregroundHex);
+
+        [$backgroundRed, $backgroundGreen, $backgroundBlue] =
+            $this->hexToRgb($backgroundHex);
+
+        $foreground = imagecolorallocate(
+            $target,
+            $foregroundRed,
+            $foregroundGreen,
+            $foregroundBlue
+        );
+
+        $background = imagecolorallocate(
+            $target,
+            $backgroundRed,
+            $backgroundGreen,
+            $backgroundBlue
+        );
+
+        imagefill($target, 0, 0, $background);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Nearest-neighbour QR mapping
+        |--------------------------------------------------------------------------
+        | A luminance threshold identifies dark modules. Direct nearest-neighbour
+        | mapping preserves hard QR edges better than normal image resampling.
+        */
+        for ($targetY = 0; $targetY < $size; $targetY++) {
+            $sourceY = min(
+                $sourceHeight - 1,
+                (int) floor(($targetY / $size) * $sourceHeight)
+            );
+
+            for ($targetX = 0; $targetX < $size; $targetX++) {
+                $sourceX = min(
+                    $sourceWidth - 1,
+                    (int) floor(($targetX / $size) * $sourceWidth)
+                );
+
+                $rgba = imagecolorat($source, $sourceX, $sourceY);
+
+                $alpha = ($rgba & 0x7F000000) >> 24;
+                $red = ($rgba >> 16) & 0xFF;
+                $green = ($rgba >> 8) & 0xFF;
+                $blue = $rgba & 0xFF;
+
+                $luminance = (0.2126 * $red)
+                    + (0.7152 * $green)
+                    + (0.0722 * $blue);
+
+                $isForeground = $alpha < 120 && $luminance < 160;
+
+                imagesetpixel(
+                    $target,
+                    $targetX,
+                    $targetY,
+                    $isForeground ? $foreground : $background
+                );
+            }
+        }
+
+        ob_start();
+        imagepng($target, null, 9);
+        $png = ob_get_clean();
+
+        imagedestroy($source);
+        imagedestroy($target);
+
+        if (! is_string($png) || $png === '') {
+            throw new \RuntimeException(
+                'Unable to encode the colored QR image.'
+            );
+        }
+
+        return $png;
+    }
+
+    /**
+     * Convert a six-character hexadecimal color to RGB components.
+     *
+     * @return array{0:int,1:int,2:int}
+     */
+    protected function hexToRgb(string $hex): array
+    {
+        $hex = ltrim($this->normalizeHexColor($hex), '#');
+
+        return [
+            hexdec(substr($hex, 0, 2)),
+            hexdec(substr($hex, 2, 2)),
+            hexdec(substr($hex, 4, 2)),
+        ];
+    }
+
+    protected function hasSafeQrContrast(
+        string $foregroundHex,
+        string $backgroundHex,
+    ): bool {
+        return $this->calculateContrastRatio(
+            $foregroundHex,
+            $backgroundHex
+        ) >= CardTemplatePlaceholder::MIN_SAFE_QR_CONTRAST;
+    }
+
+    protected function calculateContrastRatio(
+        string $foregroundHex,
+        string $backgroundHex,
+    ): float {
+        $foregroundLuminance = $this->relativeLuminance($foregroundHex);
+        $backgroundLuminance = $this->relativeLuminance($backgroundHex);
+
+        $lighter = max($foregroundLuminance, $backgroundLuminance);
+        $darker = min($foregroundLuminance, $backgroundLuminance);
+
+        return ($lighter + 0.05) / ($darker + 0.05);
+    }
+
+    protected function relativeLuminance(string $hex): float
+    {
+        [$red, $green, $blue] = $this->hexToRgb($hex);
+
+        $components = array_map(
+            static function (int $value): float {
+                $component = $value / 255;
+
+                return $component <= 0.03928
+                    ? $component / 12.92
+                    : (($component + 0.055) / 1.055) ** 2.4;
+            },
+            [$red, $green, $blue],
+        );
+
+        return (0.2126 * $components[0])
+            + (0.7152 * $components[1])
+            + (0.0722 * $components[2]);
     }
 
     protected function getInviteeQrFullPath(Invitee $invitee): ?string
@@ -435,13 +786,19 @@ class CardGenerationService
 
     protected function syncInviteeCardStatus(Invitee $invitee, string $status): void
     {
-        if (! Schema::hasColumn('invitees', 'card_status')) {
-            return;
-        }
-
-        $invitee->forceFill([
-            'card_status' => $status,
-        ])->saveQuietly();
+        /*
+        |--------------------------------------------------------------------------
+        | Invitee card-status protection
+        |--------------------------------------------------------------------------
+        | Generation state belongs to generated_cards.status.
+        |
+        | invitees.card_status must remain a lifecycle/access value such as:
+        | active, pending, blocked, cancelled, or used.
+        |
+        | Therefore this method intentionally does not write "generated" or
+        | "failed" into invitees.card_status.
+        */
+        return;
     }
 
     protected function markGeneratedCardStatus(CardTemplate $template, Invitee $invitee, string $status, ?string $error = null): void
@@ -466,6 +823,110 @@ class CardGenerationService
             ],
             $values
         );
+    }
+
+    /**
+     * Resolve a placeholder box while enforcing a safe card margin.
+     *
+     * @return array{0:int,1:int,2:int,3:int}
+     */
+    protected function resolveSafePlaceholderBox(
+        CardTemplatePlaceholder $placeholder,
+        int $imageWidth,
+        int $imageHeight,
+        float $defaultWidthPercent,
+        float $defaultHeightPercent,
+        int $minimumWidth,
+        int $minimumHeight,
+    ): array {
+        $safeX = $this->percentToPixels($this->safeMarginPercent, $imageWidth);
+        $safeY = $this->percentToPixels($this->safeMarginPercent, $imageHeight);
+
+        $x = $this->percentToPixels($placeholder->x_percent ?? 0, $imageWidth);
+        $y = $this->percentToPixels($placeholder->y_percent ?? 0, $imageHeight);
+
+        $boxWidth = max(
+            $minimumWidth,
+            $this->percentToPixels(
+                $placeholder->width_percent ?? $defaultWidthPercent,
+                $imageWidth
+            )
+        );
+
+        $boxHeight = max(
+            $minimumHeight,
+            $this->percentToPixels(
+                $placeholder->height_percent ?? $defaultHeightPercent,
+                $imageHeight
+            )
+        );
+
+        $maxRight = max($safeX + 1, $imageWidth - $safeX);
+        $maxBottom = max($safeY + 1, $imageHeight - $safeY);
+
+        $x = max($safeX, min($x, $maxRight - $minimumWidth));
+        $y = max($safeY, min($y, $maxBottom - $minimumHeight));
+
+        $boxWidth = min($boxWidth, max($minimumWidth, $maxRight - $x));
+        $boxHeight = min($boxHeight, max($minimumHeight, $maxBottom - $y));
+
+        return [
+            (int) $x,
+            (int) $y,
+            (int) $boxWidth,
+            (int) $boxHeight,
+        ];
+    }
+
+    /**
+     * Reduce the font size until the wrapped text fits inside its box.
+     *
+     * @return array{0:int,1:array<int,string>}
+     */
+    protected function fitTextToBox(
+        string $text,
+        int $boxWidth,
+        int $boxHeight,
+        int $initialFontSize,
+        ?string $fontFile = null,
+    ): array {
+        $fontSize = max(8, $initialFontSize);
+
+        do {
+            $lines = $this->wrapTextToBox(
+                text: $text,
+                boxWidth: $boxWidth,
+                fontSize: $fontSize,
+                fontFile: $fontFile,
+            );
+
+            $lineHeight = max(10, (int) round($fontSize * 1.22));
+            $requiredHeight = count($lines) * $lineHeight;
+
+            if ($requiredHeight <= $boxHeight) {
+                return [$fontSize, $lines];
+            }
+
+            $fontSize--;
+        } while ($fontSize > 8);
+
+        $lines = $this->wrapTextToBox(
+            text: $text,
+            boxWidth: $boxWidth,
+            fontSize: 8,
+            fontFile: $fontFile,
+        );
+
+        $maxLines = max(1, (int) floor($boxHeight / 10));
+
+        if (count($lines) > $maxLines) {
+            $lines = array_slice($lines, 0, $maxLines);
+
+            $lastIndex = count($lines) - 1;
+            $lines[$lastIndex] = Str::limit($lines[$lastIndex], 40, '…');
+        }
+
+        return [8, $lines];
     }
 
     protected function wrapTextToBox(string $text, int $boxWidth, int $fontSize, ?string $fontFile = null): array
@@ -628,13 +1089,22 @@ class CardGenerationService
 
     protected function normalizeHexColor(string $color): string
     {
+        if (method_exists(CardTemplatePlaceholder::class, 'normalizeHexColor')) {
+            return CardTemplatePlaceholder::normalizeHexColor(
+                $color,
+                CardTemplatePlaceholder::DEFAULT_QR_COLOR
+            );
+        }
+
         $color = trim($color);
 
         if (! str_starts_with($color, '#')) {
             $color = '#' . $color;
         }
 
-        return preg_match('/^#[0-9A-Fa-f]{6}$/', $color) ? $color : '#000000';
+        return preg_match('/^#[0-9A-Fa-f]{6}$/', $color)
+            ? strtoupper($color)
+            : CardTemplatePlaceholder::DEFAULT_QR_COLOR;
     }
 
     protected function resolvePublicStoragePath(?string $path): ?string
