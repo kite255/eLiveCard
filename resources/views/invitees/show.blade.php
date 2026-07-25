@@ -39,24 +39,15 @@
 
     $allowedGuests = max(1, $allowedGuests);
 
-    $confirmedGuests = (int) old(
-        'confirmed_guests',
-        ((int) ($invitee->confirmed_guests ?? 0) > 0)
-            ? (int) $invitee->confirmed_guests
-            : min($allowedGuests, 1)
-    );
-
-    $confirmedGuests = max(1, min($confirmedGuests, $allowedGuests));
-
     $savedConfirmedGuests = (int) ($invitee->confirmed_guests ?? 0);
 
     $guestSummaryLabel = match ($invitee->rsvp_status ?? 'pending') {
-        'attending', 'confirmed' => $savedConfirmedGuests > 0
-            ? $savedConfirmedGuests . ' / ' . $allowedGuests . ' guest(s)'
-            : 'Awaiting guest count',
+        'attending', 'confirmed' => $allowedGuests . ' / ' . $allowedGuests . ' guest(s)',
         'not_attending', 'declined' => '0 / ' . $allowedGuests . ' guest(s)',
         default => 'Not confirmed',
     };
+
+    $isAttending = in_array($invitee->rsvp_status ?? 'pending', ['attending', 'confirmed'], true);
 
     $tableNumber = $invitee->table_number ?? null;
     $serialNumber = $invitee->serial_number ?? null;
@@ -646,32 +637,52 @@
 
     {{-- RSVP --}}
     <section id="rsvp" class="soft-card mt-4 rounded-[28px] p-5">
-        <div class="flex items-start justify-between gap-3">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-                <h2 class="section-title">Confirm Attendance</h2>
-                <p class="mt-1 text-sm muted">Please confirm if you will attend and the number of guests coming.</p>
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-[#FD9618]">
+                    RSVP
+                </p>
+
+                <h2 class="section-title mt-1">Confirm Attendance</h2>
+
+                <p class="mt-1 text-sm leading-6 muted">
+                    Confirming attendance automatically reserves all guest places allowed on this invitation.
+                </p>
             </div>
 
-            <span class="shrink-0 rounded-full border px-3 py-1 text-[11px] font-black" style="{{ $rsvpColorClass }}">
+            <span
+                class="w-fit shrink-0 rounded-full border px-3 py-1 text-[11px] font-black"
+                style="{{ $rsvpColorClass }}"
+            >
                 {{ $rsvpLabel }}
             </span>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-3 rounded-[24px] bg-slate-50 p-4 ring-1 ring-slate-100 sm:grid-cols-2">
-            <div>
-                <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">Allowed Guests</p>
-                <p class="mt-1 text-lg font-black text-[#213B73]">{{ $allowedGuests }}</p>
+        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="rounded-[22px] bg-slate-50 p-4 ring-1 ring-slate-100">
+                <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                    Allowed Guests
+                </p>
+
+                <p class="mt-2 text-2xl font-black text-[#213B73]">
+                    {{ $allowedGuests }}
+                </p>
             </div>
 
-            <div>
-                <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">Confirmed Guests</p>
-                <p class="mt-1 text-lg font-black text-[#111827]">{{ $guestSummaryLabel }}</p>
+            <div class="rounded-[22px] bg-slate-50 p-4 ring-1 ring-slate-100">
+                <p class="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                    Confirmed Guests
+                </p>
+
+                <p class="mt-2 text-2xl font-black text-[#111827]">
+                    {{ $guestSummaryLabel }}
+                </p>
             </div>
         </div>
 
-        @if ($errors->has('status') || $errors->has('confirmed_guests'))
+        @if ($errors->has('status') || $errors->has('rsvp_status'))
             <div class="mt-4 rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
-                {{ $errors->first('confirmed_guests') ?: $errors->first('status') }}
+                {{ $errors->first('status') ?: $errors->first('rsvp_status') }}
             </div>
         @endif
 
@@ -683,64 +694,29 @@
         >
             @csrf
 
-            <div class="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
-                <div class="flex items-start justify-between gap-3">
-                    <div>
-                        <p class="text-sm font-black text-slate-900">Yes, I will attend</p>
-                        <p class="mt-1 text-xs font-semibold text-slate-500">
-                            Select how many guests will attend, including you.
+            <input
+                type="hidden"
+                name="confirmed_guests"
+                value="{{ $allowedGuests }}"
+            >
+
+            <div class="rounded-[26px] border border-[#213B73]/10 bg-[#213B73]/[0.03] p-4">
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0">
+                        <p class="text-sm font-black text-slate-900">
+                            {{ $isAttending ? 'Attendance Confirmed' : 'Yes, I will attend' }}
+                        </p>
+
+                        <p class="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                            All {{ $allowedGuests }} {{ $allowedGuests === 1 ? 'guest place' : 'guest places' }}
+                            will be confirmed automatically, including you.
                         </p>
                     </div>
 
-                    <span class="rounded-full bg-[#213B73]/10 px-3 py-1 text-[11px] font-black text-[#213B73]">
-                        Max {{ $allowedGuests }}
+                    <span class="w-fit shrink-0 rounded-full bg-[#213B73]/10 px-3 py-1.5 text-[11px] font-black text-[#213B73]">
+                        {{ $allowedGuests }} {{ $allowedGuests === 1 ? 'Guest' : 'Guests' }}
                     </span>
                 </div>
-
-                @if ($allowedGuests <= 6)
-                    <div class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        @for ($guestNumber = 1; $guestNumber <= $allowedGuests; $guestNumber++)
-                            <label class="cursor-pointer">
-                                <input
-                                    type="radio"
-                                    name="confirmed_guests"
-                                    value="{{ $guestNumber }}"
-                                    class="peer sr-only"
-                                    @checked((int) old('confirmed_guests', $confirmedGuests ?: 1) === (int) $guestNumber)
-                                >
-
-                                <span class="flex h-12 items-center justify-center rounded-[18px] border border-slate-200 bg-white text-sm font-black text-slate-700 transition peer-checked:border-[#213B73] peer-checked:bg-[#213B73] peer-checked:text-white">
-                                    {{ $guestNumber }}
-                                </span>
-                            </label>
-                        @endfor
-                    </div>
-                @else
-                    <div class="mt-4">
-                        <label for="confirmed_guests" class="mb-2 block text-xs font-black uppercase tracking-wide text-slate-500">
-                            Select number of guests
-                        </label>
-
-                        <select
-                            id="confirmed_guests"
-                            name="confirmed_guests"
-                            class="w-full rounded-[18px] border border-slate-200 bg-white px-4 py-4 text-base font-black text-[#111827] outline-none transition focus:border-[#213B73] focus:ring-4 focus:ring-[#213B73]/10"
-                        >
-                            @for ($guestNumber = 1; $guestNumber <= $allowedGuests; $guestNumber++)
-                                <option
-                                    value="{{ $guestNumber }}"
-                                    @selected((int) old('confirmed_guests', $confirmedGuests ?: 1) === (int) $guestNumber)
-                                >
-                                    {{ $guestNumber }} {{ $guestNumber === 1 ? 'Guest' : 'Guests' }}
-                                </option>
-                            @endfor
-                        </select>
-
-                        <p class="mt-2 text-xs font-semibold text-slate-500">
-                            Choose a number from 1 to {{ $allowedGuests }}. You cannot exceed your invitation limit.
-                        </p>
-                    </div>
-                @endif
 
                 <button
                     type="submit"
@@ -748,17 +724,17 @@
                     value="attending"
                     class="btn mt-4 w-full bg-[#213B73] text-white shadow-lg shadow-blue-950/10"
                 >
-                    Confirm Attendance
+                    {{ $isAttending ? 'Keep Attendance Confirmed' : 'Confirm Attendance' }}
                 </button>
             </div>
 
-            <div class="rsvp-grid">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <button
                     type="submit"
                     name="status"
                     value="not_attending"
                     formnovalidate
-                    class="btn w-full bg-white text-red-700 ring-1 ring-red-100"
+                    class="btn w-full bg-white text-red-700 ring-1 ring-red-200"
                 >
                     I will not attend
                 </button>
