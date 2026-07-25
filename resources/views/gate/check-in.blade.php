@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#213B73">
 
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript" defer></script>
 
     <style>
         :root {
@@ -1148,6 +1148,8 @@
     let lastScannedValue = null;
     let lastScannedAt = 0;
     let verifyAbortController = null;
+    let scanLocked = false;
+    let scannerRestartTimer = null;
 
     const verifyUrl = @json(route('gate.check-in.verify', $event));
     const confirmUrl = @json(route('gate.check-in.confirm', $event));
@@ -1183,6 +1185,41 @@
         if (text) {
             text.innerText = message;
         }
+    }
+
+
+    function cancelScannerRestart() {
+        if (scannerRestartTimer) {
+            window.clearTimeout(scannerRestartTimer);
+            scannerRestartTimer = null;
+        }
+    }
+
+    function scheduleScannerRestart(delay = 1400) {
+        cancelScannerRestart();
+
+        if (
+            document.hidden ||
+            selectedInviteeId ||
+            checkInInProgress ||
+            scannerRunning ||
+            scannerStarting ||
+            scannerStopping
+        ) {
+            return;
+        }
+
+        scannerRestartTimer = window.setTimeout(() => {
+            scannerRestartTimer = null;
+
+            if (
+                !document.hidden &&
+                !selectedInviteeId &&
+                !checkInInProgress
+            ) {
+                startScanner();
+            }
+        }, delay);
     }
 
     function updateScannerButtons() {
@@ -1268,6 +1305,7 @@
     }
 
     function clearSelection() {
+        cancelScannerRestart();
         selectedInviteeId = null;
         selectedInvitee = null;
         remainingGuests = 0;
@@ -1489,6 +1527,8 @@
                 'Missing Input',
                 'Please scan or enter a serial number, phone, name, or short code.'
             );
+
+            scheduleScannerRestart();
             return;
         }
 
@@ -1505,7 +1545,7 @@
 
         verifyAbortController = new AbortController();
 
-        showResult('warning', 'Searching...', 'Please wait while we verify this invitee.');
+        showResult('warning', 'Verifying invitation...', 'Please wait while we validate this QR code.');
 
         try {
             const response = await fetch(verifyUrl, {
@@ -1526,22 +1566,37 @@
             });
 
             const data = await readJsonResponse(response);
+            const invitee = data.invitee || null;
+            const status = data.status || 'error';
 
             showResult(
-                data.status || 'error',
-                data.title || 'Result',
+                status,
+                data.title || 'Verification Result',
                 data.message || '',
-                data.invitee || null
+                invitee
             );
 
-            if (data.status === 'warning' && data.invitee) {
+            if (status === 'warning' && invitee) {
                 showCheckInPopup({
                     ...data,
                     title: data.title || 'Card Already Used',
                     message: data.message || 'This invitation card has already been used.',
                     status: 'warning',
                 });
+
+                return;
             }
+
+            if (status === 'success' && invitee) {
+                document.getElementById('resultBox')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                });
+
+                return;
+            }
+
+            scheduleScannerRestart();
         } catch (error) {
             if (error.name !== 'AbortError') {
                 showResult(
@@ -1549,9 +1604,12 @@
                     'Connection Error',
                     'Could not verify this invitee. Check the connection and try again.'
                 );
+
+                scheduleScannerRestart(1800);
             }
         } finally {
             verificationInProgress = false;
+            scanLocked = false;
             setManualSearchBusy(false);
         }
     }
@@ -1842,10 +1900,16 @@
             await html5QrCode.clear();
         } catch (error) {
             console.warn('Scanner clear warning:', error);
+        } finally {
+            html5QrCode = null;
+            scannerRunning = false;
+            scanLocked = false;
         }
     }
 
     async function startScanner() {
+        cancelScannerRestart();
+
         if (scannerRunning || scannerStarting || scannerStopping) {
             return;
         }
@@ -1926,6 +1990,7 @@
                     const now = Date.now();
 
                     if (
+                        scanLocked ||
                         verificationInProgress ||
                         checkInInProgress ||
                         (
@@ -1936,8 +2001,11 @@
                         return;
                     }
 
+                    scanLocked = true;
                     lastScannedValue = decodedText;
                     lastScannedAt = now;
+
+                    setScannerStatus('warning', 'QR detected. Verifying invitation...');
 
                     await stopScanner();
                     await verifyValue(decodedText, 'scanner');
@@ -1948,6 +2016,7 @@
             );
 
             scannerRunning = true;
+            scanLocked = false;
             hideCameraHelp();
             setScannerStatus('active', 'Camera active. Point it at the QR code.');
         } catch (error) {
@@ -2013,11 +2082,18 @@
 
     document.addEventListener('visibilitychange', function () {
         if (document.hidden) {
+            cancelScannerRestart();
             stopScanner();
+            return;
+        }
+
+        if (!selectedInviteeId && !checkInInProgress) {
+            scheduleScannerRestart(500);
         }
     });
 
     window.addEventListener('beforeunload', function () {
+        cancelScannerRestart();
         verifyAbortController?.abort();
 
         if (html5QrCode && scannerRunning) {
