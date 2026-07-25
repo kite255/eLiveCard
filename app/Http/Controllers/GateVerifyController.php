@@ -335,19 +335,6 @@ class GateVerifyController extends Controller
             return 'This invitation card is not valid for check-in.';
         }
 
-        if (
-            in_array(
-                $invitee->rsvp_status,
-                [
-                    Invitee::RSVP_NOT_ATTENDING,
-                    'declined',
-                ],
-                true
-            )
-        ) {
-            return 'This invitee responded that they will not attend. Please contact the event manager before allowing check-in.';
-        }
-
         if ($this->gateGuestLimit($invitee) <= 0) {
             return 'No guests are allowed for check-in on this invitation.';
         }
@@ -406,45 +393,19 @@ class GateVerifyController extends Controller
 
     private function gateGuestLimit(Invitee $invitee): int
     {
-        $allowedGuests = $this->allowedGuests($invitee);
-        $confirmedGuests = $this->confirmedGuests($invitee);
-
-        if (
-            $invitee->rsvp_status === Invitee::RSVP_ATTENDING
-            && $confirmedGuests > 0
-        ) {
-            return min(
-                $confirmedGuests,
-                $allowedGuests
-            );
-        }
-
-        if (
-            in_array(
-                $invitee->rsvp_status,
-                [
-                    Invitee::RSVP_NOT_ATTENDING,
-                    'declined',
-                ],
-                true
-            )
-        ) {
-            return 0;
-        }
-
-        return $allowedGuests;
+        return $this->allowedGuests($invitee);
     }
 
     private function successRemarks(Invitee $invitee): string
     {
-        if (
-            $invitee->rsvp_status === Invitee::RSVP_ATTENDING
-            && $this->confirmedGuests($invitee) > 0
-        ) {
-            return 'Checked in by QR code using the RSVP-confirmed guest limit.';
-        }
-
-        return 'Checked in by QR code using the invitation guest limit.';
+        return match ($invitee->rsvp_status) {
+            Invitee::RSVP_ATTENDING, 'confirmed' =>
+                'Checked in by QR code. RSVP was confirmed; invitation guest limit applied.',
+            Invitee::RSVP_NOT_ATTENDING, 'declined' =>
+                'Checked in by QR code. Invitee had declined RSVP; gate override allowed using invitation guest limit.',
+            default =>
+                'Checked in by QR code. RSVP was pending; invitation guest limit applied.',
+        };
     }
 
     private function recordFailedAttempt(

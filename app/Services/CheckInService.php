@@ -88,29 +88,6 @@ class CheckInService
                     ];
                 }
 
-                if (in_array(
-                    $lockedInvitee->rsvp_status,
-                    ['not_attending', 'declined'],
-                    true,
-                )) {
-                    $this->recordAttempt(
-                        invitee: $lockedInvitee,
-                        user: $user,
-                        method: $method,
-                        guestsCheckedIn: 0,
-                        previousCheckedInCount: $previousCheckedInCount,
-                        remainingGuests: 0,
-                        status: CheckIn::STATUS_BLOCKED,
-                        remarks: 'Invitee RSVP status does not allow check-in.',
-                    );
-
-                    return [
-                        'success' => false,
-                        'title' => 'RSVP Not Attending',
-                        'message' => 'This invitee responded that they will not attend.',
-                    ];
-                }
-
                 if ($gateLimit <= 0) {
                     $this->recordAttempt(
                         invitee: $lockedInvitee,
@@ -196,7 +173,10 @@ class CheckInService
                     previousCheckedInCount: $previousCheckedInCount,
                     remainingGuests: $remainingAfterCheckIn,
                     status: CheckIn::STATUS_SUCCESS,
-                    remarks: "{$guestsCount} guest(s) checked in successfully.",
+                    remarks: $this->successRemarks(
+                        invitee: $lockedInvitee,
+                        guestsCount: $guestsCount,
+                    ),
                 );
 
                 AuditLogService::updated(
@@ -215,6 +195,7 @@ class CheckInService
                         'guests_checked_in' => $guestsCount,
                         'allowed_guests' => $allowedGuests,
                         'confirmed_guests' => $confirmedGuests,
+                        'rsvp_status' => $lockedInvitee->rsvp_status ?? 'pending',
                         'gate_limit' => $gateLimit,
                         'previous_checked_in_count' => $previousCheckedInCount,
                         'remaining_guests' => $remainingAfterCheckIn,
@@ -237,6 +218,7 @@ class CheckInService
                     'gate_limit' => $gateLimit,
                     'checked_in_count' => $newCheckedInCount,
                     'remaining_guests' => $remainingAfterCheckIn,
+                    'rsvp_status' => $lockedInvitee->rsvp_status ?? 'pending',
                 ];
             });
         } catch (Throwable $e) {
@@ -285,22 +267,22 @@ class CheckInService
         int $allowedGuests,
         int $confirmedGuests
     ): int {
-        if (in_array(
-            $invitee->rsvp_status,
-            ['not_attending', 'declined'],
-            true,
-        )) {
-            return 0;
-        }
-
-        if (
-            in_array($invitee->rsvp_status, ['attending', 'yes', 'confirmed'], true)
-            && $confirmedGuests > 0
-        ) {
-            return min($confirmedGuests, $allowedGuests);
-        }
-
         return $allowedGuests;
+    }
+
+    private function successRemarks(
+        Invitee $invitee,
+        int $guestsCount
+    ): string {
+        $rsvpStatus = (string) ($invitee->rsvp_status ?? 'pending');
+
+        $rsvpNote = match ($rsvpStatus) {
+            'attending', 'yes', 'confirmed' => 'RSVP confirmed.',
+            'not_attending', 'declined' => 'RSVP was declined; gate override allowed.',
+            default => 'RSVP was pending or not confirmed.',
+        };
+
+        return "{$guestsCount} guest(s) checked in successfully. {$rsvpNote} Invitation guest limit applied.";
     }
 
     private function normalizeMethod(string $method): string

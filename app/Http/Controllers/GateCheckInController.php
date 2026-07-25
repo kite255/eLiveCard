@@ -145,10 +145,19 @@ class GateCheckInController extends Controller
             ]);
         }
 
+        $verificationMessage = match ($invitee->rsvp_status ?? 'pending') {
+            'attending', 'confirmed', 'yes' =>
+                'Attendance was confirmed. Select the number of guests entering now.',
+            'not_attending', 'declined' =>
+                'This invitee previously declined attendance, but the invitation is valid. Confirm before admitting guests.',
+            default =>
+                'Attendance was not confirmed, but the invitation is valid. Select the number of guests entering now.',
+        };
+
         return response()->json([
             'status' => 'success',
             'title' => 'Valid Card',
-            'message' => 'Invitee found for '.$event->title.'. You can proceed with check-in.',
+            'message' => $verificationMessage,
             'event' => [
                 'id' => $event->id,
                 'title' => $event->title,
@@ -167,7 +176,7 @@ class GateCheckInController extends Controller
     }
 
     /**
-     * Confirm invitee check-in and enforce RSVP-based guest limit.
+     * Confirm invitee check-in and enforce the invitation guest limit.
      */
     public function confirm(
         Request $request,
@@ -262,6 +271,7 @@ class GateCheckInController extends Controller
             guestsCount: $guestCount,
             user: $request->user(),
             method: $method,
+            expectedEventId: (int) $event->id,
         );
 
         $invitee->refresh()->loadMissing('cardType');
@@ -308,6 +318,7 @@ class GateCheckInController extends Controller
                 'remaining_guests' => $newRemainingGuests,
                 'table_number' => $invitee->table_number ?? 'N/A',
                 'category' => $invitee->category ?? 'N/A',
+                'serial_number' => $invitee->serial_number ?? 'N/A',
                 'checked_in_time' => optional(
                     $invitee->checked_in_at,
                 )->format('d M Y, h:i A') ?? now()->format('d M Y, h:i A'),
@@ -514,10 +525,6 @@ class GateCheckInController extends Controller
             return 'This invitation card is not valid for check-in.';
         }
 
-        if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
-            return 'This invitee responded that they will not attend. Please contact the event manager before allowing check-in.';
-        }
-
         if ($this->gateGuestLimit($invitee) <= 0) {
             return 'No guests are allowed for check-in on this invitation.';
         }
@@ -559,18 +566,7 @@ class GateCheckInController extends Controller
      */
     private function gateGuestLimit(Invitee $invitee): int
     {
-        $allowedGuests = $this->allowedGuests($invitee);
-        $confirmedGuests = $this->confirmedGuests($invitee);
-
-        if ($invitee->rsvp_status === 'attending' && $confirmedGuests > 0) {
-            return min($confirmedGuests, $allowedGuests);
-        }
-
-        if (in_array($invitee->rsvp_status, ['not_attending', 'declined'], true)) {
-            return 0;
-        }
-
-        return $allowedGuests;
+        return $this->allowedGuests($invitee);
     }
 
     /**

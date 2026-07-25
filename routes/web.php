@@ -86,7 +86,7 @@ Route::get('/i/{shortCode}', [InviteePageController::class, 'show'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.page');
 
-Route::post('/i/{shortCode}/rsvp', [InviteePageController::class, 'rsvp'])
+Route::post('/i/{shortCode}/rsvp', [RsvpController::class, 'submit'])
     ->where('shortCode', '[A-Za-z0-9]+')
     ->name('invitee.rsvp');
 

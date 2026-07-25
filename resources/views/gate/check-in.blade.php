@@ -1245,6 +1245,37 @@
         return Number.isFinite(parsed) ? parsed : fallback;
     }
 
+    function normalizedRsvpStatus(value) {
+        return String(value || 'pending')
+            .trim()
+            .toLowerCase()
+            .replaceAll(' ', '_');
+    }
+
+    function canAdmitInvitee(invitee) {
+        if (!invitee) {
+            return false;
+        }
+
+        const remaining = Math.max(numberValue(invitee.remaining_guests), 0);
+
+        return remaining > 0;
+    }
+
+    function rsvpGateMessage(invitee) {
+        const status = normalizedRsvpStatus(invitee?.rsvp_status);
+
+        if (status === 'attending') {
+            return 'Attendance confirmed. Select the number of guests entering now.';
+        }
+
+        if (status === 'not_attending' || status === 'declined') {
+            return 'This invitee previously declined attendance, but the invitation is valid. Confirm before admitting guests.';
+        }
+
+        return 'Attendance was not confirmed, but the invitation is valid. Select the number of guests entering now.';
+    }
+
     function setScannerStatus(type, message) {
         const status = document.getElementById('scannerStatus');
         const text = document.getElementById('scannerStatusText');
@@ -1415,7 +1446,7 @@
             <div class="info-row"><span>Phone</span><span>${escapeHtml(invitee.phone)}</span></div>
             <div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>
             <div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>
-            <div class="info-row"><span>RSVP</span><span>${escapeHtml(invitee.rsvp_status || 'pending')}</span></div>
+            <div class="info-row"><span>RSVP Status</span><span>${escapeHtml(invitee.rsvp_status || 'pending')}</span></div>
             <div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>
             <div class="info-row"><span>Confirmed Guests</span><span>${escapeHtml(invitee.confirmed_guests ?? '-')}</span></div>
             <div class="info-row"><span>Gate Limit</span><span>${escapeHtml(invitee.gate_limit ?? invitee.allowed_guests)}</span></div>
@@ -1664,6 +1695,28 @@
             const invitee = data.invitee || null;
             const status = data.status || 'error';
 
+            const inviteeCanEnter = canAdmitInvitee(invitee);
+
+            if (
+                invitee &&
+                inviteeCanEnter &&
+                (status === 'success' || status === 'warning')
+            ) {
+                showResult(
+                    'success',
+                    data.title || 'Invitation Valid',
+                    data.message || rsvpGateMessage(invitee),
+                    invitee
+                );
+
+                document.getElementById('resultBox')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                });
+
+                return;
+            }
+
             showResult(
                 status,
                 data.title || 'Verification Result',
@@ -1674,18 +1727,9 @@
             if (status === 'warning' && invitee) {
                 showCheckInPopup({
                     ...data,
-                    title: data.title || 'Card Already Used',
-                    message: data.message || 'This invitation card has already been used.',
+                    title: data.title || 'Already Checked In',
+                    message: data.message || 'This card has already used all allowed guest entries.',
                     status: 'warning',
-                });
-
-                return;
-            }
-
-            if (status === 'success' && invitee) {
-                document.getElementById('resultBox')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'nearest',
                 });
 
                 return;
