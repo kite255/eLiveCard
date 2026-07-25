@@ -475,7 +475,8 @@
             display: none;
             align-items: center;
             justify-content: center;
-            padding: 16px;
+            padding: 12px;
+            overflow: hidden;
             background: rgba(17, 24, 39, 0.68);
         }
 
@@ -486,6 +487,9 @@
         .popup-card {
             width: 100%;
             max-width: 430px;
+            max-height: calc(100dvh - 24px);
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
             border-radius: 24px;
             background: #FFFFFF;
@@ -506,7 +510,8 @@
         }
 
         .popup-header {
-            padding: 24px 20px;
+            flex-shrink: 0;
+            padding: 22px 18px;
             text-align: center;
             color: #FFFFFF;
             background: var(--green);
@@ -557,7 +562,13 @@
         }
 
         .popup-body {
-            padding: 18px;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
         }
 
         .popup-name-box {
@@ -589,6 +600,7 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
+            padding-bottom: 4px;
         }
 
         .popup-info {
@@ -614,6 +626,7 @@
         }
 
         .popup-time {
+            flex-shrink: 0;
             margin: 14px 0 0;
             color: var(--muted);
             font-size: 12px;
@@ -621,13 +634,25 @@
         }
 
         .popup-actions {
+            position: sticky;
+            bottom: 0;
+            z-index: 5;
             display: grid;
             gap: 10px;
             margin-top: 16px;
+            padding: 12px 0 calc(22px + env(safe-area-inset-bottom));
+            background: linear-gradient(
+                to bottom,
+                rgba(255, 255, 255, 0.92),
+                #FFFFFF 24%
+            );
         }
 
         .popup-actions button {
             width: 100%;
+            min-height: 56px;
+            flex-shrink: 0;
+            border-radius: 16px;
         }
 
 
@@ -817,6 +842,56 @@
         }
 
         @media (max-width: 600px) {
+            .popup-overlay {
+                align-items: stretch;
+                padding: 0;
+            }
+
+            .popup-card {
+                width: 100%;
+                max-width: none;
+                height: 100dvh;
+                max-height: 100dvh;
+                border-radius: 0;
+            }
+
+            .popup-header {
+                padding: calc(18px + env(safe-area-inset-top)) 16px 18px;
+            }
+
+            .popup-body {
+                padding: 14px 14px 0;
+            }
+
+            .popup-name-box {
+                margin-bottom: 10px;
+                padding: 12px;
+            }
+
+            .popup-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .popup-info {
+                padding: 11px 12px;
+            }
+
+            .popup-icon {
+                width: 58px;
+                height: 58px;
+                margin-bottom: 10px;
+                font-size: 34px;
+            }
+
+            .popup-title {
+                font-size: 21px;
+            }
+
+            .popup-message {
+                font-size: 13px;
+            }
+
             .event-title {
                 font-size: 20px;
             }
@@ -847,20 +922,6 @@
 
             .sticky-guest-select label {
                 text-align: left;
-            }
-
-            .popup-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .popup-icon {
-                width: 62px;
-                height: 62px;
-                font-size: 36px;
-            }
-
-            .popup-title {
-                font-size: 22px;
             }
 
             .popup-name {
