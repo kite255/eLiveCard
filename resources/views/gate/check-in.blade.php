@@ -248,6 +248,39 @@
             background: var(--red);
         }
 
+
+        .camera-help {
+            display: none;
+            margin-top: 12px;
+            padding: 12px 14px;
+            border: 1px solid #FECACA;
+            border-radius: 12px;
+            background: #FEF2F2;
+            color: #7F1D1D;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .camera-help.active {
+            display: block;
+        }
+
+        .camera-help strong {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--red);
+            font-size: 14px;
+        }
+
+        .camera-help-list {
+            margin: 8px 0 0;
+            padding-left: 18px;
+        }
+
+        .camera-help-list li + li {
+            margin-top: 4px;
+        }
+
         .actions {
             display: flex;
             gap: 10px;
@@ -923,6 +956,21 @@
             <div id="scannerStatus" class="scanner-status" aria-live="polite">
                 <span class="scanner-status-dot"></span>
                 <span id="scannerStatusText">Camera is not running.</span>
+            </div>
+
+
+            <div id="cameraHelp" class="camera-help" role="alert" aria-live="assertive">
+                <strong id="cameraHelpTitle">Camera unavailable</strong>
+                <div id="cameraHelpMessage">
+                    Allow camera access in the browser, close other camera applications, and try again.
+                </div>
+
+                <ul class="camera-help-list">
+                    <li>Use HTTPS on the live website.</li>
+                    <li>Allow camera permission for this page.</li>
+                    <li>Close Camera, Zoom, Teams, OBS, or WhatsApp Desktop if they are using the camera.</li>
+                    <li>Use manual search when a camera is unavailable.</li>
+                </ul>
             </div>
 
             <div class="actions">
@@ -1647,19 +1695,195 @@
         }
     }
 
+    function hideCameraHelp() {
+        const box = document.getElementById('cameraHelp');
+
+        box?.classList.remove('active');
+    }
+
+    function showCameraHelp(title, message) {
+        const box = document.getElementById('cameraHelp');
+        const titleEl = document.getElementById('cameraHelpTitle');
+        const messageEl = document.getElementById('cameraHelpMessage');
+
+        if (titleEl) {
+            titleEl.innerText = title || 'Camera unavailable';
+        }
+
+        if (messageEl) {
+            messageEl.innerText = message || 'Could not start the camera.';
+        }
+
+        box?.classList.add('active');
+    }
+
+    function getCameraErrorDetails(error) {
+        const name = error?.name || '';
+        const rawMessage = String(error?.message || error || '').toLowerCase();
+
+        if (
+            name === 'NotAllowedError' ||
+            name === 'PermissionDeniedError' ||
+            rawMessage.includes('permission') ||
+            rawMessage.includes('denied')
+        ) {
+            return {
+                title: 'Camera Permission Required',
+                status: 'Camera permission was denied.',
+                message: 'Allow camera access for this page in the browser settings, then press Start Scanner.',
+            };
+        }
+
+        if (
+            name === 'NotFoundError' ||
+            name === 'DevicesNotFoundError' ||
+            rawMessage.includes('not found') ||
+            rawMessage.includes('no camera')
+        ) {
+            return {
+                title: 'No Camera Found',
+                status: 'No camera was found on this device.',
+                message: 'Connect or enable a camera, or continue with manual search.',
+            };
+        }
+
+        if (
+            name === 'NotReadableError' ||
+            name === 'TrackStartError' ||
+            rawMessage.includes('could not start video source') ||
+            rawMessage.includes('not readable') ||
+            rawMessage.includes('trackstart')
+        ) {
+            return {
+                title: 'Camera Is Busy',
+                status: 'The camera is being used by another application.',
+                message: 'Close Camera, Zoom, Teams, OBS, or other camera applications, then try again.',
+            };
+        }
+
+        if (
+            name === 'OverconstrainedError' ||
+            name === 'ConstraintNotSatisfiedError'
+        ) {
+            return {
+                title: 'Camera Settings Unsupported',
+                status: 'The selected camera does not support the requested settings.',
+                message: 'Try another camera or use manual search.',
+            };
+        }
+
+        if (
+            name === 'SecurityError' ||
+            !window.isSecureContext
+        ) {
+            return {
+                title: 'Secure Connection Required',
+                status: 'Camera access requires HTTPS.',
+                message: 'Open the live scanner using HTTPS. Localhost and 127.0.0.1 are allowed for development.',
+            };
+        }
+
+        if (name === 'AbortError') {
+            return {
+                title: 'Camera Startup Interrupted',
+                status: 'Camera startup was interrupted.',
+                message: 'Reload the page or press Start Scanner again.',
+            };
+        }
+
+        return {
+            title: 'Camera Error',
+            status: 'Camera could not be started.',
+            message: 'Check browser camera permission, close other camera applications, or use manual search.',
+        };
+    }
+
+    async function getPreferredCameraConfig() {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new DOMException(
+                'This browser does not support camera access.',
+                'NotSupportedError'
+            );
+        }
+
+        try {
+            const devices = await Html5Qrcode.getCameras();
+
+            if (Array.isArray(devices) && devices.length > 0) {
+                const rearCamera = devices.find((device) => {
+                    const label = String(device.label || '').toLowerCase();
+
+                    return (
+                        label.includes('back') ||
+                        label.includes('rear') ||
+                        label.includes('environment')
+                    );
+                });
+
+                return rearCamera?.id || devices[0].id;
+            }
+        } catch (error) {
+            console.warn('Camera enumeration warning:', error);
+        }
+
+        return {
+            facingMode: {
+                ideal: 'environment',
+            },
+        };
+    }
+
+    async function clearScannerReader() {
+        if (!html5QrCode) {
+            return;
+        }
+
+        try {
+            await html5QrCode.clear();
+        } catch (error) {
+            console.warn('Scanner clear warning:', error);
+        }
+    }
+
     async function startScanner() {
         if (scannerRunning || scannerStarting || scannerStopping) {
             return;
         }
 
+        hideCameraHelp();
+
         if (typeof Html5Qrcode === 'undefined') {
-            setScannerStatus('error', 'Scanner library failed to load. Use manual search.');
-            showResult(
-                'error',
-                'Scanner Unavailable',
-                'The QR scanner library did not load. Refresh the page or use manual search.'
-            );
+            const message = 'The QR scanner library did not load. Refresh the page or use manual search.';
+
+            setScannerStatus('error', 'Scanner library failed to load.');
+            showCameraHelp('Scanner Unavailable', message);
+            showResult('error', 'Scanner Unavailable', message);
+
             return;
+        }
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            const message = 'This browser does not support camera access. Use Chrome, Edge, or Safari, or continue with manual search.';
+
+            setScannerStatus('error', 'Camera access is not supported.');
+            showCameraHelp('Camera Not Supported', message);
+            showResult('error', 'Camera Not Supported', message);
+
+            return;
+        }
+
+        if (!window.isSecureContext) {
+            const localHostNames = ['localhost', '127.0.0.1', '::1'];
+
+            if (!localHostNames.includes(window.location.hostname)) {
+                const message = 'Camera access requires HTTPS on the live website.';
+
+                setScannerStatus('error', message);
+                showCameraHelp('Secure Connection Required', message);
+                showResult('error', 'Secure Connection Required', message);
+
+                return;
+            }
         }
 
         scannerStarting = true;
@@ -1684,8 +1908,10 @@
                     ? 225
                     : 250;
 
+            const cameraConfig = await getPreferredCameraConfig();
+
             await html5QrCode.start(
-                { facingMode: { ideal: 'environment' } },
+                cameraConfig,
                 {
                     fps: 12,
                     qrbox: {
@@ -1694,6 +1920,7 @@
                     },
                     aspectRatio: 1,
                     disableFlip: false,
+                    rememberLastUsedCamera: true,
                 },
                 async (decodedText) => {
                     const now = Date.now();
@@ -1716,33 +1943,25 @@
                     await verifyValue(decodedText, 'scanner');
                 },
                 () => {
-                    // Frame-level decode failures are expected while scanning.
+                    // Frame-level decode failures are normal while scanning.
                 }
             );
 
             scannerRunning = true;
+            hideCameraHelp();
             setScannerStatus('active', 'Camera active. Point it at the QR code.');
         } catch (error) {
+            console.error('Camera startup error:', error);
+
             scannerRunning = false;
 
-            const permissionDenied =
-                error?.name === 'NotAllowedError' ||
-                String(error).toLowerCase().includes('permission');
+            const details = getCameraErrorDetails(error);
 
-            setScannerStatus(
-                'error',
-                permissionDenied
-                    ? 'Camera permission was denied.'
-                    : 'Camera could not be started.'
-            );
+            setScannerStatus('error', details.status);
+            showCameraHelp(details.title, details.message);
+            showResult('error', details.title, details.message);
 
-            showResult(
-                'error',
-                permissionDenied ? 'Camera Permission Required' : 'Camera Error',
-                permissionDenied
-                    ? 'Allow camera access in the browser, then press Start Scanner.'
-                    : 'Could not start the camera. Use manual search or try again.'
-            );
+            await clearScannerReader();
         } finally {
             scannerStarting = false;
             updateScannerButtons();
@@ -1750,16 +1969,21 @@
     }
 
     async function stopScanner() {
-        if (!html5QrCode || !scannerRunning || scannerStopping) {
+        if (!html5QrCode || scannerStopping) {
             return;
         }
 
         scannerStopping = true;
         updateScannerButtons();
-        setScannerStatus('warning', 'Stopping camera...');
+
+        if (scannerRunning) {
+            setScannerStatus('warning', 'Stopping camera...');
+        }
 
         try {
-            await html5QrCode.stop();
+            if (scannerRunning) {
+                await html5QrCode.stop();
+            }
         } catch (error) {
             console.warn('Scanner stop warning:', error);
         } finally {
@@ -1808,7 +2032,9 @@
             document.getElementById('manualInput')?.focus();
         }
 
-        startScanner();
+        window.setTimeout(() => {
+            startScanner();
+        }, 350);
     });
 </script>
 

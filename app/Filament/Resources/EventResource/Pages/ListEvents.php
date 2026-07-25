@@ -4,11 +4,13 @@ namespace App\Filament\Resources\EventResource\Pages;
 
 use App\Filament\Resources\EventResource;
 use App\Models\Event;
+use Carbon\Carbon;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Support\Enums\MaxWidth;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
 class ListEvents extends ListRecords
@@ -30,15 +32,9 @@ class ListEvents extends ListRecords
     public string $search = '';
 
     protected $queryString = [
-        'statusFilter' => [
-            'except' => 'all',
-        ],
-        'typeFilter' => [
-            'except' => 'all',
-        ],
-        'search' => [
-            'except' => '',
-        ],
+        'statusFilter' => ['except' => 'all'],
+        'typeFilter' => ['except' => 'all'],
+        'search' => ['except' => ''],
     ];
 
     protected function getHeaderActions(): array
@@ -62,6 +58,7 @@ class ListEvents extends ListRecords
         parent::mount();
 
         $this->normaliseFilters();
+        $this->synchroniseFinishedEvents();
     }
 
     public function updatedStatusFilter(): void
@@ -110,33 +107,38 @@ class ListEvents extends ListRecords
 
     protected function getViewData(): array
     {
+        $this->synchroniseFinishedEvents();
+
+        $statusIds = $this->getStatusIds();
+
         return [
-            'events' => $this->getEvents(),
+            'events' => $this->getEvents($statusIds),
             'eventTypes' => Event::eventTypes(),
-            'statusCounts' => $this->getStatusCounts(),
+            'statusCounts' => [
+                'all' => $statusIds['all']->count(),
+                'active' => $statusIds['active']->count(),
+                'upcoming' => $statusIds['upcoming']->count(),
+                'draft' => $statusIds['draft']->count(),
+                'completed' => $statusIds['completed']->count(),
+            ],
             'hasActiveFilters' => $this->statusFilter !== 'all'
                 || $this->typeFilter !== 'all'
                 || filled($this->search),
         ];
     }
 
-    protected function getEvents(): LengthAwarePaginator
+    protected function getEvents(array $statusIds): LengthAwarePaginator
     {
-        return $this->baseEventQuery()
-            ->when(
-                $this->statusFilter === 'upcoming',
-                fn (Builder $query): Builder => $query
-                    ->whereDate('event_date', '>=', today())
-                    ->whereNotIn('status', [
-                        Event::STATUS_COMPLETED,
-                        Event::STATUS_CANCELLED,
-                    ]),
-            )
-            ->when(
-                ! in_array($this->statusFilter, ['all', 'upcoming'], true),
-                fn (Builder $query): Builder => $query
-                    ->where('status', $this->statusFilter),
-            )
+        $query = $this->baseEventQuery();
+
+        if ($this->statusFilter !== 'all') {
+            $query->whereIn(
+                $query->getModel()->getQualifiedKeyName(),
+                $statusIds[$this->statusFilter] ?? collect(),
+            );
+        }
+
+        return $query
             ->when(
                 $this->typeFilter !== 'all',
                 fn (Builder $query): Builder => $query
@@ -163,13 +165,9 @@ class ListEvents extends ListRecords
                     Event::STATUS_COMPLETED,
                 ],
             )
-            ->orderByRaw(
-                'CASE WHEN event_date IS NULL THEN 1 ELSE 0 END',
-            )
+            ->orderByRaw('CASE WHEN event_date IS NULL THEN 1 ELSE 0 END')
             ->orderBy('event_date')
-            ->orderByRaw(
-                'CASE WHEN start_time IS NULL THEN 1 ELSE 0 END',
-            )
+            ->orderByRaw('CASE WHEN start_time IS NULL THEN 1 ELSE 0 END')
             ->orderBy('start_time')
             ->orderByDesc('id')
             ->paginate(8)
@@ -224,6 +222,220 @@ class ListEvents extends ListRecords
             ]);
     }
 
+    protected function getStatusIds(): array
+    {
+        $groups = [
+            'all' => collect(),
+            'active' => collect(),
+            'upcoming' => collect(),
+            'draft' => collect(),
+            'completed' => collect(),
+        ];
+
+        EventResource::getEloquentQuery()
+            ->select([
+                'id',
+                'status',
+                'event_date',
+                'start_time',
+                'end_time',
+            ])
+            ->orderBy('id')
+            ->chunkById(250, function (Collection $events) use (&$groups): void {
+                foreach ($events as $event) {
+                    $groups['all']->push($event->getKey());
+
+                    $classification = $this->classifyEvent($event);
+
+                    if (isset($groups[$classification])) {
+                        $groups[$classification]->push($event->getKey());
+                    }
+                }
+            });
+
+        return $groups;
+    }
+
+    public function eventPresentation(Event $event): array
+    {
+        $classification = $this->classifyEvent($event);
+        $eventDate = $this->eventDate($event);
+        $eventStart = $this->eventStart($event);
+        $eventEnd = $this->eventEnd($event);
+        $now = now();
+
+        $isHappeningNow = $classification === 'active'
+            && $eventStart
+            && $eventEnd
+            && $now->between($eventStart, $eventEnd);
+
+        $label = match (true) {
+            $classification === 'completed' => 'Completed',
+            $classification === 'draft' => 'Draft',
+            $isHappeningNow => 'Happening Now',
+            $classification === 'active' => 'Active',
+            $classification === 'upcoming' => 'Upcoming',
+            default => 'Unknown',
+        };
+
+        $statusClass = match ($classification) {
+            'completed' => 'status-completed',
+            'draft' => 'status-draft',
+            'active' => 'status-happening',
+            'upcoming' => 'status-upcoming',
+            default => 'status-draft',
+        };
+
+        $dateBoxClass = match ($classification) {
+            'completed' => 'event-date-box-completed',
+            'active' => 'event-date-box-happening',
+            'upcoming' => 'event-date-box-upcoming',
+            default => '',
+        };
+
+        $dateLabel = match (true) {
+            $classification === 'completed' => 'Completed',
+            $classification === 'draft' => 'Draft',
+            $isHappeningNow => 'Happening Now',
+            $eventDate?->isToday() => 'Today',
+            $eventDate?->isTomorrow() => 'Tomorrow',
+            $classification === 'upcoming' && $eventDate !== null =>
+                'In '.now()->startOfDay()->diffInDays($eventDate).' days',
+            $classification === 'active' => 'Active',
+            default => 'Date',
+        };
+
+        return [
+            'classification' => $classification,
+            'label' => $label,
+            'statusClass' => $statusClass,
+            'dateBoxClass' => $dateBoxClass,
+            'dateLabel' => $dateLabel,
+            'eventDate' => $eventDate,
+            'eventTime' => $eventStart?->format('h:i A') ?? 'Time not set',
+        ];
+    }
+
+    protected function classifyEvent(Event $event): string
+    {
+        $storedStatus = strtolower(
+            (string) ($event->status ?? Event::STATUS_DRAFT),
+        );
+
+        if ($storedStatus === Event::STATUS_DRAFT) {
+            return 'draft';
+        }
+
+        if ($storedStatus === Event::STATUS_COMPLETED) {
+            return 'completed';
+        }
+
+        if (in_array($storedStatus, ['cancelled', 'canceled'], true)) {
+            return 'completed';
+        }
+
+        $now = now();
+        $eventStart = $this->eventStart($event);
+        $eventEnd = $this->eventEnd($event);
+
+        if ($eventEnd && $now->greaterThan($eventEnd)) {
+            return 'completed';
+        }
+
+        if ($eventStart && $now->lessThan($eventStart)) {
+            return 'upcoming';
+        }
+
+        return 'active';
+    }
+
+    protected function synchroniseFinishedEvents(): void
+    {
+        EventResource::getEloquentQuery()
+            ->where('status', Event::STATUS_ACTIVE)
+            ->whereNotNull('event_date')
+            ->select([
+                'id',
+                'status',
+                'event_date',
+                'start_time',
+                'end_time',
+            ])
+            ->orderBy('id')
+            ->chunkById(250, function (Collection $events): void {
+                foreach ($events as $event) {
+                    $eventEnd = $this->eventEnd($event);
+
+                    if (! $eventEnd || now()->lessThanOrEqualTo($eventEnd)) {
+                        continue;
+                    }
+
+                    Event::query()
+                        ->whereKey($event->getKey())
+                        ->where('status', Event::STATUS_ACTIVE)
+                        ->update([
+                            'status' => Event::STATUS_COMPLETED,
+                            'updated_at' => now(),
+                        ]);
+                }
+            });
+    }
+
+    protected function eventDate(Event $event): ?Carbon
+    {
+        if (blank($event->event_date)) {
+            return null;
+        }
+
+        return Carbon::parse($event->event_date)->startOfDay();
+    }
+
+    protected function eventStart(Event $event): ?Carbon
+    {
+        $eventDate = $this->eventDate($event);
+
+        if (! $eventDate) {
+            return null;
+        }
+
+        if (blank($event->start_time)) {
+            return $eventDate;
+        }
+
+        $startTime = Carbon::parse($event->start_time);
+
+        return $eventDate->setTime(
+            $startTime->hour,
+            $startTime->minute,
+            $startTime->second,
+        );
+    }
+
+    protected function eventEnd(Event $event): ?Carbon
+    {
+        $eventDate = $this->eventDate($event);
+
+        if (! $eventDate) {
+            return null;
+        }
+
+        if (filled($event->end_time)) {
+            $endTime = Carbon::parse($event->end_time);
+
+            return $eventDate->setTime(
+                $endTime->hour,
+                $endTime->minute,
+                $endTime->second,
+            );
+        }
+
+        if (filled($event->start_time)) {
+            return $this->eventStart($event)?->addHours(6);
+        }
+
+        return $eventDate->endOfDay();
+    }
+
     protected function applySearch(
         Builder $query,
         string $search,
@@ -267,35 +479,6 @@ class ListEvents extends ListRecords
                 }
             },
         );
-    }
-
-    protected function getStatusCounts(): array
-    {
-        $query = EventResource::getEloquentQuery();
-
-        return [
-            'all' => (clone $query)->count(),
-
-            'active' => (clone $query)
-                ->where('status', Event::STATUS_ACTIVE)
-                ->count(),
-
-            'upcoming' => (clone $query)
-                ->whereDate('event_date', '>=', today())
-                ->whereNotIn('status', [
-                    Event::STATUS_COMPLETED,
-                    Event::STATUS_CANCELLED,
-                ])
-                ->count(),
-
-            'draft' => (clone $query)
-                ->where('status', Event::STATUS_DRAFT)
-                ->count(),
-
-            'completed' => (clone $query)
-                ->where('status', Event::STATUS_COMPLETED)
-                ->count(),
-        ];
     }
 
     protected function normaliseFilters(): void

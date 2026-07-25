@@ -2,7 +2,6 @@
     <div class="elive-login-page">
         <div class="elive-login-card">
 
-            {{-- Left Brand Section --}}
             <div class="elive-login-left">
                 <div class="elive-left-content">
                     <img
@@ -14,13 +13,13 @@
                     <h1>Welcome Back</h1>
 
                     <p>
-                        Manage digital invitations, RSVP responses, invitee lists,
-                        QR check-ins, card sending, and event reports in one secure platform.
+                        Manage invitations, RSVP responses, invitees,
+                        QR check-ins, card sending, and event reports
+                        in one secure platform.
                     </p>
                 </div>
             </div>
 
-            {{-- Right Login Section --}}
             <div class="elive-login-right">
                 <div class="elive-form-box">
                     <h2>Sign in</h2>
@@ -59,7 +58,8 @@
             background: #F8FAFC !important;
         }
 
-        .fi-simple-main {
+        .fi-simple-main,
+        .fi-simple-page {
             width: 100% !important;
             max-width: 100% !important;
             margin: 0 !important;
@@ -68,98 +68,93 @@
             box-shadow: none !important;
         }
 
-        .fi-simple-page {
-            width: 100% !important;
-            max-width: 100% !important;
-        }
-
         .elive-login-page {
-            min-height: 100vh;
             width: 100%;
-            background: #F8FAFC;
+            min-height: 100vh;
+            padding: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 32px;
+            background: #F8FAFC;
         }
 
         .elive-login-card {
             width: 100%;
-            max-width: 860px;
-            min-height: 500px;
+            max-width: 680px;
+            min-height: 390px;
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            background: #FFFFFF;
-            border-radius: 18px;
+            grid-template-columns: 0.95fr 1.05fr;
             overflow: hidden;
+            background: #FFFFFF;
             border: 1px solid #E5E7EB;
-            box-shadow: 0 22px 55px rgba(17, 24, 39, 0.10);
+            border-radius: 14px;
+            box-shadow: 0 16px 40px rgba(17, 24, 39, 0.08);
         }
 
         .elive-login-left {
-            background: #213B73;
-            color: #FFFFFF;
+            padding: 30px;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 50px;
+            background: #213B73;
+            color: #FFFFFF;
         }
 
         .elive-left-content {
             width: 100%;
-            max-width: 340px;
+            max-width: 245px;
         }
 
         .elive-logo {
-            width: 230px;
+            width: 165px;
             height: auto;
             display: block;
-            margin-bottom: 42px;
+            margin-bottom: 24px;
         }
 
         .elive-login-left h1 {
-            margin: 0 0 18px 0;
+            margin: 0 0 12px;
             color: #FFFFFF;
-            font-size: 34px;
-            line-height: 1.15;
+            font-size: 25px;
+            line-height: 1.2;
             font-weight: 800;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.02em;
         }
 
         .elive-login-left p {
             margin: 0;
             color: rgba(255, 255, 255, 0.82);
-            font-size: 15px;
-            line-height: 1.8;
+            font-size: 12px;
+            line-height: 1.65;
         }
 
         .elive-login-right {
-            background: #FFFFFF;
+            padding: 30px;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 50px;
+            background: #FFFFFF;
         }
 
         .elive-form-box {
             width: 100%;
-            max-width: 330px;
+            max-width: 270px;
         }
 
         .elive-form-box h2 {
-            margin: 0 0 10px 0;
+            margin: 0 0 6px;
             color: #111827;
-            font-size: 32px;
+            font-size: 25px;
             line-height: 1.2;
             font-weight: 800;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.02em;
         }
 
         .elive-subtitle {
-            margin: 0 0 28px 0;
+            margin: 0 0 18px;
             color: #64748B;
-            font-size: 14px;
-            line-height: 1.6;
+            font-size: 12px;
+            line-height: 1.5;
         }
 
         .elive-login-form {
@@ -167,35 +162,44 @@
         }
 
         .elive-form-box .fi-fo-field-wrp {
-            margin-bottom: 18px !important;
+            margin-bottom: 12px !important;
         }
 
         .elive-form-box .fi-fo-field-wrp-label span,
         .elive-form-box label {
             color: #111827 !important;
-            font-size: 13px !important;
+            font-size: 11px !important;
             font-weight: 700 !important;
         }
 
         .elive-form-box .fi-input-wrp {
-            border-radius: 10px !important;
-            border: 1px solid #CBD5E1 !important;
+            min-height: 38px !important;
+            overflow: hidden;
             background: #FFFFFF !important;
+            border: 1px solid #CBD5E1 !important;
+            border-radius: 8px !important;
             box-shadow: none !important;
         }
 
         .elive-form-box .fi-input-wrp:focus-within {
             border-color: #213B73 !important;
-            box-shadow: 0 0 0 3px rgba(33, 59, 115, 0.12) !important;
+            box-shadow: 0 0 0 3px rgba(33, 59, 115, 0.10) !important;
         }
 
         .elive-form-box input {
-            min-height: 44px !important;
+            min-height: 38px !important;
+            padding-top: 7px !important;
+            padding-bottom: 7px !important;
             border: none !important;
             background: transparent !important;
             color: #111827 !important;
-            font-size: 14px !important;
+            font-size: 12px !important;
             box-shadow: none !important;
+        }
+
+        .elive-form-box .fi-checkbox-input {
+            width: 15px !important;
+            height: 15px !important;
         }
 
         .elive-form-box .fi-checkbox-input:checked {
@@ -205,16 +209,19 @@
 
         .elive-login-button {
             width: 100%;
-            height: 46px;
-            margin-top: 8px;
+            height: 40px;
+            margin-top: 4px;
             border: none;
-            border-radius: 10px;
+            border-radius: 8px;
             background: #213B73;
             color: #FFFFFF;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 800;
             cursor: pointer;
-            transition: 0.2s ease;
+            transition:
+                background-color 0.2s ease,
+                color 0.2s ease,
+                transform 0.2s ease;
         }
 
         .elive-login-button:hover {
@@ -222,48 +229,150 @@
             color: #111827;
         }
 
+        .elive-login-button:active {
+            transform: translateY(1px);
+        }
+
         .elive-footer-text {
-            margin: 24px 0 0 0;
-            padding-top: 18px;
+            margin: 16px 0 0;
+            padding-top: 13px;
             border-top: 1px solid #E5E7EB;
             color: #64748B;
-            font-size: 12px;
+            font-size: 10px;
             text-align: center;
         }
 
-        @media (max-width: 820px) {
+        @media (max-width: 768px) {
             .elive-login-page {
-                padding: 20px;
+                padding: 16px;
+                align-items: flex-start;
             }
 
             .elive-login-card {
-                max-width: 430px;
+                max-width: 370px;
+                min-height: auto;
                 grid-template-columns: 1fr;
             }
 
             .elive-login-left {
-                padding: 36px 30px;
+                padding: 24px 22px;
                 text-align: center;
             }
 
+            .elive-left-content {
+                max-width: 285px;
+            }
+
             .elive-logo {
-                width: 210px;
-                margin-left: auto;
-                margin-right: auto;
-                margin-bottom: 28px;
+                width: 150px;
+                margin: 0 auto 16px;
             }
 
             .elive-login-left h1 {
-                font-size: 28px;
+                margin-bottom: 8px;
+                font-size: 22px;
+            }
+
+            .elive-login-left p {
+                font-size: 11px;
+                line-height: 1.55;
             }
 
             .elive-login-right {
-                padding: 36px 30px;
+                padding: 26px 24px;
+            }
+
+            .elive-form-box {
+                max-width: 100%;
+            }
+
+            .elive-form-box h2 {
+                font-size: 23px;
             }
 
             .elive-form-box h2,
             .elive-subtitle {
                 text-align: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .elive-login-page {
+                padding: 0;
+                align-items: stretch;
+                background: #FFFFFF;
+            }
+
+            .elive-login-card {
+                max-width: 100%;
+                min-height: 100vh;
+                border: none;
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .elive-login-left {
+                min-height: 205px;
+                padding: 22px 20px;
+            }
+
+            .elive-logo {
+                width: 140px;
+                margin-bottom: 14px;
+            }
+
+            .elive-login-left h1 {
+                font-size: 21px;
+            }
+
+            .elive-login-right {
+                padding: 24px 22px 30px;
+                align-items: flex-start;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .elive-login-left {
+                min-height: 185px;
+                padding: 20px 18px;
+            }
+
+            .elive-login-right {
+                padding: 22px 18px 28px;
+            }
+
+            .elive-logo {
+                width: 128px;
+            }
+
+            .elive-login-left h1,
+            .elive-form-box h2 {
+                font-size: 20px;
+            }
+        }
+
+        @media (max-height: 650px) and (min-width: 769px) {
+            .elive-login-page {
+                padding: 12px;
+            }
+
+            .elive-login-card {
+                min-height: 360px;
+            }
+
+            .elive-login-left,
+            .elive-login-right {
+                padding: 24px 28px;
+            }
+
+            .elive-logo {
+                width: 150px;
+                margin-bottom: 18px;
+            }
+
+            .elive-footer-text {
+                margin-top: 12px;
+                padding-top: 10px;
             }
         }
     </style>

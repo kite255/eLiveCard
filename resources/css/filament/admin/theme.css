@@ -1,0 +1,767 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@config 'tailwind.config.js';
+
+/*
+|--------------------------------------------------------------------------
+| eLive Card Theme Variables
+|--------------------------------------------------------------------------
+*/
+
+:root {
+    --elive-blue: #213b73;
+    --elive-blue-dark: #172d59;
+    --elive-blue-light: #eef3fb;
+    --elive-blue-soft: #f5f8fd;
+
+    --elive-orange: #fd9618;
+    --elive-orange-dark: #df810d;
+    --elive-orange-light: #fff4e5;
+
+    --elive-text: #111827;
+    --elive-muted: #64748b;
+    --elive-soft-text: #94a3b8;
+
+    --elive-border: #e2e8f0;
+    --elive-border-soft: #edf2f7;
+    --elive-background: #f8fafc;
+    --elive-white: #ffffff;
+
+    --elive-radius-sm: 0.65rem;
+    --elive-radius-md: 0.8rem;
+    --elive-radius-lg: 1rem;
+
+    --elive-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
+    --elive-shadow-md: 0 10px 28px rgba(15, 23, 42, 0.08);
+    --elive-shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.14);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Main Admin Layout
+|--------------------------------------------------------------------------
+*/
+
+.fi-body {
+    background-color: var(--elive-background);
+    color: var(--elive-text);
+}
+
+.fi-main-ctn,
+.fi-main {
+    background-color: var(--elive-background);
+}
+
+.fi-main {
+    min-height: 100vh;
+}
+
+.fi-page {
+    gap: 1.5rem;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sidebar
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar {
+    background:
+        linear-gradient(
+            180deg,
+            #ffffff 0%,
+            #ffffff 76%,
+            #f8fafc 100%
+        );
+    border-right: 1px solid #e6ebf2;
+    box-shadow: 4px 0 18px rgba(15, 23, 42, 0.025);
+}
+
+.fi-sidebar-header {
+    min-height: 5.4rem;
+    padding-inline: 1.1rem;
+    background-color: rgba(255, 255, 255, 0.98);
+    border-bottom: 1px solid #edf1f6;
+    box-shadow: none;
+}
+
+.fi-sidebar-header .fi-logo {
+    width: auto;
+    max-height: 2.7rem;
+}
+
+.fi-sidebar-nav {
+    padding: 1.2rem 0.75rem 1.75rem;
+    background-color: transparent;
+}
+
+.fi-sidebar-nav-groups {
+    gap: 1.25rem;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sidebar Groups
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar-group {
+    gap: 0.45rem;
+}
+
+.fi-sidebar-group-label {
+    margin-top: 0.15rem;
+    padding-inline: 0.75rem;
+    color: #91a0b6;
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.fi-sidebar-group-button {
+    color: #91a0b6;
+}
+
+.fi-sidebar-group-button:hover {
+    color: var(--elive-blue);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sidebar Items
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar-item-button {
+    position: relative;
+    min-height: 2.85rem;
+    padding: 0.72rem 0.82rem;
+    border-radius: 0.8rem;
+    color: #334155;
+    font-size: 0.875rem;
+    font-weight: 650;
+    transition:
+        background-color 160ms ease,
+        color 160ms ease,
+        box-shadow 160ms ease,
+        transform 160ms ease;
+}
+
+.fi-sidebar-item-button:hover {
+    background-color: #f1f5f9;
+    color: var(--elive-blue);
+    transform: translateX(2px);
+}
+
+.fi-sidebar-item-button:focus-visible {
+    outline: 2px solid rgba(33, 59, 115, 0.28);
+    outline-offset: 2px;
+}
+
+.fi-sidebar-item-icon {
+    width: 1.2rem;
+    height: 1.2rem;
+    color: #8292aa;
+    transition: color 160ms ease;
+}
+
+.fi-sidebar-item-button:hover .fi-sidebar-item-icon {
+    color: var(--elive-blue);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Active Sidebar Item
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar-item.fi-active > .fi-sidebar-item-button {
+    background:
+        linear-gradient(
+            135deg,
+            #213b73 0%,
+            #294b8f 100%
+        );
+    color: #ffffff !important;
+    box-shadow: 0 8px 18px rgba(33, 59, 115, 0.2);
+    transform: none;
+}
+
+.fi-sidebar-item.fi-active > .fi-sidebar-item-button::before {
+    position: absolute;
+    inset-block: 0.72rem;
+    inset-inline-start: 0;
+    width: 3px;
+    border-radius: 0 999px 999px 0;
+    background-color: var(--elive-orange);
+    content: '';
+}
+
+.fi-sidebar-item.fi-active > .fi-sidebar-item-button,
+.fi-sidebar-item.fi-active > .fi-sidebar-item-button span,
+.fi-sidebar-item.fi-active .fi-sidebar-item-label,
+.fi-sidebar-item.fi-active .fi-sidebar-item-icon,
+.fi-sidebar-item.fi-active > .fi-sidebar-item-button svg {
+    color: #ffffff !important;
+}
+
+.fi-sidebar-item.fi-active > .fi-sidebar-item-button:hover {
+    background:
+        linear-gradient(
+            135deg,
+            #172d59 0%,
+            #213b73 100%
+        );
+    color: #ffffff !important;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sidebar Badges
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar-item-badge {
+    min-width: 1.35rem;
+    height: 1.35rem;
+    padding-inline: 0.35rem;
+    border-radius: 999px;
+    background-color: #edf2f7;
+    color: #475569;
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.fi-sidebar-item.fi-active .fi-sidebar-item-badge {
+    background-color: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Collapsed and Mobile Sidebar
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar.fi-sidebar-open {
+    box-shadow: var(--elive-shadow-lg);
+}
+
+.fi-sidebar-close-overlay {
+    background-color: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(2px);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Refined Modern Header
+|--------------------------------------------------------------------------
+*/
+
+.fi-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: rgba(255, 255, 255, 0.97);
+    border-bottom: 1px solid #e6ebf2;
+    box-shadow: 0 3px 12px rgba(15, 23, 42, 0.025);
+    backdrop-filter: blur(16px);
+}
+
+.fi-topbar nav {
+    min-height: 4.75rem;
+    padding-inline: 1.5rem 1.75rem;
+    background: transparent;
+    box-shadow: none;
+}
+
+.fi-sidebar-header {
+    min-height: 4.75rem;
+}
+
+.fi-global-search {
+    width: min(100%, 34rem);
+}
+
+.fi-global-search-field {
+    min-height: 2.7rem;
+    border: 1px solid #e7ecf2;
+    border-radius: 0.8rem;
+    background: #f8fafc;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
+}
+
+.fi-global-search-field:hover {
+    border-color: #d8e1ec;
+    background: #ffffff;
+}
+
+.fi-global-search-field:focus-within {
+    border-color: rgba(33, 59, 115, 0.35);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(33, 59, 115, 0.08);
+}
+
+.fi-global-search-field-key-hint {
+    padding: 0.15rem 0.38rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.4rem;
+    background: #f1f5f9;
+    color: #94a3b8;
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.fi-topbar-item-btn,
+.fi-user-menu-trigger {
+    border-radius: 0.75rem;
+}
+
+.fi-topbar-item-btn:hover,
+.fi-user-menu-trigger:hover {
+    background: #f1f5f9;
+    color: #213b73;
+}
+
+.fi-avatar {
+    box-shadow:
+        0 0 0 3px #eef3fb,
+        0 4px 10px rgba(33, 59, 115, 0.12);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Global Search
+|--------------------------------------------------------------------------
+*/
+
+.fi-global-search {
+    width: min(100%, 30rem);
+}
+
+.fi-global-search-field {
+    min-height: 2.65rem;
+    border: 1px solid transparent;
+    border-radius: 0.8rem;
+    background-color: #f8fafc;
+    transition:
+        background-color 150ms ease,
+        border-color 150ms ease,
+        box-shadow 150ms ease;
+}
+
+.fi-global-search-field:hover {
+    background-color: #f1f5f9;
+}
+
+.fi-global-search-field:focus-within {
+    background-color: #ffffff;
+    border-color: rgba(33, 59, 115, 0.28);
+    box-shadow: 0 0 0 3px rgba(33, 59, 115, 0.08);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Topbar Buttons
+|--------------------------------------------------------------------------
+*/
+
+.fi-topbar-open-sidebar-btn,
+.fi-topbar-close-sidebar-btn,
+.fi-topbar-item-btn,
+.fi-user-menu-trigger {
+    border-radius: 0.75rem;
+    transition:
+        background-color 150ms ease,
+        color 150ms ease,
+        box-shadow 150ms ease;
+}
+
+.fi-topbar-open-sidebar-btn,
+.fi-topbar-close-sidebar-btn {
+    color: var(--elive-blue);
+}
+
+.fi-topbar-open-sidebar-btn:hover,
+.fi-topbar-close-sidebar-btn:hover,
+.fi-topbar-item-btn:hover,
+.fi-user-menu-trigger:hover {
+    background-color: #f1f5f9;
+    color: var(--elive-blue);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Notification Bell
+|--------------------------------------------------------------------------
+*/
+
+.fi-notifications-trigger {
+    position: relative;
+}
+
+.fi-notifications-trigger .fi-icon-btn {
+    border-radius: 0.75rem;
+}
+
+.fi-notifications-trigger .fi-badge {
+    background-color: var(--elive-orange);
+    color: #ffffff;
+}
+
+/*
+|--------------------------------------------------------------------------
+| User Menu
+|--------------------------------------------------------------------------
+*/
+
+.fi-user-menu-trigger {
+    padding: 0.2rem;
+}
+
+.fi-avatar {
+    background:
+        linear-gradient(
+            135deg,
+            #213b73,
+            #172d59
+        );
+    color: #ffffff;
+    box-shadow: 0 0 0 3px #eef3fb;
+}
+
+.fi-dropdown-panel {
+    overflow: hidden;
+    border: 1px solid var(--elive-border);
+    border-radius: 1rem;
+    box-shadow: var(--elive-shadow-lg);
+}
+
+.fi-dropdown-list {
+    padding: 0.45rem;
+}
+
+.fi-dropdown-list-item {
+    min-height: 2.6rem;
+    border-radius: 0.65rem;
+}
+
+.fi-dropdown-list-item:hover {
+    background-color: #f1f5f9;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Page Headers
+|--------------------------------------------------------------------------
+*/
+
+.fi-header {
+    gap: 1rem;
+}
+
+.fi-header-heading {
+    color: var(--elive-text);
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+}
+
+.fi-header-subheading {
+    color: var(--elive-muted);
+    font-size: 0.875rem;
+}
+
+.fi-header-actions {
+    gap: 0.75rem;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Buttons
+|--------------------------------------------------------------------------
+*/
+
+.fi-btn {
+    min-height: 2.65rem;
+    border-radius: 0.7rem;
+    font-weight: 700;
+    box-shadow: none;
+    transition:
+        background-color 150ms ease,
+        color 150ms ease,
+        box-shadow 150ms ease,
+        transform 150ms ease;
+}
+
+.fi-btn:active {
+    transform: translateY(1px);
+}
+
+.fi-btn.fi-color-primary {
+    background-color: var(--elive-blue);
+    color: #ffffff;
+}
+
+.fi-btn.fi-color-primary:hover {
+    background-color: var(--elive-blue-dark);
+}
+
+.fi-btn.fi-color-warning {
+    background-color: var(--elive-orange);
+    color: #ffffff;
+}
+
+.fi-btn.fi-color-warning:hover {
+    background-color: var(--elive-orange-dark);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sections
+|--------------------------------------------------------------------------
+*/
+
+.fi-section {
+    overflow: hidden;
+    background-color: #ffffff;
+    border: 1px solid var(--elive-border);
+    border-radius: var(--elive-radius-lg);
+    box-shadow: none;
+}
+
+.fi-section-header {
+    border-bottom-color: var(--elive-border);
+}
+
+.fi-section-header-heading {
+    color: var(--elive-text);
+    font-weight: 750;
+}
+
+.fi-section-header-description {
+    color: var(--elive-muted);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Tables
+|--------------------------------------------------------------------------
+*/
+
+.fi-ta {
+    overflow: hidden;
+    background-color: #ffffff;
+    border: 1px solid var(--elive-border);
+    border-radius: var(--elive-radius-lg);
+    box-shadow: none;
+}
+
+.fi-ta-header {
+    background-color: #ffffff;
+    border-bottom: 1px solid var(--elive-border);
+}
+
+.fi-ta-header-cell {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.035em;
+    text-transform: uppercase;
+}
+
+.fi-ta-row {
+    border-bottom-color: var(--elive-border-soft);
+}
+
+.fi-ta-row:hover {
+    background-color: #fbfdff;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Form Controls
+|--------------------------------------------------------------------------
+*/
+
+.fi-input-wrp {
+    border-color: #d8e1ec;
+    border-radius: 0.7rem;
+    box-shadow: none;
+    transition:
+        border-color 150ms ease,
+        box-shadow 150ms ease;
+}
+
+.fi-input-wrp:hover {
+    border-color: #c5d0de;
+}
+
+.fi-input-wrp:focus-within {
+    border-color: var(--elive-blue);
+    box-shadow: 0 0 0 3px rgba(33, 59, 115, 0.1);
+}
+
+.fi-fo-field-wrp-label {
+    color: #334155;
+    font-weight: 700;
+}
+
+.fi-fo-field-wrp-helper-text {
+    color: var(--elive-muted);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Tabs and Pagination
+|--------------------------------------------------------------------------
+*/
+
+.fi-tabs {
+    border-color: var(--elive-border);
+    border-radius: 0.8rem;
+    box-shadow: none;
+}
+
+.fi-tabs-item {
+    border-radius: 0.6rem;
+}
+
+.fi-pagination-item-btn {
+    border-radius: 0.55rem;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Dialogs and Notifications
+|--------------------------------------------------------------------------
+*/
+
+.fi-modal-window {
+    border-radius: 1rem;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+}
+
+.fi-no-notification {
+    border-radius: 0.9rem;
+    box-shadow: var(--elive-shadow-md);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Responsive
+|--------------------------------------------------------------------------
+*/
+
+@media (max-width: 1024px) {
+    .fi-topbar nav {
+        min-height: 4.35rem;
+        padding-inline: 1rem;
+    }
+
+    .fi-sidebar-header {
+        min-height: 4.85rem;
+    }
+
+    .fi-global-search {
+        width: min(100%, 21rem);
+    }
+
+    .fi-header-heading {
+        font-size: 1.5rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .fi-topbar nav {
+        padding-inline: 0.75rem;
+    }
+
+    .fi-sidebar-nav {
+        padding-inline: 0.7rem;
+    }
+
+    .fi-header {
+        gap: 0.75rem;
+    }
+
+    .fi-header-heading {
+        font-size: 1.35rem;
+    }
+
+    .fi-header-subheading {
+        font-size: 0.8rem;
+    }
+
+    .fi-header-actions {
+        width: 100%;
+    }
+
+    .fi-header-actions .fi-btn {
+        width: 100%;
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Dark Mode
+|--------------------------------------------------------------------------
+*/
+
+.dark .fi-body,
+.dark .fi-main-ctn,
+.dark .fi-main {
+    background-color: #0f172a;
+}
+
+.dark .fi-sidebar,
+.dark .fi-sidebar-header,
+.dark .fi-sidebar-nav,
+.dark .fi-topbar {
+    background-color: #111827;
+    border-color: #273244;
+}
+
+.dark .fi-sidebar-group-label {
+    color: #718096;
+}
+
+.dark .fi-sidebar-item-button {
+    color: #cbd5e1;
+}
+
+.dark .fi-sidebar-item-button:hover {
+    background-color: #1e293b;
+    color: #ffffff;
+}
+
+.dark .fi-sidebar-item-icon {
+    color: #94a3b8;
+}
+
+.dark .fi-section,
+.dark .fi-ta,
+.dark .fi-tabs,
+.dark .fi-input-wrp,
+.dark .fi-global-search-field {
+    background-color: #111827;
+    border-color: #273244;
+}
+
+.dark .fi-header-heading,
+.dark .fi-section-header-heading {
+    color: #f8fafc;
+}
+
+.dark .fi-header-subheading,
+.dark .fi-section-header-description,
+.dark .fi-fo-field-wrp-helper-text {
+    color: #94a3b8;
+}
+
+.dark .fi-dropdown-panel {
+    background-color: #111827;
+    border-color: #273244;
+}

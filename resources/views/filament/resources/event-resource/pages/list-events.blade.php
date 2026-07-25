@@ -6,7 +6,6 @@
 
         .events-page {
             width: 100%;
-            min-height: auto;
             padding: 8px 4px 30px;
             background: #F8FAFC;
         }
@@ -19,9 +18,9 @@
 
         .events-header {
             display: flex;
-            align-items: flex-end;
+            align-items: flex-start;
             justify-content: space-between;
-            gap: 20px;
+            gap: 18px;
             margin-bottom: 18px;
         }
 
@@ -43,16 +42,24 @@
         .events-create {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
             min-height: 42px;
-            padding: 0 15px;
+            padding: 0 16px;
             border-radius: 12px;
             color: #FFFFFF;
             background: #213B73;
             font-size: 13px;
             font-weight: 850;
             text-decoration: none;
+            white-space: nowrap;
             box-shadow: 0 8px 20px rgba(33, 59, 115, .18);
+            transition: .18s ease;
+        }
+
+        .events-create:hover {
+            background: #182D59;
+            transform: translateY(-1px);
         }
 
         .events-create svg {
@@ -62,7 +69,7 @@
 
         .events-toolbar {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 290px 230px;
+            grid-template-columns: minmax(0, 1fr) minmax(230px, 290px) minmax(190px, 230px);
             gap: 12px;
             align-items: center;
             margin-bottom: 18px;
@@ -72,6 +79,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            min-width: 0;
         }
 
         .events-tab {
@@ -87,9 +95,22 @@
             font-size: 12px;
             font-weight: 800;
             cursor: pointer;
+            transition: .18s ease;
+        }
+
+        .events-tab:hover {
+            color: #213B73;
+            border-color: #B8C5DD;
+            transform: translateY(-1px);
         }
 
         .events-tab-active {
+            color: #FFFFFF;
+            border-color: #213B73;
+            background: #213B73;
+        }
+
+        .events-tab-active:hover {
             color: #FFFFFF;
             border-color: #213B73;
             background: #213B73;
@@ -150,8 +171,8 @@
 
         .events-input:focus,
         .events-select:focus {
-            border-color: #94A3B8;
-            box-shadow: 0 0 0 3px rgba(33, 59, 115, .08);
+            border-color: #213B73;
+            box-shadow: 0 0 0 3px rgba(33, 59, 115, .09);
         }
 
         .events-filter-group {
@@ -191,33 +212,34 @@
             grid-template-columns: 112px minmax(0, 1fr) auto;
             gap: 18px;
             align-items: center;
-            min-height: 126px;
+            min-height: 124px;
             padding: 14px;
             border: 1px solid #E5E7EB;
             border-radius: 18px;
             background: #FFFFFF;
             box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
-            transition: transform .18s ease, box-shadow .18s ease;
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
         }
 
         .event-card:hover {
+            border-color: #D7DFEA;
             transform: translateY(-1px);
             box-shadow: 0 12px 28px rgba(15, 23, 42, .08);
         }
 
         .event-date-box {
-            min-height: 98px;
+            min-height: 96px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             border-radius: 14px;
-            color: #213B73;
-            background: #EEF4FF;
+            color: #475569;
+            background: #F1F5F9;
             text-align: center;
         }
 
-        .event-date-box-active {
+        .event-date-box-happening {
             color: #15803D;
             background: #EAFBF0;
         }
@@ -225,6 +247,16 @@
         .event-date-box-upcoming {
             color: #C2410C;
             background: #FFF3E4;
+        }
+
+        .event-date-box-completed {
+            color: #1D4ED8;
+            background: #EEF4FF;
+        }
+
+        .event-date-box-cancelled {
+            color: #B91C1C;
+            background: #FEF2F2;
         }
 
         .event-date-label {
@@ -295,7 +327,7 @@
             background: currentColor;
         }
 
-        .status-active {
+        .status-happening {
             color: #15803D;
             background: #DCFCE7;
         }
@@ -334,14 +366,23 @@
             display: inline-flex;
             align-items: center;
             gap: 5px;
+            min-width: 0;
         }
 
         .event-meta-item svg {
             width: 14px;
             height: 14px;
+            flex-shrink: 0;
+        }
+
+        .event-meta-item span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .event-description {
+            max-width: 760px;
             margin-top: 7px;
             color: #475569;
             font-size: 11px;
@@ -369,6 +410,11 @@
             font-weight: 800;
         }
 
+        .event-stat strong {
+            color: #111827;
+            font-weight: 900;
+        }
+
         .event-actions {
             display: flex;
             align-items: center;
@@ -391,6 +437,12 @@
             font-weight: 850;
             text-decoration: none;
             white-space: nowrap;
+            transition: .18s ease;
+        }
+
+        .event-open:hover {
+            background: #182D59;
+            transform: translateY(-1px);
         }
 
         .event-menu {
@@ -404,24 +456,6 @@
             color: #475569;
             background: #FFFFFF;
             text-decoration: none;
-        }
-
-        .event-menu svg {
-            width: 18px;
-            height: 18px;
-        }
-
-        .events-tab:hover,
-        .events-create:hover,
-        .event-open:hover,
-        .event-menu:hover {
-            transform: translateY(-1px);
-        }
-
-        .events-create,
-        .event-open,
-        .event-menu,
-        .events-tab {
             transition: .18s ease;
         }
 
@@ -429,6 +463,12 @@
             color: #213B73;
             border-color: #B8C5DD;
             background: #F8FAFC;
+            transform: translateY(-1px);
+        }
+
+        .event-menu svg {
+            width: 18px;
+            height: 18px;
         }
 
         .events-empty {
@@ -458,22 +498,27 @@
 
         @media (max-width: 1100px) {
             .events-toolbar {
-                grid-template-columns: minmax(0, 1fr) 240px;
+                grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
             }
 
             .events-tabs {
                 grid-column: 1 / -1;
             }
+
+            .event-card {
+                grid-template-columns: 104px minmax(0, 1fr) auto;
+                gap: 14px;
+            }
         }
 
-        @media (max-width: 760px) {
-            .events-page {
-                padding: 4px 0 18px;
+        @media (max-width: 820px) {
+            .events-header {
+                align-items: stretch;
+                flex-direction: column;
             }
 
-            .events-header {
-                align-items: flex-start;
-                flex-direction: column;
+            .events-create {
+                align-self: flex-start;
             }
 
             .events-toolbar {
@@ -489,19 +534,138 @@
             }
 
             .event-card {
-                grid-template-columns: 84px minmax(0, 1fr);
+                grid-template-columns: 88px minmax(0, 1fr);
                 gap: 12px;
                 padding: 12px;
             }
 
             .event-date-box {
-                min-height: 84px;
+                min-height: 88px;
             }
 
             .event-actions {
                 grid-column: 1 / -1;
                 justify-content: flex-end;
+                min-width: 0;
                 padding-top: 2px;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .events-page {
+                padding: 4px 0 18px;
+            }
+
+            .events-title {
+                font-size: 24px;
+            }
+
+            .events-subtitle {
+                font-size: 12px;
+                line-height: 1.55;
+            }
+
+            .events-create {
+                width: 100%;
+            }
+
+            .events-tabs {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .events-tab {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            .events-filter-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .events-clear {
+                width: 100%;
+            }
+
+            .event-card {
+                grid-template-columns: 1fr;
+            }
+
+            .event-date-box {
+                min-height: auto;
+                padding: 12px 14px;
+                display: grid;
+                grid-template-columns: auto auto auto 1fr;
+                gap: 8px;
+                justify-content: start;
+                text-align: left;
+            }
+
+            .event-date-label,
+            .event-date-day,
+            .event-date-month,
+            .event-date-time {
+                margin: 0;
+                align-self: center;
+            }
+
+            .event-date-label {
+                padding-right: 4px;
+            }
+
+            .event-date-day {
+                font-size: 18px;
+            }
+
+            .event-topline {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .event-name {
+                width: 100%;
+                white-space: normal;
+                line-height: 1.35;
+            }
+
+            .event-meta {
+                display: grid;
+                grid-template-columns: 1fr;
+            }
+
+            .event-stats {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .event-stat {
+                justify-content: space-between;
+            }
+
+            .event-actions {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 38px;
+                width: 100%;
+            }
+
+            .event-open {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .events-tabs,
+            .event-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .event-date-box {
+                grid-template-columns: auto auto auto;
+            }
+
+            .event-date-time {
+                grid-column: 1 / -1;
             }
         }
     </style>
@@ -517,7 +681,10 @@
                 </div>
 
                 @if (\App\Filament\Resources\EventResource::canCreate())
-                    <a href="{{ \App\Filament\Resources\EventResource::getUrl('create') }}" class="events-create">
+                    <a
+                        href="{{ \App\Filament\Resources\EventResource::getUrl('create') }}"
+                        class="events-create"
+                    >
                         <x-heroicon-o-plus />
                         Create New Event
                     </a>
@@ -535,10 +702,11 @@
                     ] as $filter => $label)
                         <button
                             type="button"
-                            wire:click="setStatusFilter('{{ $filter }}')"
+                            wire:click="setStatusFilter('{{ $filter }}')" wire:loading.attr="disabled"
                             class="events-tab {{ $statusFilter === $filter ? 'events-tab-active' : '' }}"
                         >
                             {{ $label }}
+
                             <span class="events-tab-count">
                                 {{ number_format($statusCounts[$filter] ?? 0) }}
                             </span>
@@ -551,10 +719,15 @@
                     wire:model.live.debounce.400ms="search"
                     class="events-input"
                     placeholder="Search event or venue..."
+                    aria-label="Search events"
                 >
 
                 <div class="events-filter-group">
-                    <select wire:model.live="typeFilter" class="events-select">
+                    <select
+                        wire:model.live="typeFilter"
+                        class="events-select"
+                        aria-label="Filter by event type"
+                    >
                         <option value="all">All Event Types</option>
 
                         @foreach ($eventTypes as $value => $label)
@@ -563,7 +736,12 @@
                     </select>
 
                     @if ($hasActiveFilters ?? false)
-                        <button type="button" wire:click="clearFilters" class="events-clear">
+                        <button
+                            type="button"
+                            wire:click="clearFilters"
+                            wire:loading.attr="disabled"
+                            class="events-clear"
+                        >
                             Clear
                         </button>
                     @endif
@@ -573,56 +751,31 @@
             <div class="events-list">
                 @forelse ($events as $event)
                     @php
-                        $eventDate = $event->event_date
-                            ? \Illuminate\Support\Carbon::parse($event->event_date)
-                            : null;
+                        $presentation = $this->eventPresentation($event);
 
-                        $eventTime = $event->start_time
-                            ? \Illuminate\Support\Carbon::parse($event->start_time)->format('h:i A')
-                            : 'Time not set';
+                        $eventDate = $presentation['eventDate'];
+                        $eventTime = $presentation['eventTime'];
+                        $displayStatus = $presentation['label'];
+                        $statusClass = $presentation['statusClass'];
+                        $dateBoxClass = $presentation['dateBoxClass'];
+                        $dateLabel = $presentation['dateLabel'];
 
-                        $isToday = $eventDate?->isToday() ?? false;
-                        $isTomorrow = $eventDate?->isTomorrow() ?? false;
-                        $isFuture = $eventDate?->isFuture() ?? false;
-                        $isActive = $event->status === \App\Models\Event::STATUS_ACTIVE;
+                        $inviteesCount = (int) ($event->invitees_count ?? 0);
+                        $attendingCount = (int) ($event->rsvp_attending_count ?? 0);
+                        $notAttendingCount = (int) ($event->rsvp_not_attending_count ?? 0);
+                        $cardsReadyCount = (int) ($event->generated_cards_ready_count ?? 0);
+                        $checkInsCount = (int) ($event->check_ins_count ?? 0);
 
-                        $dateBoxClass = $isActive
-                            ? 'event-date-box-active'
-                            : ($isFuture ? 'event-date-box-upcoming' : '');
+                        $responded = $attendingCount + $notAttendingCount;
 
-                        $status = strtolower($event->status ?? 'draft');
-
-                        $dateLabel = match (true) {
-                            $status === 'completed' => 'Completed',
-                            in_array($status, ['cancelled', 'canceled'], true) => 'Cancelled',
-                            $isToday => 'Today',
-                            $isTomorrow => 'Tomorrow',
-                            $isFuture && $eventDate !== null =>
-                                'In '.now()->startOfDay()->diffInDays($eventDate->copy()->startOfDay()).' days',
-                            default => 'Past Event',
-                        };
-
-                        $statusClass = match ($status) {
-                            'active' => 'status-active',
-                            'completed' => 'status-completed',
-                            'cancelled', 'canceled' => 'status-cancelled',
-                            'draft' => 'status-draft',
-                            default => $isFuture ? 'status-upcoming' : 'status-draft',
-                        };
-
-                        $responded = (int) ($event->rsvp_attending_count ?? 0)
-                            + (int) ($event->rsvp_not_attending_count ?? 0);
-
-                        $responseRate = $event->invitees_count > 0
-                            ? round(($responded / $event->invitees_count) * 100)
+                        $responseRate = $inviteesCount > 0
+                            ? min(100, round(($responded / $inviteesCount) * 100))
                             : 0;
                     @endphp
 
                     <article class="event-card">
                         <div class="event-date-box {{ $dateBoxClass }}">
-                            <div class="event-date-label">
-                                {{ $dateLabel }}
-                            </div>
+                            <div class="event-date-label">{{ $dateLabel }}</div>
                             <div class="event-date-day">{{ $eventDate?->format('d') ?? '--' }}</div>
                             <div class="event-date-month">{{ $eventDate?->format('M') ?? 'Date' }}</div>
                             <div class="event-date-time">{{ $eventTime }}</div>
@@ -635,54 +788,69 @@
                                 </h2>
 
                                 <span class="event-status {{ $statusClass }}">
-                                    {{ str($status)->replace('_', ' ')->title() }}
+                                    {{ $displayStatus }}
                                 </span>
                             </div>
 
                             <div class="event-meta">
                                 <span class="event-meta-item">
                                     <x-heroicon-o-map-pin />
-                                    {{ $event->venue_name ?? $event->venue ?? 'Venue not set' }}
+                                    <span>
+                                        {{ $event->venue_name ?? $event->venue ?? 'Venue not set' }}
+                                    </span>
                                 </span>
 
                                 <span class="event-meta-item">
                                     <x-heroicon-o-tag />
-                                    {{ \App\Models\Event::eventTypes()[$event->event_type] ?? str($event->event_type ?? 'social_event')->replace('_', ' ')->title() }}
+                                    <span>
+                                        {{ \App\Models\Event::eventTypes()[$event->event_type]
+                                            ?? str($event->event_type ?? 'social_event')
+                                                ->replace('_', ' ')
+                                                ->title() }}
+                                    </span>
                                 </span>
 
                                 @if ($event->user)
                                     <span class="event-meta-item">
                                         <x-heroicon-o-user-circle />
-                                        {{ $event->user->name }}
+                                        <span>{{ $event->user->name }}</span>
                                     </span>
                                 @endif
                             </div>
 
                             @if (filled($event->description ?? null))
                                 <div class="event-description">
-                                    {{ \Illuminate\Support\Str::limit(strip_tags($event->description), 145) }}
+                                    {{ \Illuminate\Support\Str::limit(
+                                        strip_tags($event->description),
+                                        145
+                                    ) }}
                                 </div>
                             @endif
 
                             <div class="event-stats">
                                 <span class="event-stat">
-                                    {{ number_format($event->invitees_count) }} invitees
+                                    <strong>{{ number_format($inviteesCount) }}</strong>
+                                    invitees
                                 </span>
 
                                 <span class="event-stat">
-                                    {{ number_format($event->rsvp_attending_count) }} attending
+                                    <strong>{{ number_format($attendingCount) }}</strong>
+                                    attending
                                 </span>
 
                                 <span class="event-stat">
-                                    {{ $responseRate }}% RSVP
+                                    <strong>{{ $responseRate }}%</strong>
+                                    RSVP
                                 </span>
 
                                 <span class="event-stat">
-                                    {{ number_format($event->generated_cards_ready_count) }} cards ready
+                                    <strong>{{ number_format($cardsReadyCount) }}</strong>
+                                    cards ready
                                 </span>
 
                                 <span class="event-stat">
-                                    {{ number_format($event->check_ins_count) }} check-ins
+                                    <strong>{{ number_format($checkInsCount) }}</strong>
+                                    check-ins
                                 </span>
                             </div>
                         </div>
@@ -700,6 +868,7 @@
                                     href="{{ \App\Filament\Resources\EventResource::getUrl('edit', ['record' => $event]) }}"
                                     class="event-menu"
                                     title="Edit event"
+                                    aria-label="Edit {{ $event->title ?? $event->name ?? 'event' }}"
                                 >
                                     <x-heroicon-o-pencil-square />
                                 </a>
@@ -709,8 +878,9 @@
                 @empty
                     <div class="events-empty">
                         <div class="events-empty-title">No events found</div>
+
                         <div class="events-empty-text">
-                            Try changing the filter or create a new social event.
+                            Try changing the filters or create a new social event.
                         </div>
                     </div>
                 @endforelse
