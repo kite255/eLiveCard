@@ -1104,12 +1104,22 @@
                 </div>
 
                 <div class="popup-info">
-                    <span>Checked In</span>
+                    <span>Previously Admitted</span>
+                    <strong id="popupPreviouslyCheckedIn">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Guests Admitted Now</span>
+                    <strong id="popupGuestsNow">-</strong>
+                </div>
+
+                <div class="popup-info">
+                    <span>Total Admitted</span>
                     <strong id="popupCheckedIn">-</strong>
                 </div>
 
                 <div class="popup-info">
-                    <span>Remaining</span>
+                    <span>Remaining Guests</span>
                     <strong id="popupRemaining">-</strong>
                 </div>
 
@@ -1119,8 +1129,8 @@
                 </div>
 
                 <div class="popup-info">
-                    <span>Guests Now</span>
-                    <strong id="popupGuestsNow">-</strong>
+                    <span>Serial Number</span>
+                    <strong id="popupSerialNumber">-</strong>
                 </div>
             </div>
 
@@ -1128,7 +1138,7 @@
 
             <div class="popup-actions">
                 <button type="button" class="btn-orange" onclick="closeCheckInPopup()">
-                    Continue Scanning
+                    Scan Next Card
                 </button>
             </div>
         </div>
@@ -1284,7 +1294,7 @@
         );
 
         nameEl.innerText = invitee.name || 'Selected invitee';
-        summaryEl.innerText = `Remaining: ${remaining} • Checked in: ${checkedIn}/${gateLimit}`;
+        summaryEl.innerText = `Remaining: ${remaining} • Total admitted: ${checkedIn}/${gateLimit}`;
         selectEl.innerHTML = '';
 
         for (let count = 1; count <= remaining; count++) {
@@ -1348,8 +1358,8 @@
             <div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>
             <div class="info-row"><span>Confirmed Guests</span><span>${escapeHtml(invitee.confirmed_guests ?? '-')}</span></div>
             <div class="info-row"><span>Gate Limit</span><span>${escapeHtml(invitee.gate_limit ?? invitee.allowed_guests)}</span></div>
-            <div class="info-row"><span>Checked In</span><span>${escapeHtml(invitee.checked_in_count)}</span></div>
-            <div class="info-row"><span>Remaining</span><span>${escapeHtml(invitee.remaining_guests)}</span></div>
+            <div class="info-row"><span>Total Admitted</span><span>${escapeHtml(invitee.checked_in_count)}</span></div>
+            <div class="info-row"><span>Remaining Guests</span><span>${escapeHtml(invitee.remaining_guests)}</span></div>
             <div class="info-row"><span>Table</span><span>${escapeHtml(invitee.table_number)}</span></div>
             <div class="info-row"><span>Category</span><span>${escapeHtml(invitee.category)}</span></div>
         `;
@@ -1409,8 +1419,32 @@
             invitee.allowed_guests ??
             1;
 
+        const guestsCheckedInNow = Math.max(
+            numberValue(
+                details.guests_checked_in_now ??
+                invitee.guests_checked_in_now ??
+                0
+            ),
+            0
+        );
+
+        const previouslyCheckedIn = Math.max(
+            numberValue(
+                details.previous_checked_in_count ??
+                invitee.previous_checked_in_count ??
+                (numberValue(totalCheckedIn) - guestsCheckedInNow)
+            ),
+            0
+        );
+
+        document.getElementById('popupPreviouslyCheckedIn').innerText =
+            previouslyCheckedIn;
+
+        document.getElementById('popupGuestsNow').innerText =
+            guestsCheckedInNow;
+
         document.getElementById('popupCheckedIn').innerText =
-            `${totalCheckedIn} / ${allowedGuests}`;
+            `${totalCheckedIn} of ${allowedGuests} guests`;
 
         document.getElementById('popupRemaining').innerText =
             details.remaining_guests ?? invitee.remaining_guests ?? 0;
@@ -1418,8 +1452,8 @@
         document.getElementById('popupCategory').innerText =
             details.category || invitee.category || 'N/A';
 
-        document.getElementById('popupGuestsNow').innerText =
-            details.guests_checked_in_now ?? '-';
+        document.getElementById('popupSerialNumber').innerText =
+            details.serial_number || invitee.serial_number || 'N/A';
 
         const checkedInTime =
             details.checked_in_time ||
