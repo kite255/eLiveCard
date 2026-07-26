@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Invitee;
 use App\Services\AuditLogService;
 use App\Services\RsvpService;
-use App\Services\WhatsAppService;
+use App\Services\WhatsAppApiCloudService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -76,7 +76,7 @@ class WhatsAppWebhookController extends Controller
     public function handle(
         Request $request,
         RsvpService $rsvpService,
-        WhatsAppService $whatsAppService
+        WhatsAppApiCloudService $whatsAppService
     ): JsonResponse
     {
         if (! $this->hasValidSignature($request)) {
@@ -196,7 +196,7 @@ class WhatsAppWebhookController extends Controller
     protected function handleIncomingMessage(
         array $message,
         RsvpService $rsvpService,
-        WhatsAppService $whatsAppService
+        WhatsAppApiCloudService $whatsAppService
     ): void {
         $fromPhone = $this->normalizePhone(
             (string) ($message['from'] ?? '')
@@ -459,25 +459,25 @@ class WhatsAppWebhookController extends Controller
             'ndiyo',
             'nitahudhuria',
             'nitahuduria',
-            'nita hudhuria',
-            'nita huduria' => 'rsvp_attending',
+            'nita_hudhuria',
+            'nita_huduria' => 'rsvp_attending',
 
             'rsvp_not_attending',
             'not_attending',
-            'not attending',
+            'not_attending',
             'no',
             'hapana',
-            'sitaweza hudhuria',
-            'sitaweza kuhudhuria',
-            'sitaweza huduria',
-            'sita hudhuria',
-            'sita kuhudhuria' => 'rsvp_not_attending',
+            'sitaweza_hudhuria',
+            'sitaweza_kuhudhuria',
+            'sitaweza_huduria',
+            'sita_hudhuria',
+            'sita_kuhudhuria' => 'rsvp_not_attending',
 
             'location',
-            'view location',
-            'open location',
-            'fungua location',
-            'angalia mahali',
+            'view_location',
+            'open_location',
+            'fungua_location',
+            'angalia_mahali',
             'mahali',
             'ramani' => 'location',
 
@@ -488,14 +488,14 @@ class WhatsAppWebhookController extends Controller
     protected function normalizeReplyValue(string $value): string
     {
         $value = mb_strtolower(trim($value));
-        $value = str_replace(['-', '_'], ' ', $value);
+        $value = preg_replace('/[\s\-]+/', '_', $value) ?: '';
 
-        return preg_replace('/\s+/', ' ', $value) ?: '';
+        return trim($value, '_');
     }
 
     protected function handleLocationReply(
         Invitee $invitee,
-        WhatsAppService $whatsappService,
+        WhatsAppApiCloudService $whatsappService,
         string $messageId,
         string $fromPhone,
         string $messageType,
@@ -973,13 +973,21 @@ class WhatsAppWebhookController extends Controller
             'message_status' => $status,
             'whatsapp_status' => $status,
             'whatsapp_message_id' => $messageId,
-            'whatsapp_error' => $error,
-            'delivered_at' => in_array(
+            'last_message_error' => $error,
+            'whatsapp_sent_at' => in_array(
+                $status,
+                ['sent', 'delivered', 'read'],
+                true
+            ) ? ($invitee->whatsapp_sent_at ?: $timestamp) : null,
+            'whatsapp_delivered_at' => in_array(
                 $status,
                 ['delivered', 'read'],
                 true
             ) ? $timestamp : null,
-            'failed_at' => $status === 'failed'
+            'whatsapp_read_at' => $status === 'read'
+                ? $timestamp
+                : null,
+            'whatsapp_failed_at' => $status === 'failed'
                 ? $timestamp
                 : null,
         ];
