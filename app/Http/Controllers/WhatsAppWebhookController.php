@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Invitee;
 use App\Services\AuditLogService;
 use App\Services\RsvpService;
+use App\Services\WhatsAppService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,7 +73,11 @@ class WhatsAppWebhookController extends Controller
         ], SymfonyResponse::HTTP_FORBIDDEN);
     }
 
-    public function handle(Request $request, RsvpService $rsvpService): JsonResponse
+    public function handle(
+        Request $request,
+        RsvpService $rsvpService,
+        WhatsAppService $whatsAppService
+    ): JsonResponse
     {
         if (! $this->hasValidSignature($request)) {
             Log::warning('WhatsApp webhook rejected because of invalid signature.');
@@ -118,7 +123,11 @@ class WhatsAppWebhookController extends Controller
 
                 foreach ($value['messages'] ?? [] as $message) {
                     try {
-                        $this->handleIncomingMessage($message, $rsvpService);
+                        $this->handleIncomingMessage(
+                            $message,
+                            $rsvpService,
+                            $whatsAppService
+                        );
                         $messagesProcessed++;
                     } catch (Throwable $exception) {
                         $errors++;
@@ -186,31 +195,19 @@ class WhatsAppWebhookController extends Controller
 
     protected function handleIncomingMessage(
         array $message,
-        RsvpService $rsvpService
+        RsvpService $rsvpService,
+        WhatsAppService $whatsAppService
     ): void {
         $fromPhone = $this->normalizePhone(
             (string) ($message['from'] ?? '')
         );
 
-        $messageId = (string) ($message['id'] ?? '');
+        $messageId = trim((string) ($message['id'] ?? ''));
         $messageType = (string) ($message['type'] ?? 'unknown');
 
-        $buttonPayload = data_get(
-            $message,
-            'interactive.button_reply.id'
-        );
+        [$replyPayload, $replyTitle] = $this->extractIncomingReply($message);
 
-        $buttonTitle = data_get(
-            $message,
-            'interactive.button_reply.title'
-        );
-
-        if (! $buttonPayload) {
-            $buttonPayload = data_get($message, 'button.payload');
-            $buttonTitle = data_get($message, 'button.text');
-        }
-
-        if (! $fromPhone) {
+        if ($fromPhone === '') {
             Log::warning(
                 'WhatsApp incoming message ignored because phone number is missing.',
                 [
@@ -233,62 +230,26 @@ class WhatsAppWebhookController extends Controller
 
         $invitee = $this->findInviteeByPhone($fromPhone);
 
-        if (! $buttonPayload) {
-            Log::info(
-                'WhatsApp incoming message received without RSVP button payload.',
-                [
-                    'from' => $fromPhone,
-                    'type' => $messageType,
-                    'message_id' => $messageId,
-                ]
-            );
-
-            if ($invitee) {
-                AuditLogService::record(
-                    action: 'whatsapp_message.received',
-                    subject: $invitee,
-                    eventId: $invitee->event_id,
-                    description: 'WhatsApp message was received without an RSVP button response.',
-                    metadata: [
-                        'message_id' => $messageId,
-                        'message_type' => $messageType,
-                        'from' => $fromPhone,
-                    ],
-                );
-            } else {
-                AuditLogService::system(
-                    action: 'whatsapp_message.unmatched',
-                    description: 'WhatsApp message was received but no invitee matched the sender phone number.',
-                    metadata: [
-                        'message_id' => $messageId,
-                        'message_type' => $messageType,
-                        'from' => $fromPhone,
-                    ],
-                );
-            }
-
-            return;
-        }
-
         if (! $invitee) {
             Log::warning(
-                'WhatsApp RSVP reply ignored because invitee was not found.',
+                'WhatsApp reply ignored because invitee was not found.',
                 [
                     'from' => $fromPhone,
-                    'button_payload' => $buttonPayload,
-                    'button_title' => $buttonTitle,
+                    'reply_payload' => $replyPayload,
+                    'reply_title' => $replyTitle,
                     'message_id' => $messageId,
                 ]
             );
 
             AuditLogService::system(
-                action: 'whatsapp_rsvp.invitee_not_found',
-                description: 'WhatsApp RSVP reply was ignored because no invitee matched the sender phone number.',
+                action: 'whatsapp_message.invitee_not_found',
+                description: 'WhatsApp reply was ignored because no invitee matched the sender phone number.',
                 metadata: [
                     'from' => $fromPhone,
                     'message_id' => $messageId,
-                    'button_payload' => $buttonPayload,
-                    'button_title' => $buttonTitle,
+                    'message_type' => $messageType,
+                    'reply_payload' => $replyPayload,
+                    'reply_title' => $replyTitle,
                 ],
             );
 
@@ -308,7 +269,73 @@ class WhatsAppWebhookController extends Controller
                 description: 'Duplicate WhatsApp reply was ignored.',
                 metadata: [
                     'message_id' => $messageId,
-                    'button_payload' => $buttonPayload,
+                    'reply_payload' => $replyPayload,
+                    'reply_title' => $replyTitle,
+                ],
+            );
+
+            return;
+        }
+
+        if ($replyPayload === null && $replyTitle === null) {
+            AuditLogService::record(
+                action: 'whatsapp_message.received',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'A WhatsApp message was received without a supported reply value.',
+                metadata: [
+                    'message_id' => $messageId,
+                    'message_type' => $messageType,
+                    'from' => $fromPhone,
+                ],
+            );
+
+            return;
+        }
+
+        $canonicalAction = $this->resolveReplyAction(
+            payload: $replyPayload,
+            title: $replyTitle,
+        );
+
+        if ($canonicalAction === 'location') {
+            $this->handleLocationReply(
+                invitee: $invitee,
+                whatsappService: $whatsAppService,
+                messageId: $messageId,
+                fromPhone: $fromPhone,
+                messageType: $messageType,
+                replyPayload: $replyPayload,
+                replyTitle: $replyTitle,
+            );
+
+            return;
+        }
+
+        if (! in_array(
+            $canonicalAction,
+            ['rsvp_attending', 'rsvp_not_attending'],
+            true
+        )) {
+            $this->recordIncomingMessage(
+                invitee: $invitee,
+                messageId: $messageId,
+                fromPhone: $fromPhone,
+                messageType: $messageType,
+                buttonPayload: $replyPayload ?? $replyTitle ?? 'unknown',
+                buttonTitle: $replyTitle,
+                logType: 'message_reply',
+            );
+
+            AuditLogService::record(
+                action: 'whatsapp_message.unsupported_reply',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'A WhatsApp reply was received but it did not match a supported action.',
+                metadata: [
+                    'message_id' => $messageId,
+                    'reply_payload' => $replyPayload,
+                    'reply_title' => $replyTitle,
                 ],
             );
 
@@ -326,8 +353,8 @@ class WhatsAppWebhookController extends Controller
 
         $updatedInvitee = $rsvpService->updateFromWhatsappButton(
             invitee: $invitee,
-            buttonPayload: (string) $buttonPayload,
-            buttonTitle: $buttonTitle ? (string) $buttonTitle : null,
+            buttonPayload: $canonicalAction,
+            buttonTitle: $replyTitle,
         );
 
         $this->recordIncomingMessage(
@@ -335,14 +362,15 @@ class WhatsAppWebhookController extends Controller
             messageId: $messageId,
             fromPhone: $fromPhone,
             messageType: $messageType,
-            buttonPayload: (string) $buttonPayload,
-            buttonTitle: $buttonTitle ? (string) $buttonTitle : null,
+            buttonPayload: $canonicalAction,
+            buttonTitle: $replyTitle,
+            logType: 'rsvp_reply',
         );
 
         AuditLogService::updated(
             subject: $updatedInvitee,
             eventId: $updatedInvitee->event_id,
-            description: 'Invitee RSVP was updated from a WhatsApp button response.',
+            description: 'Invitee RSVP was updated from a WhatsApp response.',
             oldValues: $beforeValues,
             newValues: $updatedInvitee->only([
                 'rsvp_status',
@@ -355,8 +383,9 @@ class WhatsAppWebhookController extends Controller
             metadata: [
                 'message_id' => $messageId,
                 'phone' => $fromPhone,
-                'button_payload' => $buttonPayload,
-                'button_title' => $buttonTitle,
+                'reply_payload' => $replyPayload,
+                'reply_title' => $replyTitle,
+                'canonical_action' => $canonicalAction,
                 'source' => 'whatsapp_webhook',
             ],
         );
@@ -365,11 +394,158 @@ class WhatsAppWebhookController extends Controller
             'invitee_id' => $updatedInvitee->id,
             'event_id' => $updatedInvitee->event_id,
             'phone' => $fromPhone,
-            'button_payload' => $buttonPayload,
-            'button_title' => $buttonTitle,
+            'canonical_action' => $canonicalAction,
             'before_status' => $beforeValues['rsvp_status'] ?? null,
             'after_status' => $updatedInvitee->rsvp_status,
         ]);
+    }
+
+    protected function extractIncomingReply(array $message): array
+    {
+        $payload = data_get(
+            $message,
+            'interactive.button_reply.id'
+        );
+
+        $title = data_get(
+            $message,
+            'interactive.button_reply.title'
+        );
+
+        if (! filled($payload) && ! filled($title)) {
+            $payload = data_get(
+                $message,
+                'interactive.list_reply.id'
+            );
+
+            $title = data_get(
+                $message,
+                'interactive.list_reply.title'
+            );
+        }
+
+        if (! filled($payload) && ! filled($title)) {
+            $payload = data_get($message, 'button.payload');
+            $title = data_get($message, 'button.text');
+        }
+
+        if (! filled($payload) && ! filled($title)) {
+            $text = data_get($message, 'text.body');
+
+            if (filled($text)) {
+                $payload = $text;
+                $title = $text;
+            }
+        }
+
+        return [
+            filled($payload) ? trim((string) $payload) : null,
+            filled($title) ? trim((string) $title) : null,
+        ];
+    }
+
+    protected function resolveReplyAction(
+        ?string $payload,
+        ?string $title
+    ): ?string {
+        $value = $this->normalizeReplyValue(
+            $payload ?: $title ?: ''
+        );
+
+        return match ($value) {
+            'rsvp_attending',
+            'attending',
+            'yes',
+            'ndiyo',
+            'nitahudhuria',
+            'nitahuduria',
+            'nita hudhuria',
+            'nita huduria' => 'rsvp_attending',
+
+            'rsvp_not_attending',
+            'not_attending',
+            'not attending',
+            'no',
+            'hapana',
+            'sitaweza hudhuria',
+            'sitaweza kuhudhuria',
+            'sitaweza huduria',
+            'sita hudhuria',
+            'sita kuhudhuria' => 'rsvp_not_attending',
+
+            'location',
+            'view location',
+            'open location',
+            'fungua location',
+            'angalia mahali',
+            'mahali',
+            'ramani' => 'location',
+
+            default => null,
+        };
+    }
+
+    protected function normalizeReplyValue(string $value): string
+    {
+        $value = mb_strtolower(trim($value));
+        $value = str_replace(['-', '_'], ' ', $value);
+
+        return preg_replace('/\s+/', ' ', $value) ?: '';
+    }
+
+    protected function handleLocationReply(
+        Invitee $invitee,
+        WhatsAppService $whatsappService,
+        string $messageId,
+        string $fromPhone,
+        string $messageType,
+        ?string $replyPayload,
+        ?string $replyTitle,
+    ): void {
+        $invitee->loadMissing('event');
+
+        $event = $invitee->event;
+        $locationUrl = trim((string) ($event?->google_maps_link ?? ''));
+
+        $responseMessage = $locationUrl !== ''
+            ? "Mahali pa tukio la {$event->title}:\n{$locationUrl}"
+            : 'Samahani, kiungo cha Google Maps cha tukio hili bado hakijawekwa.';
+
+        $whatsappService->sendText(
+            phone: $invitee->phone,
+            message: $responseMessage,
+        );
+
+        $invitee->forceFill([
+            'last_message_channel' => 'whatsapp',
+            'last_message_status' => 'replied',
+            'last_reply_message' => $replyTitle ?: $replyPayload,
+            'last_reply_at' => now(),
+        ])->save();
+
+        $this->recordIncomingMessage(
+            invitee: $invitee,
+            messageId: $messageId,
+            fromPhone: $fromPhone,
+            messageType: $messageType,
+            buttonPayload: $replyPayload ?? 'location',
+            buttonTitle: $replyTitle,
+            logType: 'location_request',
+        );
+
+        AuditLogService::record(
+            action: 'whatsapp_location.sent',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: $locationUrl !== ''
+                ? 'The event location was sent after a WhatsApp request.'
+                : 'A WhatsApp location request was received, but the event had no Google Maps link.',
+            metadata: [
+                'message_id' => $messageId,
+                'from' => $fromPhone,
+                'location_available' => $locationUrl !== '',
+            ],
+        );
     }
 
     protected function handleMessageStatus(array $status): void
@@ -540,7 +716,21 @@ class WhatsAppWebhookController extends Controller
 
     protected function normalizePhone(string $phone): string
     {
-        return preg_replace('/\D+/', '', $phone) ?: '';
+        $phone = preg_replace('/\D+/', '', $phone) ?: '';
+
+        if ($phone === '') {
+            return '';
+        }
+
+        if (str_starts_with($phone, '0')) {
+            return '255'.substr($phone, 1);
+        }
+
+        if (! str_starts_with($phone, '255') && strlen($phone) === 9) {
+            return '255'.$phone;
+        }
+
+        return $phone;
     }
 
     protected function hasValidSignature(Request $request): bool
@@ -630,6 +820,7 @@ class WhatsAppWebhookController extends Controller
         string $messageType,
         string $buttonPayload,
         ?string $buttonTitle,
+        string $logType = 'rsvp_reply',
     ): void {
         if (! Schema::hasTable('message_logs')) {
             return;
@@ -642,8 +833,8 @@ class WhatsAppWebhookController extends Controller
             'event_id' => $invitee->event_id,
             'invitee_id' => $invitee->id,
             'channel' => 'whatsapp',
-            'type' => 'rsvp_reply',
-            'message_type' => 'rsvp_reply',
+            'type' => $logType,
+            'message_type' => $logType,
             'recipient' => $fromPhone,
             'phone' => $fromPhone,
             'from' => $fromPhone,

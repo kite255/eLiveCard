@@ -37,10 +37,6 @@ return [
     |--------------------------------------------------------------------------
     | SMS Gateway
     |--------------------------------------------------------------------------
-    |
-    | Use SMS_DRIVER=log while testing locally.
-    | Use SMS_DRIVER=http when connecting to the real SMS provider.
-    |
     */
 
     'sms' => [
@@ -66,12 +62,6 @@ return [
     |--------------------------------------------------------------------------
     | eLive SMS Provider
     |--------------------------------------------------------------------------
-    |
-    | The provider expects these headers:
-    |
-    | api_key
-    | api_secret
-    |
     */
 
     'elive_sms' => [
@@ -110,9 +100,6 @@ return [
     |--------------------------------------------------------------------------
     | SMS Balance
     |--------------------------------------------------------------------------
-    |
-    | Used by the dashboard SMS Balance card.
-    |
     */
 
     'sms_balance' => [
@@ -158,13 +145,12 @@ return [
     |
     | Supported drivers:
     |
-    | log       - Records payloads in Laravel logs without calling Meta.
-    | cloud_api - Sends real WhatsApp messages using Meta Cloud API.
+    | log       - Writes payloads to the Laravel log without calling Meta.
+    | cloud_api - Sends real WhatsApp messages through Meta Cloud API.
     |
     */
 
     'whatsapp' => [
-
         'enabled' => filter_var(
             env('WHATSAPP_ENABLED', false),
             FILTER_VALIDATE_BOOL
@@ -172,7 +158,10 @@ return [
 
         'driver' => env('WHATSAPP_DRIVER', 'log'),
 
-        'provider' => env('WHATSAPP_PROVIDER', 'cloud_api'),
+        'provider' => env(
+            'WHATSAPP_PROVIDER',
+            'cloud_api'
+        ),
 
         /*
         |--------------------------------------------------------------------------
@@ -180,15 +169,25 @@ return [
         |--------------------------------------------------------------------------
         */
 
-        'access_token' => env('WHATSAPP_ACCESS_TOKEN'),
+        'access_token' => env(
+            'WHATSAPP_ACCESS_TOKEN'
+        ),
 
-        'phone_number_id' => env('WHATSAPP_PHONE_NUMBER_ID'),
+        'phone_number_id' => env(
+            'WHATSAPP_PHONE_NUMBER_ID'
+        ),
 
-        'business_account_id' => env('WHATSAPP_BUSINESS_ACCOUNT_ID'),
+        'business_account_id' => env(
+            'WHATSAPP_BUSINESS_ACCOUNT_ID'
+        ),
 
-        'app_id' => env('WHATSAPP_APP_ID'),
+        'app_id' => env(
+            'WHATSAPP_APP_ID'
+        ),
 
-        'app_secret' => env('WHATSAPP_APP_SECRET'),
+        'app_secret' => env(
+            'WHATSAPP_APP_SECRET'
+        ),
 
         /*
         |--------------------------------------------------------------------------
@@ -196,14 +195,20 @@ return [
         |--------------------------------------------------------------------------
         */
 
-        'api_version' => env('WHATSAPP_API_VERSION', 'v25.0'),
+        'api_version' => env(
+            'WHATSAPP_API_VERSION',
+            'v25.0'
+        ),
 
         'base_url' => env(
             'WHATSAPP_API_URL',
             'https://graph.facebook.com'
         ),
 
-        'timeout' => (int) env('WHATSAPP_TIMEOUT', 30),
+        'timeout' => (int) env(
+            'WHATSAPP_TIMEOUT',
+            30
+        ),
 
         'connect_timeout' => (int) env(
             'WHATSAPP_CONNECT_TIMEOUT',
@@ -221,7 +226,10 @@ return [
         ),
 
         'verify_webhook_signature' => filter_var(
-            env('WHATSAPP_VERIFY_WEBHOOK_SIGNATURE', true),
+            env(
+                'WHATSAPP_VERIFY_WEBHOOK_SIGNATURE',
+                true
+            ),
             FILTER_VALIDATE_BOOL
         ),
 
@@ -233,34 +241,47 @@ return [
 
         'template_language' => env(
             'WHATSAPP_TEMPLATE_LANGUAGE',
-            'sw'
+            'en_GB'
         ),
 
         'templates' => [
             'invitation' => env(
-                'WHATSAPP_INVITATION_TEMPLATE',
-                'elive_invitation'
+                'WHATSAPP_TEMPLATE_INVITATION',
+                'invitation_card_template'
             ),
 
             'rsvp' => env(
-                'WHATSAPP_RSVP_TEMPLATE',
+                'WHATSAPP_TEMPLATE_RSVP',
                 'elive_rsvp'
             ),
 
             'reminder' => env(
-                'WHATSAPP_REMINDER_TEMPLATE',
+                'WHATSAPP_TEMPLATE_REMINDER',
                 'elive_reminder'
             ),
 
             'event_day' => env(
-                'WHATSAPP_EVENT_DAY_TEMPLATE',
+                'WHATSAPP_TEMPLATE_EVENT_DAY',
                 'elive_event_day'
             ),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Invitation media header
+        |--------------------------------------------------------------------------
+        |
+        | Your approved invitation_card_template uses an IMAGE header.
+        |
+        */
+
         'invitation_header_type' => env(
             'WHATSAPP_INVITATION_HEADER_TYPE',
-            'none'
+            'image'
+        ),
+
+        'default_invitation_image_url' => env(
+            'WHATSAPP_DEFAULT_INVITATION_IMAGE_URL'
         ),
 
         /*
@@ -270,17 +291,26 @@ return [
         */
 
         'mark_generated_card_as_sent' => filter_var(
-            env('WHATSAPP_MARK_CARD_AS_SENT', true),
+            env(
+                'WHATSAPP_MARK_CARD_AS_SENT',
+                true
+            ),
             FILTER_VALIDATE_BOOL
         ),
 
         'store_provider_response' => filter_var(
-            env('WHATSAPP_STORE_PROVIDER_RESPONSE', true),
+            env(
+                'WHATSAPP_STORE_PROVIDER_RESPONSE',
+                true
+            ),
             FILTER_VALIDATE_BOOL
         ),
 
         'capture_incoming_messages' => filter_var(
-            env('WHATSAPP_CAPTURE_INCOMING_MESSAGES', true),
+            env(
+                'WHATSAPP_CAPTURE_INCOMING_MESSAGES',
+                true
+            ),
             FILTER_VALIDATE_BOOL
         ),
     ],
