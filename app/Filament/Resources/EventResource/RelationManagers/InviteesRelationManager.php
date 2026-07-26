@@ -57,6 +57,9 @@ class InviteesRelationManager extends RelationManager
     private const CARD_STATUS_OPTIONS = [
         Invitee::CARD_STATUS_PENDING => 'Pending',
         Invitee::CARD_STATUS_ACTIVE => 'Active',
+        'generated' => 'Generated',
+        'sent' => 'Sent',
+        'opened' => 'Opened',
         Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
         Invitee::CARD_STATUS_BLOCKED => 'Blocked',
         Invitee::CARD_STATUS_USED => 'Used',
@@ -439,18 +442,25 @@ class InviteesRelationManager extends RelationManager
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         Invitee::CARD_STATUS_PENDING => 'Pending',
                         Invitee::CARD_STATUS_ACTIVE => 'Active',
+                        'generated' => 'Generated',
+                        'sent' => 'Sent',
+                        'opened' => 'Opened',
                         Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
                         Invitee::CARD_STATUS_BLOCKED => 'Blocked',
                         Invitee::CARD_STATUS_USED => 'Used',
-                        default => 'Invalid Status',
+                        null, '' => 'Not Set',
+                        default => ucfirst(str_replace('_', ' ', (string) $state)),
                     })
                     ->color(fn (?string $state): string => match ($state) {
-                        Invitee::CARD_STATUS_ACTIVE => 'success',
+                        Invitee::CARD_STATUS_ACTIVE,
+                        'generated',
+                        'opened' => 'success',
                         Invitee::CARD_STATUS_PENDING => 'warning',
+                        'sent' => 'info',
                         Invitee::CARD_STATUS_CANCELLED,
                         Invitee::CARD_STATUS_BLOCKED => 'danger',
-                        Invitee::CARD_STATUS_USED => 'info',
-                        default => 'danger',
+                        Invitee::CARD_STATUS_USED => 'gray',
+                        default => 'gray',
                     })
                     ->sortable(),
 
@@ -512,6 +522,7 @@ class InviteesRelationManager extends RelationManager
                     ->description(function (Invitee $record): string {
                         $whatsapp = match ($record->whatsapp_status) {
                             'sending' => 'Sending',
+                            'submitted' => 'Submitted',
                             'sent' => 'Sent',
                             'delivered' => 'Delivered',
                             'read' => 'Read',
@@ -552,6 +563,7 @@ class InviteesRelationManager extends RelationManager
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'not_sent', null, '' => 'Not Sent',
                         'sending' => 'Sending',
+                        'submitted' => 'Submitted',
                         'sent' => 'Sent',
                         'delivered' => 'Delivered',
                         'read' => 'Read',
@@ -560,7 +572,7 @@ class InviteesRelationManager extends RelationManager
                     })
                     ->color(fn (?string $state): string => match ($state) {
                         'sent', 'delivered', 'read' => 'success',
-                        'sending' => 'warning',
+                        'sending', 'submitted' => 'warning',
                         'failed' => 'danger',
                         default => 'gray',
                     })
@@ -685,6 +697,7 @@ class InviteesRelationManager extends RelationManager
                     ->options([
                         'not_sent' => 'Not Sent',
                         'sending' => 'Sending',
+                        'submitted' => 'Submitted',
                         'sent' => 'Sent',
                         'delivered' => 'Delivered',
                         'read' => 'Read',
@@ -1306,13 +1319,7 @@ class InviteesRelationManager extends RelationManager
 
                                     Forms\Components\Select::make('card_status')
                                         ->label('Card Status')
-                                        ->options([
-                                            Invitee::CARD_STATUS_PENDING => 'Pending',
-                                            Invitee::CARD_STATUS_ACTIVE => 'Active',
-                                            Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
-                                            Invitee::CARD_STATUS_BLOCKED => 'Blocked',
-                                            Invitee::CARD_STATUS_USED => 'Used',
-                                        ])
+                                        ->options(self::CARD_STATUS_OPTIONS)
                                         ->required(),
                                 ])
                                 ->columns(3),
