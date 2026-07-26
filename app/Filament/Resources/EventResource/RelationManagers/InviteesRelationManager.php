@@ -57,9 +57,6 @@ class InviteesRelationManager extends RelationManager
     private const CARD_STATUS_OPTIONS = [
         Invitee::CARD_STATUS_PENDING => 'Pending',
         Invitee::CARD_STATUS_ACTIVE => 'Active',
-        'generated' => 'Generated',
-        'sent' => 'Sent',
-        'opened' => 'Opened',
         Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
         Invitee::CARD_STATUS_BLOCKED => 'Blocked',
         Invitee::CARD_STATUS_USED => 'Used',
@@ -442,9 +439,6 @@ class InviteesRelationManager extends RelationManager
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         Invitee::CARD_STATUS_PENDING => 'Pending',
                         Invitee::CARD_STATUS_ACTIVE => 'Active',
-                        'generated' => 'Generated',
-                        'sent' => 'Sent',
-                        'opened' => 'Opened',
                         Invitee::CARD_STATUS_CANCELLED => 'Cancelled',
                         Invitee::CARD_STATUS_BLOCKED => 'Blocked',
                         Invitee::CARD_STATUS_USED => 'Used',
@@ -452,14 +446,11 @@ class InviteesRelationManager extends RelationManager
                         default => ucfirst(str_replace('_', ' ', (string) $state)),
                     })
                     ->color(fn (?string $state): string => match ($state) {
-                        Invitee::CARD_STATUS_ACTIVE,
-                        'generated',
-                        'opened' => 'success',
+                        Invitee::CARD_STATUS_ACTIVE => 'success',
                         Invitee::CARD_STATUS_PENDING => 'warning',
-                        'sent' => 'info',
                         Invitee::CARD_STATUS_CANCELLED,
                         Invitee::CARD_STATUS_BLOCKED => 'danger',
-                        Invitee::CARD_STATUS_USED => 'gray',
+                        Invitee::CARD_STATUS_USED => 'info',
                         default => 'gray',
                     })
                     ->sortable(),
@@ -2501,6 +2492,9 @@ class InviteesRelationManager extends RelationManager
             'sending' => [
                 'whatsapp_status' => ['sending'],
             ],
+            'submitted' => [
+                'whatsapp_status' => ['submitted'],
+            ],
         ];
 
         foreach ($map as $keyword => $groups) {
@@ -3114,7 +3108,13 @@ class InviteesRelationManager extends RelationManager
                 ->acceptJson()
                 ->asJson()
                 ->timeout(30)
-                ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", $payload);
+                ->post(
+                    rtrim((string) config('services.whatsapp.base_url', 'https://graph.facebook.com'), '/')
+                    .'/'
+                    .trim((string) config('services.whatsapp.api_version', 'v25.0'), '/')
+                    ."/{$phoneNumberId}/messages",
+                    $payload
+                );
 
             $responseData = $response->json();
 
@@ -3241,7 +3241,10 @@ class InviteesRelationManager extends RelationManager
              * WhatsApp Cloud API requires the header image parameter to be sent
              * together with the body parameters.
              */
-            if ($providerTemplateName === 'event_invitation') {
+            if (in_array($providerTemplateName, [
+                'event_invitation',
+                'invitation_card_template',
+            ], true)) {
                 $headerImageUrl = $this->whatsappHeaderImageUrl($invitee);
 
                 if (filled($headerImageUrl)) {
@@ -3367,7 +3370,7 @@ class InviteesRelationManager extends RelationManager
             return (string) $template->whatsapp_language_code;
         }
 
-        return (string) config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'en'));
+        return (string) config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'en_GB'));
     }
 
     protected function whatsappHeaderImageUrl(Invitee $invitee): ?string
