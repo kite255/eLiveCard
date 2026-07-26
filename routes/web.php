@@ -11,10 +11,8 @@ use App\Http\Controllers\PublicEventController;
 use App\Http\Controllers\PublicRsvpReportController;
 use App\Http\Controllers\RsvpController;
 use App\Http\Controllers\RsvpShareController;
-use App\Http\Controllers\WhatsAppWebhookController;
 use App\Models\CardTemplate;
 use App\Models\Event;
-use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
@@ -48,27 +46,6 @@ Route::view('/privacy-policy', 'pages.privacy-policy')
 
 Route::view('/terms', 'pages.terms')
     ->name('terms');
-
-/*
-|--------------------------------------------------------------------------
-| WhatsApp Cloud API Webhook
-|--------------------------------------------------------------------------
-|
-| Public webhook routes for WhatsApp Cloud API.
-|
-| Staging callback:
-| https://staging-digital.elive.co.tz/api/whatsapp/webhook
-|
-| Live callback:
-| https://digital.elive.co.tz/api/whatsapp/webhook
-|
-*/
-Route::get('/api/whatsapp/webhook', [WhatsAppWebhookController::class, 'verify'])
-    ->name('whatsapp.webhook.verify');
-
-Route::post('/api/whatsapp/webhook', [WhatsAppWebhookController::class, 'handle'])
-    ->withoutMiddleware([VerifyCsrfToken::class])
-    ->name('whatsapp.webhook.handle');
 
 /*
 |--------------------------------------------------------------------------
