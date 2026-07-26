@@ -3305,16 +3305,16 @@ class InviteesRelationManager extends RelationManager
     protected function buildWhatsappTemplateButtonComponents(Invitee $invitee, string $templateType): array
     {
         /*
-         * These payloads must match WhatsAppWebhookController/RsvpService.
+         * These payloads must exactly match the approved Meta template buttons.
          *
-         * Button index 0 = Attending
-         * Button index 1 = Not Attending
-         * Button index 2 = LOCATION URL button
+         * invitation_card_template button order:
+         * 1. Quick Reply: Nitahudhuria
+         * 2. Quick Reply: Sitaweza Hudhuria
+         * 3. Quick Reply: LOCATION
          *
-         * Meta template button order must be:
-         * 1. Quick Reply
-         * 2. Quick Reply
-         * 3. Visit Website dynamic URL: https://digital.elive.co.tz/l/{{1}}
+         * The LOCATION button is intentionally a quick reply, not a URL button.
+         * WhatsAppWebhookController should handle the "location" payload and
+         * respond with the event venue or Google Maps link.
          */
         if (! in_array($templateType, [
             'invitation',
@@ -3348,12 +3348,12 @@ class InviteesRelationManager extends RelationManager
             ],
             [
                 'type' => 'button',
-                'sub_type' => 'url',
+                'sub_type' => 'quick_reply',
                 'index' => '2',
                 'parameters' => [
                     [
-                        'type' => 'text',
-                        'text' => (string) $invitee->short_code,
+                        'type' => 'payload',
+                        'payload' => 'location',
                     ],
                 ],
             ],
