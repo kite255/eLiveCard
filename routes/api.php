@@ -9,43 +9,65 @@ use Illuminate\Support\Facades\Route;
 | API Routes
 |--------------------------------------------------------------------------
 |
-| These routes are automatically prefixed with /api.
-| Keep provider callbacks here because API routes are stateless and do not
-| require CSRF tokens or Laravel session cookies.
+| All routes in this file automatically receive the "/api" prefix.
+|
+| Webhook and provider callback endpoints are placed here because API
+| routes are stateless and do not require session cookies or CSRF tokens.
 |
 */
 
 /*
 |--------------------------------------------------------------------------
-| WhatsApp Cloud API Webhook
+| WhatsApp Cloud API
 |--------------------------------------------------------------------------
 |
-| Meta uses the GET route to verify the webhook.
-| Meta uses the POST route to send message status updates, button replies,
-| incoming messages, delivered/read events, and failed delivery events.
+| Verification:
+| GET https://digital.elive.co.tz/api/whatsapp/webhook
 |
-| Callback URL:
-| https://digital.elive.co.tz/api/whatsapp/webhook
+| Notifications:
+| POST https://digital.elive.co.tz/api/whatsapp/webhook
+|
+| Meta uses the GET route to verify the callback URL and verify token.
+| Meta uses the POST route for:
+|
+| - Incoming WhatsApp messages
+| - Template quick-reply responses
+| - Interactive button responses
+| - Message sent status
+| - Message delivered status
+| - Message read status
+| - Message failed status
 |
 */
 
-Route::get('/whatsapp/webhook', [WhatsAppWebhookController::class, 'verify'])
-    ->name('whatsapp.webhook.verify');
+Route::prefix('whatsapp')
+    ->name('whatsapp.')
+    ->controller(WhatsAppWebhookController::class)
+    ->group(function (): void {
+        Route::get('/webhook', 'verify')
+            ->name('webhook.verify');
 
-Route::post('/whatsapp/webhook', [WhatsAppWebhookController::class, 'handle'])
-    ->name('whatsapp.webhook.handle');
+        Route::post('/webhook', 'handle')
+            ->name('webhook.handle');
+    });
 
 /*
 |--------------------------------------------------------------------------
-| SMS Delivery Callback
+| SMS Provider Callbacks
 |--------------------------------------------------------------------------
 |
-| This endpoint receives delivery status updates from the SMS provider.
+| Delivery callback:
+| POST https://digital.elive.co.tz/api/sms/delivery-callback
 |
-| Callback URL:
-| https://digital.elive.co.tz/api/sms/delivery-callback
+| The configured SMS provider sends delivery-status updates to this route.
 |
 */
 
-Route::post('/sms/delivery-callback', SmsDeliveryCallbackController::class)
-    ->name('sms.delivery-callback');
+Route::prefix('sms')
+    ->name('sms.')
+    ->group(function (): void {
+        Route::post(
+            '/delivery-callback',
+            SmsDeliveryCallbackController::class
+        )->name('delivery-callback');
+    });

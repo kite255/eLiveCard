@@ -4,11 +4,12 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Third Party Services
+    | Third-Party Services
     |--------------------------------------------------------------------------
     |
-    | This file stores credentials for third-party services such as Postmark,
-    | Resend, AWS SES, Slack, SMS gateways, and WhatsApp Cloud API.
+    | Credentials and configuration for external services used by eLive Card.
+    | Sensitive credentials must be stored in the environment file and never
+    | committed to Git.
     |
     */
 
@@ -28,8 +29,13 @@ return [
 
     'slack' => [
         'notifications' => [
-            'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+            'bot_user_oauth_token' => env(
+                'SLACK_BOT_USER_OAUTH_TOKEN'
+            ),
+
+            'channel' => env(
+                'SLACK_BOT_USER_DEFAULT_CHANNEL'
+            ),
         ],
     ],
 
@@ -42,7 +48,10 @@ return [
     'sms' => [
         'driver' => env('SMS_DRIVER', 'log'),
 
-        'provider' => env('SMS_PROVIDER', 'eLive SMS'),
+        'provider' => env(
+            'SMS_PROVIDER',
+            'eLive SMS'
+        ),
 
         'api_url' => env(
             'SMS_API_URL',
@@ -53,9 +62,20 @@ return [
 
         'api_secret' => env('SMS_API_SECRET'),
 
-        'sender_id' => env('SMS_SENDER_ID', 'eLive Card'),
+        'sender_id' => env(
+            'SMS_SENDER_ID',
+            'eLive Card'
+        ),
 
-        'timeout' => (int) env('SMS_TIMEOUT', 30),
+        'timeout' => (int) env(
+            'SMS_TIMEOUT',
+            30
+        ),
+
+        'connect_timeout' => (int) env(
+            'SMS_CONNECT_TIMEOUT',
+            10
+        ),
     ],
 
     /*
@@ -94,6 +114,11 @@ return [
             'ELIVE_SMS_TIMEOUT',
             env('SMS_TIMEOUT', 30)
         ),
+
+        'connect_timeout' => (int) env(
+            'ELIVE_SMS_CONNECT_TIMEOUT',
+            env('SMS_CONNECT_TIMEOUT', 10)
+        ),
     ],
 
     /*
@@ -114,7 +139,9 @@ return [
             ).'/balance'
         ),
 
-        'method' => env('SMS_BALANCE_METHOD', 'get'),
+        'method' => strtolower(
+            env('SMS_BALANCE_METHOD', 'get')
+        ),
 
         'api_key' => env(
             'SMS_BALANCE_API_KEY',
@@ -134,7 +161,18 @@ return [
 
         'timeout' => (int) env(
             'SMS_BALANCE_TIMEOUT',
-            env('ELIVE_SMS_TIMEOUT', env('SMS_TIMEOUT', 30))
+            env(
+                'ELIVE_SMS_TIMEOUT',
+                env('SMS_TIMEOUT', 30)
+            )
+        ),
+
+        'connect_timeout' => (int) env(
+            'SMS_BALANCE_CONNECT_TIMEOUT',
+            env(
+                'ELIVE_SMS_CONNECT_TIMEOUT',
+                env('SMS_CONNECT_TIMEOUT', 10)
+            )
         ),
     ],
 
@@ -143,46 +181,75 @@ return [
     | WhatsApp Cloud API
     |--------------------------------------------------------------------------
     |
+    | WhatsApp starts disabled after the reset.
+    |
     | Supported drivers:
     |
-    | log       - Writes payloads to the Laravel log without calling Meta.
-    | cloud_api - Sends real WhatsApp messages through Meta Cloud API.
+    | log       - Writes message payloads to the Laravel log.
+    | cloud_api - Sends real messages through Meta WhatsApp Cloud API.
+    |
+    | Enable cloud_api only after the new Meta app, WABA, phone number,
+    | permanent access token and webhook have been configured successfully.
     |
     */
 
     'whatsapp' => [
+
+        /*
+        |--------------------------------------------------------------------------
+        | Integration state
+        |--------------------------------------------------------------------------
+        */
+
         'enabled' => filter_var(
             env('WHATSAPP_ENABLED', false),
             FILTER_VALIDATE_BOOL
         ),
 
-        'driver' => env('WHATSAPP_DRIVER', 'log'),
+        'driver' => env(
+            'WHATSAPP_DRIVER',
+            'log'
+        ),
 
         'provider' => env(
             'WHATSAPP_PROVIDER',
-            'cloud_api'
+            'meta_cloud_api'
         ),
 
         /*
         |--------------------------------------------------------------------------
-        | Meta Cloud API credentials
+        | Meta account identifiers
         |--------------------------------------------------------------------------
         */
 
-        'access_token' => env(
-            'WHATSAPP_ACCESS_TOKEN'
+        'app_id' => env(
+            'WHATSAPP_APP_ID'
         ),
 
-        'phone_number_id' => env(
-            'WHATSAPP_PHONE_NUMBER_ID'
+        'business_id' => env(
+            'WHATSAPP_BUSINESS_ID'
         ),
 
         'business_account_id' => env(
             'WHATSAPP_BUSINESS_ACCOUNT_ID'
         ),
 
-        'app_id' => env(
-            'WHATSAPP_APP_ID'
+        'phone_number_id' => env(
+            'WHATSAPP_PHONE_NUMBER_ID'
+        ),
+
+        'display_phone_number' => env(
+            'WHATSAPP_DISPLAY_PHONE_NUMBER'
+        ),
+
+        /*
+        |--------------------------------------------------------------------------
+        | Meta API credentials
+        |--------------------------------------------------------------------------
+        */
+
+        'access_token' => env(
+            'WHATSAPP_ACCESS_TOKEN'
         ),
 
         'app_secret' => env(
@@ -191,18 +258,20 @@ return [
 
         /*
         |--------------------------------------------------------------------------
-        | API settings
+        | Graph API settings
         |--------------------------------------------------------------------------
         */
 
         'api_version' => env(
-            'WHATSAPP_API_VERSION',
-            'v25.0'
+            'WHATSAPP_API_VERSION'
         ),
 
-        'base_url' => env(
-            'WHATSAPP_API_URL',
-            'https://graph.facebook.com'
+        'base_url' => rtrim(
+            env(
+                'WHATSAPP_API_URL',
+                'https://graph.facebook.com'
+            ),
+            '/'
         ),
 
         'timeout' => (int) env(
@@ -213,6 +282,16 @@ return [
         'connect_timeout' => (int) env(
             'WHATSAPP_CONNECT_TIMEOUT',
             10
+        ),
+
+        'retry_times' => (int) env(
+            'WHATSAPP_RETRY_TIMES',
+            2
+        ),
+
+        'retry_delay' => (int) env(
+            'WHATSAPP_RETRY_DELAY',
+            500
         ),
 
         /*
@@ -233,46 +312,56 @@ return [
             FILTER_VALIDATE_BOOL
         ),
 
+        'webhook_signature_header' => env(
+            'WHATSAPP_WEBHOOK_SIGNATURE_HEADER',
+            'X-Hub-Signature-256'
+        ),
+
+        'capture_incoming_messages' => filter_var(
+            env(
+                'WHATSAPP_CAPTURE_INCOMING_MESSAGES',
+                true
+            ),
+            FILTER_VALIDATE_BOOL
+        ),
+
+        'capture_message_statuses' => filter_var(
+            env(
+                'WHATSAPP_CAPTURE_MESSAGE_STATUSES',
+                true
+            ),
+            FILTER_VALIDATE_BOOL
+        ),
+
         /*
         |--------------------------------------------------------------------------
-        | Template configuration
+        | WhatsApp template
         |--------------------------------------------------------------------------
+        |
+        | eLive Card uses one approved WhatsApp template for invitations,
+        | RSVP quick replies and location requests.
+        |
+        | Meta template name: elive_invitation
+        | Template language: Swahili
+        |
         */
 
         'template_language' => env(
             'WHATSAPP_TEMPLATE_LANGUAGE',
-            'en_GB'
+            'sw'
         ),
 
         'templates' => [
             'invitation' => env(
                 'WHATSAPP_TEMPLATE_INVITATION',
-                'invitation_card_template'
-            ),
-
-            'rsvp' => env(
-                'WHATSAPP_TEMPLATE_RSVP',
-                'elive_rsvp'
-            ),
-
-            'reminder' => env(
-                'WHATSAPP_TEMPLATE_REMINDER',
-                'elive_reminder'
-            ),
-
-            'event_day' => env(
-                'WHATSAPP_TEMPLATE_EVENT_DAY',
-                'elive_event_day'
+                'elive_invitation'
             ),
         ],
 
         /*
         |--------------------------------------------------------------------------
-        | Invitation media header
+        | Invitation media
         |--------------------------------------------------------------------------
-        |
-        | Your approved invitation_card_template uses an IMAGE header.
-        |
         */
 
         'invitation_header_type' => env(
@@ -306,10 +395,58 @@ return [
             FILTER_VALIDATE_BOOL
         ),
 
-        'capture_incoming_messages' => filter_var(
+        'store_request_payload' => filter_var(
             env(
-                'WHATSAPP_CAPTURE_INCOMING_MESSAGES',
+                'WHATSAPP_STORE_REQUEST_PAYLOAD',
+                false
+            ),
+            FILTER_VALIDATE_BOOL
+        ),
+
+        'prevent_duplicate_sending' => filter_var(
+            env(
+                'WHATSAPP_PREVENT_DUPLICATE_SENDING',
                 true
+            ),
+            FILTER_VALIDATE_BOOL
+        ),
+
+        'duplicate_window_minutes' => (int) env(
+            'WHATSAPP_DUPLICATE_WINDOW_MINUTES',
+            10
+        ),
+
+        /*
+        |--------------------------------------------------------------------------
+        | Queue configuration
+        |--------------------------------------------------------------------------
+        */
+
+        'queue' => env(
+            'WHATSAPP_QUEUE',
+            'whatsapp'
+        ),
+
+        'queue_connection' => env(
+            'WHATSAPP_QUEUE_CONNECTION',
+            env('QUEUE_CONNECTION', 'database')
+        ),
+
+        /*
+        |--------------------------------------------------------------------------
+        | Logging
+        |--------------------------------------------------------------------------
+        */
+
+        'log_channel' => env(
+            'WHATSAPP_LOG_CHANNEL',
+            env('LOG_CHANNEL', 'stack')
+        ),
+
+        'log_sensitive_data' => filter_var(
+            env(
+                'WHATSAPP_LOG_SENSITIVE_DATA',
+                false
             ),
             FILTER_VALIDATE_BOOL
         ),

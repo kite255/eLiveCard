@@ -87,7 +87,12 @@ class WhatsAppWebhookController extends Controller
                 description: 'WhatsApp webhook request was rejected because its signature was invalid.',
                 metadata: [
                     'signature_present' => filled(
-                        $request->header('X-Hub-Signature-256')
+                        $request->header(
+                            (string) config(
+                                'services.whatsapp.webhook_signature_header',
+                                'X-Hub-Signature-256'
+                            )
+                        )
                     ),
                 ],
             );
@@ -98,6 +103,16 @@ class WhatsAppWebhookController extends Controller
         }
 
         $payload = $request->json()->all();
+
+        if (($payload['object'] ?? null) !== 'whatsapp_business_account') {
+            Log::warning('Unsupported WhatsApp webhook object received.', [
+                'object' => $payload['object'] ?? null,
+            ]);
+
+            return response()->json([
+                'received' => true,
+            ], SymfonyResponse::HTTP_OK);
+        }
 
         Log::info('WhatsApp webhook received.', [
             'object' => $payload['object'] ?? null,
@@ -119,7 +134,13 @@ class WhatsAppWebhookController extends Controller
 
         foreach ($payload['entry'] ?? [] as $entry) {
             foreach ($entry['changes'] ?? [] as $change) {
-                $value = $change['value'] ?? [];
+                if (($change['field'] ?? 'messages') !== 'messages') {
+                    continue;
+                }
+
+                $value = is_array($change['value'] ?? null)
+                    ? $change['value']
+                    : [];
 
                 foreach ($value['messages'] ?? [] as $message) {
                     try {
@@ -464,7 +485,6 @@ class WhatsAppWebhookController extends Controller
 
             'rsvp_not_attending',
             'not_attending',
-            'not_attending',
             'no',
             'hapana',
             'sitaweza_hudhuria',
@@ -602,8 +622,13 @@ class WhatsAppWebhookController extends Controller
             return;
         }
 
-        $normalizedStatus = $this->normalizeWhatsappStatus(
+        $incomingStatus = $this->normalizeWhatsappStatus(
             $providerStatus
+        );
+
+        $normalizedStatus = $this->resolveEffectiveWhatsappStatus(
+            currentStatus: (string) ($matchedLog->status ?? ''),
+            incomingStatus: $incomingStatus,
         );
 
         $oldValues = Arr::only((array) $matchedLog, [
@@ -671,6 +696,7 @@ class WhatsAppWebhookController extends Controller
                     'message_id' => $messageId,
                     'recipient_id' => $recipient,
                     'provider_status' => $providerStatus,
+                    'incoming_status' => $incomingStatus,
                     'normalized_status' => $normalizedStatus,
                     'error' => $error,
                     'source' => 'whatsapp_webhook',
@@ -685,6 +711,7 @@ class WhatsAppWebhookController extends Controller
                     'message_id' => $messageId,
                     'recipient_id' => $recipient,
                     'provider_status' => $providerStatus,
+                    'incoming_status' => $incomingStatus,
                     'normalized_status' => $normalizedStatus,
                     'error' => $error,
                 ],
@@ -761,8 +788,13 @@ class WhatsAppWebhookController extends Controller
             return false;
         }
 
+        $signatureHeaderName = (string) config(
+            'services.whatsapp.webhook_signature_header',
+            'X-Hub-Signature-256'
+        );
+
         $signatureHeader = (string) $request->header(
-            'X-Hub-Signature-256',
+            $signatureHeaderName,
             ''
         );
 
@@ -880,17 +912,24 @@ class WhatsAppWebhookController extends Controller
 
         $columns = Schema::getColumnListing('message_logs');
 
+        $messageIdColumns = array_values(array_intersect(
+            [
+                'provider_message_id',
+                'message_id',
+                'wamid',
+                'external_message_id',
+            ],
+            $columns
+        ));
+
+        if ($messageIdColumns === []) {
+            return null;
+        }
+
         return DB::table('message_logs')
-            ->where(function ($query) use ($columns, $messageId) {
-                foreach ([
-                    'provider_message_id',
-                    'message_id',
-                    'wamid',
-                    'external_message_id',
-                ] as $column) {
-                    if (in_array($column, $columns, true)) {
-                        $query->orWhere($column, $messageId);
-                    }
+            ->where(function ($query) use ($messageIdColumns, $messageId) {
+                foreach ($messageIdColumns as $column) {
+                    $query->orWhere($column, $messageId);
                 }
             })
             ->latest('id')
@@ -911,6 +950,20 @@ class WhatsAppWebhookController extends Controller
 
         $columns = Schema::getColumnListing('message_logs');
 
+        $messageIdColumns = array_values(array_intersect(
+            [
+                'provider_message_id',
+                'message_id',
+                'wamid',
+                'external_message_id',
+            ],
+            $columns
+        ));
+
+        if ($messageIdColumns === []) {
+            return;
+        }
+
         $update = [
             'status' => $normalizedStatus,
             'provider_status' => $providerStatus,
@@ -919,24 +972,24 @@ class WhatsAppWebhookController extends Controller
             'meta' => json_encode($rawStatus),
             'error_message' => $error,
             'error' => $error,
-            'sent_at' => in_array(
-                $normalizedStatus,
-                ['sent', 'delivered', 'read'],
-                true
-            ) ? $timestamp : null,
-            'delivered_at' => in_array(
-                $normalizedStatus,
-                ['delivered', 'read'],
-                true
-            ) ? $timestamp : null,
-            'read_at' => $normalizedStatus === 'read'
-                ? $timestamp
-                : null,
-            'failed_at' => $normalizedStatus === 'failed'
-                ? $timestamp
-                : null,
             'updated_at' => now(),
         ];
+
+        if (in_array($normalizedStatus, ['sent', 'delivered', 'read'], true)) {
+            $update['sent_at'] = $timestamp;
+        }
+
+        if (in_array($normalizedStatus, ['delivered', 'read'], true)) {
+            $update['delivered_at'] = $timestamp;
+        }
+
+        if ($normalizedStatus === 'read') {
+            $update['read_at'] = $timestamp;
+        }
+
+        if ($normalizedStatus === 'failed') {
+            $update['failed_at'] = $timestamp;
+        }
 
         $safeUpdate = Arr::only($update, $columns);
 
@@ -945,16 +998,9 @@ class WhatsAppWebhookController extends Controller
         }
 
         DB::table('message_logs')
-            ->where(function ($query) use ($columns, $messageId) {
-                foreach ([
-                    'provider_message_id',
-                    'message_id',
-                    'wamid',
-                    'external_message_id',
-                ] as $column) {
-                    if (in_array($column, $columns, true)) {
-                        $query->orWhere($column, $messageId);
-                    }
+            ->where(function ($query) use ($messageIdColumns, $messageId) {
+                foreach ($messageIdColumns as $column) {
+                    $query->orWhere($column, $messageId);
                 }
             })
             ->update($safeUpdate);
@@ -967,30 +1013,46 @@ class WhatsAppWebhookController extends Controller
         ?string $error,
         Carbon $timestamp,
     ): void {
+        $currentStatus = $this->normalizeWhatsappStatus(
+            (string) (
+                $invitee->whatsapp_status
+                ?? $invitee->last_message_status
+                ?? ''
+            )
+        );
+
+        $effectiveStatus = $this->resolveEffectiveWhatsappStatus(
+            currentStatus: $currentStatus,
+            incomingStatus: $status,
+        );
+
         $updates = [
             'last_message_channel' => 'whatsapp',
-            'last_message_status' => $status,
-            'message_status' => $status,
-            'whatsapp_status' => $status,
+            'last_message_status' => $effectiveStatus,
+            'message_status' => $effectiveStatus,
+            'whatsapp_status' => $effectiveStatus,
             'whatsapp_message_id' => $messageId,
-            'last_message_error' => $error,
-            'whatsapp_sent_at' => in_array(
-                $status,
-                ['sent', 'delivered', 'read'],
-                true
-            ) ? ($invitee->whatsapp_sent_at ?: $timestamp) : null,
-            'whatsapp_delivered_at' => in_array(
-                $status,
-                ['delivered', 'read'],
-                true
-            ) ? $timestamp : null,
-            'whatsapp_read_at' => $status === 'read'
-                ? $timestamp
-                : null,
-            'whatsapp_failed_at' => $status === 'failed'
-                ? $timestamp
+            'last_message_error' => $effectiveStatus === 'failed'
+                ? $error
                 : null,
         ];
+
+        if (in_array($effectiveStatus, ['sent', 'delivered', 'read'], true)) {
+            $updates['whatsapp_sent_at'] =
+                $invitee->whatsapp_sent_at ?: $timestamp;
+        }
+
+        if (in_array($effectiveStatus, ['delivered', 'read'], true)) {
+            $updates['whatsapp_delivered_at'] = $timestamp;
+        }
+
+        if ($effectiveStatus === 'read') {
+            $updates['whatsapp_read_at'] = $timestamp;
+        }
+
+        if ($effectiveStatus === 'failed') {
+            $updates['whatsapp_failed_at'] = $timestamp;
+        }
 
         $columns = Schema::getColumnListing(
             $invitee->getTable()
@@ -1013,6 +1075,39 @@ class WhatsAppWebhookController extends Controller
             'failed' => 'failed',
             default => 'unknown',
         };
+    }
+
+    protected function resolveEffectiveWhatsappStatus(
+        string $currentStatus,
+        string $incomingStatus,
+    ): string {
+        $currentStatus = $this->normalizeWhatsappStatus($currentStatus);
+        $incomingStatus = $this->normalizeWhatsappStatus($incomingStatus);
+
+        if ($incomingStatus === 'unknown') {
+            return $currentStatus !== 'unknown'
+                ? $currentStatus
+                : 'unknown';
+        }
+
+        if ($currentStatus === 'failed') {
+            return 'failed';
+        }
+
+        if ($incomingStatus === 'failed') {
+            return 'failed';
+        }
+
+        $rank = [
+            'unknown' => 0,
+            'sent' => 10,
+            'delivered' => 20,
+            'read' => 30,
+        ];
+
+        return ($rank[$incomingStatus] ?? 0) >= ($rank[$currentStatus] ?? 0)
+            ? $incomingStatus
+            : $currentStatus;
     }
 
     protected function parseWhatsappTimestamp(
