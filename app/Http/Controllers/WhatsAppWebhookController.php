@@ -142,6 +142,55 @@ class WhatsAppWebhookController extends Controller
                     ? $change['value']
                     : [];
 
+                $sourceMetadata = [
+                    'display_phone_number' => data_get(
+                        $value,
+                        'metadata.display_phone_number'
+                    ),
+                    'phone_number_id' => data_get(
+                        $value,
+                        'metadata.phone_number_id'
+                    ),
+                ];
+
+                Log::info('WhatsApp webhook source metadata.', $sourceMetadata);
+
+                $configuredPhoneNumberId = trim(
+                    (string) config('services.whatsapp.phone_number_id')
+                );
+
+                $webhookPhoneNumberId = trim(
+                    (string) ($sourceMetadata['phone_number_id'] ?? '')
+                );
+
+                if (
+                    $configuredPhoneNumberId !== ''
+                    && $webhookPhoneNumberId !== ''
+                    && ! hash_equals(
+                        $configuredPhoneNumberId,
+                        $webhookPhoneNumberId
+                    )
+                ) {
+                    Log::warning(
+                        'WhatsApp webhook phone number ID does not match the configured sender.',
+                        [
+                            'configured_phone_number_id' => $configuredPhoneNumberId,
+                            'webhook_phone_number_id' => $webhookPhoneNumberId,
+                            'display_phone_number' => $sourceMetadata['display_phone_number'],
+                        ]
+                    );
+
+                    AuditLogService::system(
+                        action: 'whatsapp_webhook.phone_number_mismatch',
+                        description: 'The WhatsApp webhook phone number ID did not match the configured sender phone number ID.',
+                        metadata: [
+                            'configured_phone_number_id' => $configuredPhoneNumberId,
+                            'webhook_phone_number_id' => $webhookPhoneNumberId,
+                            'display_phone_number' => $sourceMetadata['display_phone_number'],
+                        ],
+                    );
+                }
+
                 foreach ($value['messages'] ?? [] as $message) {
                     try {
                         $this->handleIncomingMessage(
@@ -173,7 +222,10 @@ class WhatsAppWebhookController extends Controller
 
                 foreach ($value['statuses'] ?? [] as $status) {
                     try {
-                        $this->handleMessageStatus($status);
+                        $this->handleMessageStatus(
+                            status: $status,
+                            sourceMetadata: $sourceMetadata,
+                        );
                         $statusesProcessed++;
                     } catch (Throwable $exception) {
                         $errors++;
@@ -568,7 +620,10 @@ class WhatsAppWebhookController extends Controller
         );
     }
 
-    protected function handleMessageStatus(array $status): void
+    protected function handleMessageStatus(
+        array $status,
+        array $sourceMetadata = [],
+    ): void
     {
         $messageId = trim((string) ($status['id'] ?? ''));
         $recipient = $this->normalizePhone(
@@ -590,6 +645,8 @@ class WhatsAppWebhookController extends Controller
             'recipient_id' => $recipient,
             'status' => $providerStatus,
             'timestamp' => $status['timestamp'] ?? null,
+            'display_phone_number' => $sourceMetadata['display_phone_number'] ?? null,
+            'phone_number_id' => $sourceMetadata['phone_number_id'] ?? null,
         ]);
 
         if ($messageId === '') {
@@ -608,6 +665,23 @@ class WhatsAppWebhookController extends Controller
         $matchedLog = $this->findWhatsappMessageLog($messageId);
 
         if (! $matchedLog) {
+            $recentCandidateIds = $this->recentWhatsappMessageCandidates(
+                recipient: $recipient,
+            );
+
+            Log::warning(
+                'WhatsApp status could not be matched to an outgoing message log.',
+                [
+                    'message_id' => $messageId,
+                    'recipient_id' => $recipient,
+                    'status' => $providerStatus,
+                    'phone_number_id' => $sourceMetadata['phone_number_id'] ?? null,
+                    'display_phone_number' => $sourceMetadata['display_phone_number'] ?? null,
+                    'recent_candidate_ids' => $recentCandidateIds,
+                    'error' => $error,
+                ]
+            );
+
             AuditLogService::system(
                 action: 'whatsapp_status.message_not_found',
                 description: 'WhatsApp status update could not be matched to a message log.',
@@ -615,6 +689,9 @@ class WhatsAppWebhookController extends Controller
                     'message_id' => $messageId,
                     'recipient_id' => $recipient,
                     'status' => $providerStatus,
+                    'phone_number_id' => $sourceMetadata['phone_number_id'] ?? null,
+                    'display_phone_number' => $sourceMetadata['display_phone_number'] ?? null,
+                    'recent_candidate_ids' => $recentCandidateIds,
                     'error' => $error,
                 ],
             );
@@ -699,6 +776,8 @@ class WhatsAppWebhookController extends Controller
                     'incoming_status' => $incomingStatus,
                     'normalized_status' => $normalizedStatus,
                     'error' => $error,
+                    'phone_number_id' => $sourceMetadata['phone_number_id'] ?? null,
+                    'display_phone_number' => $sourceMetadata['display_phone_number'] ?? null,
                     'source' => 'whatsapp_webhook',
                 ],
             );
@@ -714,6 +793,8 @@ class WhatsAppWebhookController extends Controller
                     'incoming_status' => $incomingStatus,
                     'normalized_status' => $normalizedStatus,
                     'error' => $error,
+                    'phone_number_id' => $sourceMetadata['phone_number_id'] ?? null,
+                    'display_phone_number' => $sourceMetadata['display_phone_number'] ?? null,
                 ],
             );
         }
@@ -762,17 +843,20 @@ class WhatsAppWebhookController extends Controller
 
     protected function hasValidSignature(Request $request): bool
     {
-        $verificationEnabled = (bool) config(
-            'services.whatsapp.verify_webhook_signature',
-            false
+        $verificationEnabled = filter_var(
+            config(
+                'services.whatsapp.verify_webhook_signature',
+                true
+            ),
+            FILTER_VALIDATE_BOOL
         );
 
         if (! $verificationEnabled) {
             return true;
         }
 
-        $appSecret = (string) config(
-            'services.whatsapp.app_secret'
+        $appSecret = trim(
+            (string) config('services.whatsapp.app_secret')
         );
 
         if ($appSecret === '') {
@@ -788,21 +872,36 @@ class WhatsAppWebhookController extends Controller
             return false;
         }
 
-        $signatureHeaderName = (string) config(
-            'services.whatsapp.webhook_signature_header',
-            'X-Hub-Signature-256'
+        $signatureHeaderName = trim(
+            (string) config(
+                'services.whatsapp.webhook_signature_header',
+                'X-Hub-Signature-256'
+            )
         );
 
-        $signatureHeader = (string) $request->header(
-            $signatureHeaderName,
-            ''
+        $signatureHeader = trim(
+            (string) $request->header(
+                $signatureHeaderName,
+                ''
+            )
         );
 
         if (! str_starts_with($signatureHeader, 'sha256=')) {
+            Log::warning(
+                'WhatsApp signature header is missing or malformed.',
+                [
+                    'header_name' => $signatureHeaderName,
+                    'header_present' => $signatureHeader !== '',
+                    'body_length' => strlen($request->getContent()),
+                ]
+            );
+
             return false;
         }
 
-        $receivedSignature = substr($signatureHeader, 7);
+        $receivedSignature = strtolower(
+            trim(substr($signatureHeader, 7))
+        );
 
         $expectedSignature = hash_hmac(
             'sha256',
@@ -810,10 +909,21 @@ class WhatsAppWebhookController extends Controller
             $appSecret
         );
 
-        return hash_equals(
+        $isValid = hash_equals(
             $expectedSignature,
             $receivedSignature
         );
+
+        if (! $isValid) {
+            Log::warning('WhatsApp webhook signature mismatch.', [
+                'body_length' => strlen($request->getContent()),
+                'received_prefix' => substr($receivedSignature, 0, 8),
+                'expected_prefix' => substr($expectedSignature, 0, 8),
+                'secret_length' => strlen($appSecret),
+            ]);
+        }
+
+        return $isValid;
     }
 
     protected function incomingMessageAlreadyProcessed(
@@ -901,6 +1011,55 @@ class WhatsAppWebhookController extends Controller
         if ($insertable !== []) {
             DB::table('message_logs')->insert($insertable);
         }
+    }
+
+    protected function recentWhatsappMessageCandidates(
+        string $recipient,
+        int $limit = 5,
+    ): array {
+        if (
+            $recipient === ''
+            || ! Schema::hasTable('message_logs')
+        ) {
+            return [];
+        }
+
+        $columns = Schema::getColumnListing('message_logs');
+
+        if (
+            ! in_array('phone', $columns, true)
+            || ! in_array('provider_message_id', $columns, true)
+        ) {
+            return [];
+        }
+
+        $select = array_values(array_intersect(
+            [
+                'id',
+                'invitee_id',
+                'phone',
+                'status',
+                'provider_message_id',
+                'sent_at',
+                'created_at',
+            ],
+            $columns
+        ));
+
+        $query = DB::table('message_logs')
+            ->where('phone', $recipient)
+            ->whereNotNull('provider_message_id');
+
+        if (in_array('channel', $columns, true)) {
+            $query->where('channel', 'whatsapp');
+        }
+
+        return $query
+            ->orderByDesc('id')
+            ->limit(max(1, min($limit, 20)))
+            ->get($select)
+            ->map(fn (object $row): array => (array) $row)
+            ->all();
     }
 
     protected function findWhatsappMessageLog(
