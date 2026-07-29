@@ -185,10 +185,10 @@ return [
     |
     | Supported drivers:
     |
-    | log       - Writes message payloads to the Laravel log.
-    | cloud_api - Sends real messages through Meta WhatsApp Cloud API.
+    | log            - Writes message payloads to the Laravel log.
+    | meta_cloud_api - Sends real messages through Meta WhatsApp Cloud API.
     |
-    | Enable cloud_api only after the new Meta app, WABA, phone number,
+    | Enable meta_cloud_api only after the Meta app, WABA, phone number,
     | permanent access token and webhook have been configured successfully.
     |
     */
@@ -231,7 +231,8 @@ return [
         ),
 
         'business_account_id' => env(
-            'WHATSAPP_BUSINESS_ACCOUNT_ID'
+            'WHATSAPP_BUSINESS_ACCOUNT_ID',
+            env('WHATSAPP_BUSINESS_ID')
         ),
 
         'phone_number_id' => env(
@@ -263,7 +264,8 @@ return [
         */
 
         'api_version' => env(
-            'WHATSAPP_API_VERSION'
+            'WHATSAPP_API_VERSION',
+            'v25.0'
         ),
 
         'base_url' => rtrim(
@@ -341,20 +343,20 @@ return [
         | eLive Card uses one approved WhatsApp template for invitations,
         | RSVP quick replies and location requests.
         |
-        | Meta template name: elive_invitation
-        | Template language: Swahili
+        | Meta template name: event_invitation_en
+        | Template language: English
         |
         */
 
         'template_language' => env(
             'WHATSAPP_TEMPLATE_LANGUAGE',
-            'sw'
+            'en'
         ),
 
         'templates' => [
             'invitation' => env(
                 'WHATSAPP_TEMPLATE_INVITATION',
-                'elive_invitation'
+                'event_invitation_en'
             ),
         ],
 

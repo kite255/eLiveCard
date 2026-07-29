@@ -3241,10 +3241,7 @@ class InviteesRelationManager extends RelationManager
              * WhatsApp Cloud API requires the header image parameter to be sent
              * together with the body parameters.
              */
-            if (in_array($providerTemplateName, [
-                'event_invitation',
-                'invitation_card_template',
-            ], true)) {
+            if ($providerTemplateName === 'event_invitation_en') {
                 $headerImageUrl = $this->whatsappHeaderImageUrl($invitee);
 
                 if (filled($headerImageUrl)) {
@@ -3305,22 +3302,26 @@ class InviteesRelationManager extends RelationManager
     protected function buildWhatsappTemplateButtonComponents(Invitee $invitee, string $templateType): array
     {
         /*
-         * These payloads must exactly match the approved Meta template buttons.
+         * These components must match the approved Meta template exactly.
          *
-         * invitation_card_template button order:
-         * 1. Quick Reply: Nitahudhuria
-         * 2. Quick Reply: Sitaweza Hudhuria
-         * 3. Quick Reply: LOCATION
+         * event_invitation_en button order:
+         * 1. Quick Reply: Attending
+         * 2. Quick Reply: Not Attending
+         * 3. Dynamic URL: LOCATION
          *
-         * The LOCATION button is intentionally a quick reply, not a URL button.
-         * WhatsAppWebhookController should handle the "location" payload and
-         * respond with the event venue or Google Maps link.
+         * Meta combines the configured URL prefix with the short-code suffix.
          */
         if (! in_array($templateType, [
             'invitation',
             'rsvp_pending_reminder',
         ], true)) {
             return [];
+        }
+
+        if (blank($invitee->short_code)) {
+            throw ValidationException::withMessages([
+                'short_code' => 'The invitee requires a short code before the WhatsApp LOCATION button can be generated.',
+            ]);
         }
 
         return [
@@ -3348,12 +3349,12 @@ class InviteesRelationManager extends RelationManager
             ],
             [
                 'type' => 'button',
-                'sub_type' => 'quick_reply',
+                'sub_type' => 'url',
                 'index' => '2',
                 'parameters' => [
                     [
-                        'type' => 'payload',
-                        'payload' => 'location',
+                        'type' => 'text',
+                        'text' => (string) $invitee->short_code,
                     ],
                 ],
             ],
@@ -3370,7 +3371,7 @@ class InviteesRelationManager extends RelationManager
             return (string) $template->whatsapp_language_code;
         }
 
-        return (string) config('services.whatsapp.template_language', env('WHATSAPP_TEMPLATE_LANGUAGE', 'en_GB'));
+        return (string) config('services.whatsapp.template_language', 'en');
     }
 
     protected function whatsappHeaderImageUrl(Invitee $invitee): ?string
@@ -3410,7 +3411,7 @@ class InviteesRelationManager extends RelationManager
         $event = $invitee->event ?? $this->getOwnerRecord();
 
         /*
-         * Meta template: event_invitation • English
+         * Meta template: event_invitation_en • English
          * Body variable order:
          * {{1}} Invitee name
          * {{2}} Event name

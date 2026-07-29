@@ -38,14 +38,18 @@ class WhatsAppApiCloudService
             );
         }
 
-        $templateName = (string) config(
-            'services.whatsapp.templates.invitation',
-            'invitation_card_template'
+        $templateName = trim(
+            (string) config(
+                'services.whatsapp.templates.invitation',
+                'event_invitation_en'
+            )
         );
 
-        $languageCode = (string) config(
-            'services.whatsapp.template_language',
-            'en_GB'
+        $languageCode = trim(
+            (string) config(
+                'services.whatsapp.template_language',
+                'en'
+            )
         );
 
         $imageUrl = $this->resolveInvitationImageUrl($invitee);
@@ -134,14 +138,23 @@ class WhatsAppApiCloudService
     public function sendTemplate(
         string $phone,
         string $templateName,
-        string $languageCode = 'en_GB',
+        string $languageCode = 'en',
         array $components = [],
         ?Invitee $invitee = null,
         string $messageType = 'template',
     ): array {
-        if (blank($templateName)) {
+        $templateName = trim($templateName);
+        $languageCode = trim($languageCode);
+
+        if ($templateName === '') {
             throw new RuntimeException(
                 'The WhatsApp template name is required.'
+            );
+        }
+
+        if ($languageCode === '') {
+            throw new RuntimeException(
+                'The WhatsApp template language is required.'
             );
         }
 
@@ -205,11 +218,21 @@ class WhatsAppApiCloudService
             )
                 ->acceptJson()
                 ->asJson()
-                ->connectTimeout(10)
-                ->timeout(30)
+                ->connectTimeout(
+                    (int) config('services.whatsapp.connect_timeout', 10)
+                )
+                ->timeout(
+                    (int) config('services.whatsapp.timeout', 30)
+                )
                 ->retry(
-                    times: 3,
-                    sleepMilliseconds: 1000,
+                    times: (int) config(
+                        'services.whatsapp.retry_times',
+                        2
+                    ),
+                    sleepMilliseconds: (int) config(
+                        'services.whatsapp.retry_delay',
+                        500
+                    ),
                     when: static function (
                         Throwable $exception,
                         $request
@@ -354,11 +377,35 @@ class WhatsAppApiCloudService
             (string) config('services.whatsapp.phone_number_id')
         );
 
-        return "https://graph.facebook.com/{$version}/{$phoneNumberId}/messages";
+        $baseUrl = rtrim(
+            (string) config(
+                'services.whatsapp.base_url',
+                'https://graph.facebook.com'
+            ),
+            '/'
+        );
+
+        return "{$baseUrl}/{$version}/{$phoneNumberId}/messages";
     }
 
     protected function validateConfiguration(): void
     {
+        if (! (bool) config('services.whatsapp.enabled', false)) {
+            throw new RuntimeException(
+                'WhatsApp sending is disabled. Set WHATSAPP_ENABLED=true.'
+            );
+        }
+
+        $driver = trim(
+            (string) config('services.whatsapp.driver', 'log')
+        );
+
+        if ($driver !== 'meta_cloud_api') {
+            throw new RuntimeException(
+                'WhatsApp Cloud API is not active. Set WHATSAPP_DRIVER=meta_cloud_api.'
+            );
+        }
+
         $missing = [];
 
         foreach ([
