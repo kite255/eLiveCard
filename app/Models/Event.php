@@ -32,6 +32,9 @@ class Event extends Model
         'cover_image',
         'welcome_message',
         'love_story',
+        'love_story_language',
+        'love_story_en',
+        'love_story_sw',
         'program',
         'organizer_phone',
         'show_cover_image',
@@ -122,6 +125,9 @@ class Event extends Model
     public const TYPE_RELIGIOUS_CELEBRATION = 'religious_celebration';
     public const TYPE_PRIVATE_FAMILY_EVENT = 'private_family_event';
     public const TYPE_CUSTOM = 'custom';
+
+    public const LANGUAGE_ENGLISH = 'en';
+    public const LANGUAGE_SWAHILI = 'sw';
 
     public static function statuses(): array
     {
@@ -1106,7 +1112,65 @@ class Event extends Model
 
     public function shouldShowLoveStory(): bool
     {
-        return (bool) ($this->show_love_story ?? false);
+        return (bool) ($this->show_love_story ?? false)
+            && (
+                filled($this->love_story_en)
+                || filled($this->love_story_sw)
+                || filled($this->love_story)
+            );
+    }
+
+    public static function loveStoryLanguages(): array
+    {
+        return [
+            self::LANGUAGE_ENGLISH => 'English',
+            self::LANGUAGE_SWAHILI => 'Kiswahili',
+        ];
+    }
+
+    public function getDefaultLoveStoryLanguageAttribute(): string
+    {
+        return in_array(
+            $this->love_story_language,
+            [
+                self::LANGUAGE_ENGLISH,
+                self::LANGUAGE_SWAHILI,
+            ],
+            true
+        )
+            ? $this->love_story_language
+            : self::LANGUAGE_ENGLISH;
+    }
+
+    public function loveStoryForLanguage(?string $language = null): ?string
+    {
+        $language = in_array(
+            $language,
+            [
+                self::LANGUAGE_ENGLISH,
+                self::LANGUAGE_SWAHILI,
+            ],
+            true
+        )
+            ? $language
+            : $this->default_love_story_language;
+
+        if ($language === self::LANGUAGE_SWAHILI) {
+            return $this->love_story_sw
+                ?: $this->love_story
+                ?: $this->love_story_en;
+        }
+
+        return $this->love_story_en
+            ?: $this->love_story
+            ?: $this->love_story_sw;
+    }
+
+    public function getSelectedLoveStoryAttribute(): ?string
+    {
+        return $this->loveStoryForLanguage(
+            $this->default_love_story_language
+        );
     }
 
     public function shouldShowProgram(): bool

@@ -41,6 +41,8 @@ class InviteePageController extends Controller
         $invitee->refresh();
 
         $event = $invitee->event;
+        $language = $this->resolveLanguage($request, $invitee, $event);
+        $loveStory = $this->loveStoryForLanguage($event, $language);
 
         $generatedCardUrl = $this->generatedCardUrl($invitee);
         $programItems = $this->programItems($event);
@@ -62,6 +64,14 @@ class InviteePageController extends Controller
             'whatsAppOrganizerUrl' => $whatsAppOrganizerUrl,
             'coverImageUrl' => $coverImageUrl,
             'allowedGuests' => $allowedGuests,
+
+            'language' => $language,
+            'loveStory' => $loveStory,
+            'showLoveStory' => $this->shouldShowLoveStory(
+                $event,
+                $loveStory
+            ),
+
             'approvedWishes' => $this->shouldShowWishes($event)
                 ? $this->approvedWishes($event?->id)
                 : collect(),
@@ -74,6 +84,7 @@ class InviteePageController extends Controller
             'myPhotos' => $this->shouldShowPhotoUpload($event)
                 ? $this->inviteePhotos($invitee)
                 : collect(),
+
             'showCoverImage' => $this->shouldShowCoverImage($event),
             'showProgram' => $this->shouldShowProgram($event),
             'showCountdown' => $this->shouldShowCountdown($event),
@@ -149,14 +160,32 @@ class InviteePageController extends Controller
             ],
         );
 
-        $message = match ($request->status) {
-            'attending' => 'Thank you. Your attendance has been confirmed for ' . $confirmedGuests . ' guest(s).',
-            'not_attending' => 'Thank you. Your response has been recorded successfully.',
-            default => 'Thank you. Your RSVP status has been updated successfully.',
+        $language = $this->resolveLanguage(
+            $request,
+            $invitee,
+            $invitee->event
+        );
+
+        $message = match ($language) {
+            'sw' => match ($request->status) {
+                'attending' => 'Asante. Uthibitisho wako wa kuhudhuria umerekodiwa kwa wageni '
+                    . $confirmedGuests . '.',
+                'not_attending' => 'Asante. Jibu lako limerekodiwa kikamilifu.',
+                default => 'Asante. Hali yako ya RSVP imesasishwa.',
+            },
+            default => match ($request->status) {
+                'attending' => 'Thank you. Your attendance has been confirmed for '
+                    . $confirmedGuests . ' guest(s).',
+                'not_attending' => 'Thank you. Your response has been recorded successfully.',
+                default => 'Thank you. Your RSVP status has been updated successfully.',
+            },
         };
 
         return redirect()
-            ->route('invitee.page', $invitee->short_code)
+            ->route('invitee.page', [
+                'shortCode' => $invitee->short_code,
+                'lang' => $language,
+            ])
             ->with('success', $message);
     }
 
@@ -803,12 +832,34 @@ class InviteePageController extends Controller
 
         $eventStatus = $invitee->event?->status;
 
-        if (in_array($eventStatus, ['cancelled', 'completed'], true)) {
+        /*
+         * Completed events may still be opened so invitees can view their
+         * invitation, photos, wishes, location, and event memories.
+         *
+         * Only explicitly cancelled events are blocked at event level.
+         */
+        if ($eventStatus === 'cancelled') {
             return false;
         }
 
-        if (in_array($invitee->card_status, ['cancelled', 'revoked', 'blocked', 'disabled'], true)) {
+        /*
+         * Explicitly revoked or disabled invitation cards must never open.
+         */
+        if (in_array(
+            $invitee->card_status,
+            ['cancelled', 'revoked', 'blocked', 'disabled'],
+            true
+        )) {
             return false;
+        }
+
+        /*
+         * Some older invitees may not yet have card_status populated.
+         * A valid private short code is sufficient unless the card was
+         * explicitly blocked above.
+         */
+        if (blank($invitee->card_status)) {
+            return true;
         }
 
         return in_array(
@@ -1009,6 +1060,73 @@ class InviteePageController extends Controller
                 'photo' => 'The uploaded image format is not supported.',
             ]),
         };
+    }
+
+    protected function resolveLanguage(
+        Request $request,
+        Invitee $invitee,
+        $event
+    ): string {
+        $requestedLanguage = strtolower(
+            trim((string) $request->query('lang', ''))
+        );
+
+        $sessionKey = 'invitee_language_' . $invitee->id;
+
+        if (! in_array($requestedLanguage, ['en', 'sw'], true)) {
+            $requestedLanguage = (string) session(
+                $sessionKey,
+                $event?->love_story_language
+                    ?? $event?->default_language
+                    ?? 'en'
+            );
+        }
+
+        $language = in_array($requestedLanguage, ['en', 'sw'], true)
+            ? $requestedLanguage
+            : 'en';
+
+        session([$sessionKey => $language]);
+
+        return $language;
+    }
+
+    protected function loveStoryForLanguage(
+        $event,
+        string $language
+    ): ?string {
+        if (! $event) {
+            return null;
+        }
+
+        if ($language === 'sw') {
+            return $event->love_story_sw
+                ?? $event->love_story
+                ?? $event->love_story_en
+                ?? null;
+        }
+
+        return $event->love_story_en
+            ?? $event->love_story
+            ?? $event->love_story_sw
+            ?? null;
+    }
+
+    protected function shouldShowLoveStory(
+        $event,
+        ?string $loveStory = null
+    ): bool {
+        if (! $event) {
+            return false;
+        }
+
+        $enabled = method_exists($event, 'shouldShowLoveStory')
+            ? $event->shouldShowLoveStory()
+            : (bool) ($event->show_love_story ?? false);
+
+        return $enabled && filled(
+            $loveStory ?? $this->loveStoryForLanguage($event, 'en')
+        );
     }
 
     protected function shouldShowCoverImage($event): bool

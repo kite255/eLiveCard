@@ -25,17 +25,6 @@ class ViewEvent extends ViewRecord
 
     protected static ?string $title = 'Event Workspace';
 
-    private const RELATION_ASSIGNED_USERS = 0;
-    private const RELATION_CARD_TYPES = 1;
-    private const RELATION_INVITEES = 2;
-    private const RELATION_INVITEE_UPLOADS = 3;
-    private const RELATION_CARD_TEMPLATES = 4;
-    private const RELATION_GENERATED_CARDS = 5;
-    private const RELATION_MESSAGE_TEMPLATES = 6;
-    private const RELATION_MESSAGE_LOGS = 7;
-    private const RELATION_SMS_LOGS = 8;
-    private const RELATION_CHECK_INS = 9;
-
     public function getMaxContentWidth(): MaxWidth
     {
         return MaxWidth::Full;
@@ -344,62 +333,67 @@ class ViewEvent extends ViewRecord
             : null;
     }
 
-    protected function relationManagerUrl(int $position): string
+    protected function relationManagerUrl(string $relation): string
     {
-        return EventResource::getUrl('view', [
-            'record' => $this->record,
-            'activeRelationManager' => $position,
-        ]);
+        return EventResource::relationManagerUrl(
+            $this->record,
+            $relation,
+        );
     }
 
     public function getAssignedUsersUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_ASSIGNED_USERS);
+        return $this->relationManagerUrl(EventResource::RELATION_ASSIGNED_USERS);
     }
 
     public function getCardTypesUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_CARD_TYPES);
+        return $this->relationManagerUrl(EventResource::RELATION_CARD_TYPES);
     }
 
     public function getInviteesUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_INVITEES);
+        return $this->relationManagerUrl(EventResource::RELATION_INVITEES);
     }
 
     public function getInviteeUploadsUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_INVITEE_UPLOADS);
+        return $this->relationManagerUrl(EventResource::RELATION_INVITEE_UPLOADS);
     }
 
     public function getCardTemplatesUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_CARD_TEMPLATES);
+        return $this->relationManagerUrl(EventResource::RELATION_CARD_TEMPLATES);
     }
 
     public function getGeneratedCardsUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_GENERATED_CARDS);
+        return $this->relationManagerUrl(EventResource::RELATION_GENERATED_CARDS);
     }
 
     public function getMessageTemplatesUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_MESSAGE_TEMPLATES);
+        return $this->relationManagerUrl(EventResource::RELATION_MESSAGE_TEMPLATES);
     }
 
     public function getDeliveryLogsUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_MESSAGE_LOGS);
+        return $this->relationManagerUrl(EventResource::RELATION_MESSAGE_LOGS);
     }
 
     public function getSmsLogsUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_SMS_LOGS);
+        return $this->relationManagerUrl(EventResource::RELATION_SMS_LOGS);
     }
 
     public function getCheckInsUrl(): string
     {
-        return $this->relationManagerUrl(self::RELATION_CHECK_INS);
+        return $this->relationManagerUrl(EventResource::RELATION_CHECK_INS);
+    }
+
+    public function getActivityLogUrl(): string
+    {
+        return $this->relationManagerUrl(EventResource::RELATION_AUDIT_LOGS);
     }
 
 
@@ -646,15 +640,26 @@ class ViewEvent extends ViewRecord
     public function getWorkspaceQuickActions(): array
     {
         $stats = $this->getWorkspaceStats();
+        $isSuperAdmin = auth()->user()?->isSuperAdmin() ?? false;
 
         return array_values(array_filter([
+            /*
+             * 1. Event setup
+             */
             [
-                'title' => 'Invitees',
-                'description' => 'Manage invitees',
-                'icon' => 'heroicon-o-users',
-                'url' => $this->getInviteesUrl(),
+                'title' => 'Edit Event',
+                'description' => 'Update event details',
+                'icon' => 'heroicon-o-pencil-square',
+                'url' => $this->getEditEventUrl(),
                 'tone' => 'blue',
-                'hint' => number_format($stats['invitees']).' invitees',
+                'visible' => $this->canEditEvent(),
+            ],
+            [
+                'title' => 'Assigned Users',
+                'description' => 'Manage event access',
+                'icon' => 'heroicon-o-user-group',
+                'url' => $this->getAssignedUsersUrl(),
+                'tone' => 'blue',
                 'visible' => $this->canEditEvent(),
             ],
             [
@@ -665,9 +670,22 @@ class ViewEvent extends ViewRecord
                 'tone' => 'green',
                 'visible' => $this->canEditEvent(),
             ],
+
+            /*
+             * 2. Invitees and invitation cards
+             */
+            [
+                'title' => 'Invitees',
+                'description' => 'Manage invitees',
+                'icon' => 'heroicon-o-users',
+                'url' => $this->getInviteesUrl(),
+                'tone' => 'blue',
+                'hint' => number_format($stats['invitees']).' invitees',
+                'visible' => $this->canEditEvent(),
+            ],
             [
                 'title' => 'Card Templates',
-                'description' => 'Design templates',
+                'description' => 'Design card templates',
                 'icon' => 'heroicon-o-photo',
                 'url' => $this->getCardTemplatesUrl(),
                 'tone' => 'orange',
@@ -675,38 +693,71 @@ class ViewEvent extends ViewRecord
             ],
             [
                 'title' => 'Generated Cards',
-                'description' => 'Bulk card generation',
+                'description' => 'Generate personalized cards',
                 'icon' => 'heroicon-o-printer',
                 'url' => $this->getGeneratedCardsUrl(),
                 'tone' => 'purple',
                 'hint' => number_format($stats['generated_cards']).' ready',
                 'visible' => $this->canEditEvent(),
             ],
+
+            /*
+             * 3. Messaging and RSVP
+             */
+            [
+                'title' => 'Message Templates',
+                'description' => 'Manage message content',
+                'icon' => 'heroicon-o-document-text',
+                'url' => $this->getMessageTemplatesUrl(),
+                'tone' => 'purple',
+                'visible' => $this->canSendEventMessages(),
+            ],
             [
                 'title' => 'Message Center',
-                'description' => 'Send messages',
+                'description' => 'Send SMS or WhatsApp',
                 'icon' => 'heroicon-o-envelope',
                 'url' => $this->getMessageCenterUrl(),
                 'tone' => 'sky',
                 'visible' => $this->canSendEventMessages(),
             ],
             [
+                'title' => 'Message Logs',
+                'description' => 'View delivery history',
+                'icon' => 'heroicon-o-list-bullet',
+                'url' => $this->getDeliveryLogsUrl(),
+                'tone' => 'orange',
+                'hint' => number_format($stats['messages_sent']).' sent',
+                'visible' => $this->canSendEventMessages() || $this->canViewReports(),
+            ],
+            [
+                'title' => 'SMS Logs',
+                'description' => 'View SMS records',
+                'icon' => 'heroicon-o-chat-bubble-left-ellipsis',
+                'url' => $this->getSmsLogsUrl(),
+                'tone' => 'green',
+                'visible' => $this->canSendEventMessages() || $this->canViewReports(),
+            ],
+            [
                 'title' => 'RSVP Responses',
-                'description' => 'View responses',
+                'description' => 'View invitee responses',
                 'icon' => 'heroicon-o-chat-bubble-left-right',
                 'url' => $this->getInviteeResponsesUrl(),
                 'tone' => 'green',
                 'hint' => number_format($stats['pending_rsvp']).' pending',
-                'visible' => true,
+                'visible' => $this->canEditEvent() || $this->canViewReports(),
             ],
             [
-                'title' => 'Invitee Uploads',
-                'description' => 'Photos & wishes',
-                'icon' => 'heroicon-o-cloud-arrow-up',
+                'title' => 'Wishes & Photos',
+                'description' => 'Review invitee uploads',
+                'icon' => 'heroicon-o-photo',
                 'url' => $this->getInviteeUploadsUrl(),
                 'tone' => 'sky',
                 'visible' => $this->canEditEvent(),
             ],
+
+            /*
+             * 4. Event-day check-in
+             */
             [
                 'title' => 'Check-in Dashboard',
                 'description' => 'Live attendance overview',
@@ -718,7 +769,7 @@ class ViewEvent extends ViewRecord
             ],
             [
                 'title' => 'Gate Check-in',
-                'description' => 'Scan & verify',
+                'description' => 'Scan and verify cards',
                 'icon' => 'heroicon-o-qr-code',
                 'url' => $this->getGateCheckInUrl(),
                 'tone' => 'blue',
@@ -729,8 +780,21 @@ class ViewEvent extends ViewRecord
                     : true,
             ],
             [
+                'title' => 'Check-ins',
+                'description' => 'View check-in records',
+                'icon' => 'heroicon-o-clipboard-document-check',
+                'url' => $this->getCheckInsUrl(),
+                'tone' => 'sky',
+                'hint' => number_format($stats['check_in_transactions']).' records',
+                'visible' => $this->canViewReports() || $this->canEditEvent(),
+            ],
+
+            /*
+             * 5. Reporting and accountability
+             */
+            [
                 'title' => 'Reports',
-                'description' => 'View reports',
+                'description' => 'View event reports',
                 'icon' => 'heroicon-o-chart-bar-square',
                 'url' => $this->getReportsUrl(),
                 'tone' => 'orange',
@@ -738,12 +802,12 @@ class ViewEvent extends ViewRecord
                 'visible' => $this->canViewReports(),
             ],
             [
-                'title' => 'Edit Event',
-                'description' => 'Update details',
-                'icon' => 'heroicon-o-pencil-square',
-                'url' => $this->getEditEventUrl(),
-                'tone' => 'blue',
-                'visible' => $this->canEditEvent(),
+                'title' => 'Activity Log',
+                'description' => 'Review event activity',
+                'icon' => 'heroicon-o-shield-check',
+                'url' => $this->getActivityLogUrl(),
+                'tone' => 'purple',
+                'visible' => $isSuperAdmin,
             ],
         ], fn (array $action): bool => (bool) ($action['visible'] ?? true)));
     }

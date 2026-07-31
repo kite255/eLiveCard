@@ -10,7 +10,27 @@
         $eventImageUrl = $this->getEventImageUrl();
         $stats = $this->getWorkspaceStatCards();
         $quickActions = $this->getWorkspaceQuickActions();
-        $digitalPageSettings = $this->getInviteeDigitalPageSettings();
+
+        $selectedRelation = request()->query('relation');
+        $selectedRelationLabels = [
+            \App\Filament\Resources\EventResource::RELATION_ASSIGNED_USERS => 'Assigned Users',
+            \App\Filament\Resources\EventResource::RELATION_CARD_TYPES => 'Card Types',
+            \App\Filament\Resources\EventResource::RELATION_INVITEES => 'Invitees',
+            \App\Filament\Resources\EventResource::RELATION_INVITEE_UPLOADS => 'Wishes & Photos',
+            \App\Filament\Resources\EventResource::RELATION_CARD_TEMPLATES => 'Card Templates',
+            \App\Filament\Resources\EventResource::RELATION_GENERATED_CARDS => 'Generated Cards',
+            \App\Filament\Resources\EventResource::RELATION_MESSAGE_TEMPLATES => 'Message Templates',
+            \App\Filament\Resources\EventResource::RELATION_MESSAGE_LOGS => 'Message Logs',
+            \App\Filament\Resources\EventResource::RELATION_SMS_LOGS => 'SMS Logs',
+            \App\Filament\Resources\EventResource::RELATION_CHECK_INS => 'Check-ins',
+            \App\Filament\Resources\EventResource::RELATION_AUDIT_LOGS => 'Activity Log',
+        ];
+        $selectedRelationLabel = is_string($selectedRelation)
+            ? ($selectedRelationLabels[$selectedRelation] ?? null)
+            : null;
+        $workspaceUrl = \App\Filament\Resources\EventResource::getUrl('view', [
+            'record' => $event,
+        ]);
 
         $officerExpectedGuests = (int) $event->invitees()->sum('allowed_guests');
         $officerCheckedInGuests = (int) $event->invitees()->sum('checked_in_count');
@@ -477,90 +497,57 @@
             line-height: 1;
         }
 
-        .elive-bottom-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1.15fr;
-            gap: 12px;
-        }
-
-        .elive-info-card {
+        .elive-relations {
+            min-width: 0;
             padding: 16px;
         }
 
-        .elive-info-heading {
+        .elive-relation-header {
             display: flex;
             align-items: center;
-            gap: 8px;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .elive-relation-heading {
+            min-width: 0;
+        }
+
+        .elive-relation-title {
+            margin: 0;
             color: var(--elive-text);
-            font-size: 12px;
+            font-size: 16px;
             font-weight: 900;
         }
 
-        .elive-info-heading svg {
-            width: 17px;
-            height: 17px;
-            color: var(--elive-blue);
-        }
-
-        .elive-info-list {
-            display: grid;
-            gap: 12px;
-            margin-top: 16px;
-        }
-
-        .elive-info-row {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 14px;
-            font-size: 10px;
-        }
-
-        .elive-info-label {
+        .elive-relation-description {
+            margin-top: 3px;
             color: var(--elive-muted);
+            font-size: 10px;
+            font-weight: 600;
         }
 
-        .elive-info-value {
-            color: var(--elive-text);
-            font-weight: 800;
-            text-align: right;
-        }
-
-        .elive-enabled {
+        .elive-back-button {
             display: inline-flex;
             align-items: center;
-            gap: 5px;
-            color: #15803D;
+            justify-content: center;
+            flex-shrink: 0;
+            gap: 7px;
+            min-height: 38px;
+            padding: 8px 12px;
+            border: 1px solid #DDE4EE;
+            border-radius: 9px;
+            color: var(--elive-blue);
+            background: #FFFFFF;
             font-size: 10px;
-            font-weight: 800;
+            font-weight: 900;
+            text-decoration: none;
         }
 
-        .elive-enabled-dot,
-        .elive-disabled-dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 999px;
-        }
-
-        .elive-enabled-dot {
-            background: #22C55E;
-        }
-
-        .elive-disabled {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            color: #64748B;
-            font-size: 10px;
-            font-weight: 800;
-        }
-
-        .elive-disabled-dot {
-            background: #94A3B8;
-        }
-
-        .elive-relations {
-            min-width: 0;
+        .elive-back-button svg {
+            width: 15px;
+            height: 15px;
         }
 
         @media (max-width: 1450px) {
@@ -598,10 +585,6 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
-            .elive-bottom-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
             .elive-relations {
                 grid-column: 1 / -1;
                 overflow-x: auto;
@@ -631,10 +614,6 @@
             .elive-quick-grid,
             .elive-officer-stats + .elive-quick-wrap .elive-quick-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-
-            .elive-bottom-grid {
-                grid-template-columns: 1fr;
             }
 
             .elive-stat {
@@ -689,10 +668,6 @@
             .elive-stats-grid.elive-officer-stats,
             .elive-quick-grid,
             .elive-officer-stats + .elive-quick-wrap .elive-quick-grid,
-            .elive-bottom-grid {
-                grid-template-columns: 1fr;
-            }
-
             .elive-event-actions {
                 gap: 9px;
                 padding-top: 14px;
@@ -754,8 +729,18 @@
 
             .elive-relations {
                 width: 100%;
+                padding: 12px;
                 overflow-x: auto;
                 -webkit-overflow-scrolling: touch;
+            }
+
+            .elive-relation-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .elive-back-button {
+                width: 100%;
             }
         }
 
@@ -815,6 +800,16 @@
         .dark .elive-quick-hint {
             color: #CBD5E1;
             background: #1F2937;
+        }
+
+        .dark .elive-relation-title {
+            color: #FFFFFF;
+        }
+
+        .dark .elive-back-button {
+            border-color: #4B5563;
+            color: #FFFFFF;
+            background: #111827;
         }
     </style>
 
@@ -1019,131 +1014,35 @@
             </div>
         </section>
 
-        @if (! $isCheckInOfficer)
-        <section class="elive-bottom-grid">
-            <article class="elive-card elive-info-card">
-                <div class="elive-info-heading">
-                    @svg('heroicon-o-information-circle')
-                    Event Profile
-                </div>
+        @if (! $isCheckInOfficer && filled($selectedRelationLabel))
+            @if (count($relationManagers = $this->getRelationManagers()))
+                <section class="elive-card elive-relations">
+                    <div class="elive-relation-header">
+                        <div class="elive-relation-heading">
+                            <h3 class="elive-relation-title">
+                                {{ $selectedRelationLabel }}
+                            </h3>
 
-                <div class="elive-info-list">
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Event Type</span>
-                        <span class="elive-info-value">
-                            {{ $this->getEventTypeLabel() }}
-                        </span>
-                    </div>
-
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Event Date</span>
-                        <span class="elive-info-value">
-                            {{ $this->getFormattedEventDate() }}
-                        </span>
-                    </div>
-
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Event Time</span>
-                        <span class="elive-info-value">
-                            {{ $this->getFormattedEventTime() }}
-                        </span>
-                    </div>
-
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Status</span>
-                        <span class="elive-badge elive-badge-status elive-status-{{ $this->getStatusColor() }}">
-                            {{ $this->getStatusLabel() }}
-                        </span>
-                    </div>
-                </div>
-            </article>
-
-            <article class="elive-card elive-info-card">
-                <div class="elive-info-heading">
-                    @svg('heroicon-o-map-pin')
-                    Venue & Organizer
-                </div>
-
-                <div class="elive-info-list">
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Venue Name</span>
-                        <span class="elive-info-value">
-                            {{ $this->getVenueName() }}
-                        </span>
-                    </div>
-
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Address</span>
-                        <span class="elive-info-value">
-                            {{ $this->getVenueAddress() }}
-                        </span>
-                    </div>
-
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Dress Code</span>
-                        <span class="elive-info-value">
-                            {{ $this->getDressCode() }}
-                        </span>
-                    </div>
-
-                    <div class="elive-info-row">
-                        <span class="elive-info-label">Organizer Phone</span>
-                        <span class="elive-info-value">
-                            {{ $this->getOrganizerPhone() }}
-                        </span>
-                    </div>
-
-                    @if ($this->getLocationUrl())
-                        <div class="elive-info-row">
-                            <span class="elive-info-label">Google Maps</span>
-                            <a
-                                href="{{ $this->getLocationUrl() }}"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="font-bold text-primary-600"
-                            >
-                                Open Map
-                            </a>
+                            <p class="elive-relation-description">
+                                Manage {{ strtolower($selectedRelationLabel) }} for
+                                {{ $this->getEventName() }}.
+                            </p>
                         </div>
-                    @endif
-                </div>
-            </article>
 
-            <article class="elive-card elive-info-card">
-                <div class="elive-info-heading">
-                    @svg('heroicon-o-globe-alt')
-                    Invitee Digital Page
-                </div>
+                        <a href="{{ $workspaceUrl }}" class="elive-back-button">
+                            @svg('heroicon-o-arrow-left')
+                            Back to Workspace
+                        </a>
+                    </div>
 
-                <div class="elive-info-list">
-                    @foreach ($digitalPageSettings as $label => $enabled)
-                        <div class="elive-info-row">
-                            <span class="elive-info-label">
-                                {{ $label }}
-                            </span>
-
-                            <span class="{{ $enabled ? 'elive-enabled' : 'elive-disabled' }}">
-                                <span class="{{ $enabled ? 'elive-enabled-dot' : 'elive-disabled-dot' }}"></span>
-                                {{ $enabled ? 'Enabled' : 'Disabled' }}
-                            </span>
-                        </div>
-                    @endforeach
-                </div>
-            </article>
-        </section>
-
-        {{ $this->infolist }}
-
-        @if (count($relationManagers = $this->getRelationManagers()))
-            <section class="elive-relations">
-                <x-filament-panels::resources.relation-managers
-                    :active-manager="$this->activeRelationManager"
-                    :managers="$relationManagers"
-                    :owner-record="$record"
-                    :page-class="static::class"
-                />
-            </section>
-        @endif
+                    <x-filament-panels::resources.relation-managers
+                        :active-manager="$this->activeRelationManager"
+                        :managers="$relationManagers"
+                        :owner-record="$record"
+                        :page-class="static::class"
+                    />
+                </section>
+            @endif
         @endif
     </div>
 </x-filament-panels::page>

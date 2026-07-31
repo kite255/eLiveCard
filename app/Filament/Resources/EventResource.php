@@ -34,17 +34,17 @@ class EventResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
-    private const RELATION_ASSIGNED_USERS = 0;
-    private const RELATION_CARD_TYPES = 1;
-    private const RELATION_INVITEES = 2;
-    private const RELATION_INVITEE_UPLOADS = 3;
-    private const RELATION_CARD_TEMPLATES = 4;
-    private const RELATION_GENERATED_CARDS = 5;
-    private const RELATION_MESSAGE_TEMPLATES = 6;
-    private const RELATION_MESSAGE_LOGS = 7;
-    private const RELATION_SMS_LOGS = 8;
-    private const RELATION_CHECK_INS = 9;
-    private const RELATION_AUDIT_LOGS = 10;
+    public const RELATION_ASSIGNED_USERS = 'assigned-users';
+    public const RELATION_CARD_TYPES = 'card-types';
+    public const RELATION_INVITEES = 'invitees';
+    public const RELATION_INVITEE_UPLOADS = 'invitee-uploads';
+    public const RELATION_CARD_TEMPLATES = 'card-templates';
+    public const RELATION_GENERATED_CARDS = 'generated-cards';
+    public const RELATION_MESSAGE_TEMPLATES = 'message-templates';
+    public const RELATION_MESSAGE_LOGS = 'message-logs';
+    public const RELATION_SMS_LOGS = 'sms-logs';
+    public const RELATION_CHECK_INS = 'check-ins';
+    public const RELATION_AUDIT_LOGS = 'activity-log';
 
     public static function shouldRegisterNavigation(): bool
     {
@@ -325,11 +325,46 @@ class EventResource extends Resource
                             ->columnSpanFull()
                             ->placeholder('With joy in our hearts, we warmly invite you to celebrate with us.'),
 
-                        Forms\Components\Textarea::make('love_story')
-                            ->label('Love Story / Event Story')
+                        Forms\Components\Toggle::make('show_love_story')
+                            ->label('Show Love Story')
+                            ->helperText('Optional. Enable this only when you want the Love Story section to appear on the invitee page.')
+                            ->default(false)
+                            ->inline(false)
+                            ->live()
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('love_story_language')
+                            ->label('Default Love Story Language')
+                            ->options(Event::loveStoryLanguages())
+                            ->default(Event::LANGUAGE_ENGLISH)
+                            ->required(fn (Forms\Get $get): bool => (bool) $get('show_love_story'))
+                            ->visible(fn (Forms\Get $get): bool => (bool) $get('show_love_story'))
+                            ->live()
+                            ->helperText('Invitees can still switch between English and Kiswahili on their invitation page.'),
+
+                        Forms\Components\Textarea::make('love_story_en')
+                            ->label('Love Story - English')
                             ->rows(6)
+                            ->maxLength(5000)
                             ->columnSpanFull()
-                            ->placeholder("Our journey began with friendship, grew with love, and now we are excited to celebrate this special day with you."),
+                            ->visible(fn (Forms\Get $get): bool => (bool) $get('show_love_story'))
+                            ->required(fn (Forms\Get $get): bool =>
+                                (bool) $get('show_love_story')
+                                && $get('love_story_language') === Event::LANGUAGE_ENGLISH
+                            )
+                            ->placeholder('Write the love story or event story in English.'),
+
+                        Forms\Components\Textarea::make('love_story_sw')
+                            ->label('Love Story - Kiswahili')
+                            ->rows(6)
+                            ->maxLength(5000)
+                            ->columnSpanFull()
+                            ->visible(fn (Forms\Get $get): bool => (bool) $get('show_love_story'))
+                            ->required(fn (Forms\Get $get): bool =>
+                                (bool) $get('show_love_story')
+                                && $get('love_story_language') === Event::LANGUAGE_SWAHILI
+                            )
+                            ->placeholder('Andika simulizi ya mapenzi au simulizi ya tukio kwa Kiswahili.'),
 
                         Forms\Components\TextInput::make('organizer_phone')
                             ->label('Organizer Phone')
@@ -341,11 +376,6 @@ class EventResource extends Resource
                         Forms\Components\Toggle::make('show_cover_image')
                             ->label('Show Cover Photo')
                             ->default(true)
-                            ->inline(false),
-
-                        Forms\Components\Toggle::make('show_love_story')
-                            ->label('Show Love Story')
-                            ->default(false)
                             ->inline(false),
 
                         Forms\Components\Toggle::make('show_program')
@@ -611,11 +641,35 @@ class EventResource extends Resource
                                         'md' => 2,
                                     ]),
 
-                                Infolists\Components\TextEntry::make('love_story')
-                                    ->label('Love Story / Event Story')
+                                Infolists\Components\TextEntry::make('love_story_language')
+                                    ->label('Default Love Story Language')
+                                    ->formatStateUsing(fn (?string $state): string =>
+                                        Event::loveStoryLanguages()[$state]
+                                            ?? 'English'
+                                    )
+                                    ->badge()
+                                    ->color('primary')
+                                    ->visible(fn (Event $record): bool => $record->shouldShowLoveStory()),
+
+                                Infolists\Components\TextEntry::make('love_story_en')
+                                    ->label('Love Story - English')
                                     ->placeholder('Not set')
-                                    ->limit(180)
-                                    ->columnSpanFull(),
+                                    ->limit(220)
+                                    ->columnSpanFull()
+                                    ->visible(fn (Event $record): bool =>
+                                        $record->shouldShowLoveStory()
+                                        && filled($record->love_story_en)
+                                    ),
+
+                                Infolists\Components\TextEntry::make('love_story_sw')
+                                    ->label('Love Story - Kiswahili')
+                                    ->placeholder('Not set')
+                                    ->limit(220)
+                                    ->columnSpanFull()
+                                    ->visible(fn (Event $record): bool =>
+                                        $record->shouldShowLoveStory()
+                                        && filled($record->love_story_sw)
+                                    ),
 
                                 Infolists\Components\TextEntry::make('program')
                                     ->label('Program')
@@ -1143,10 +1197,10 @@ class EventResource extends Resource
                     ->visible(fn (Event $record): bool =>
                         auth()->user()?->canManageEvent($record) ?? false
                     )
-                    ->url(fn (Event $record): string => static::getUrl('view', [
-                        'record' => $record,
-                        'activeRelationManager' => self::RELATION_INVITEES,
-                    ])),
+                    ->url(fn (Event $record): string => static::relationManagerUrl(
+                        $record,
+                        self::RELATION_INVITEES
+                    )),
 
                 Tables\Actions\Action::make('wishes_photos')
                     ->label('Wishes & Photos')
@@ -1160,10 +1214,10 @@ class EventResource extends Resource
                             ? (string) $record->pending_invitee_uploads_count
                             : null
                     )
-                    ->url(fn (Event $record): string => static::getUrl('view', [
-                        'record' => $record,
-                        'activeRelationManager' => self::RELATION_INVITEE_UPLOADS,
-                    ])),
+                    ->url(fn (Event $record): string => static::relationManagerUrl(
+                        $record,
+                        self::RELATION_INVITEE_UPLOADS
+                    )),
 
                 Tables\Actions\Action::make('activity_log')
                     ->label('Activity Log')
@@ -1177,10 +1231,10 @@ class EventResource extends Resource
                     ->visible(fn (Event $record): bool =>
                         auth()->user()?->isSuperAdmin() ?? false
                     )
-                    ->url(fn (Event $record): string => static::getUrl('view', [
-                        'record' => $record,
-                        'activeRelationManager' => self::RELATION_AUDIT_LOGS,
-                    ])),
+                    ->url(fn (Event $record): string => static::relationManagerUrl(
+                        $record,
+                        self::RELATION_AUDIT_LOGS
+                    )),
 
                 Tables\Actions\Action::make('message_center')
                     ->label('Message Center')
@@ -1296,22 +1350,65 @@ class EventResource extends Resource
         };
     }
 
+    /**
+     * Return no relation managers on the normal Event Workspace page.
+     *
+     * A relation manager is loaded only when a Quick Action supplies the
+     * `relation` query parameter. This removes the long Filament tab bar from
+     * the main workspace while keeping every module accessible.
+     */
     public static function getRelations(): array
     {
-        // Keep this order synchronized with ViewEvent relation index constants.
+        $relation = request()->query('relation');
+
+        if (! is_string($relation) || $relation === '') {
+            return [];
+        }
+
+        $relationManager = static::relationManagerMap()[$relation] ?? null;
+
+        return $relationManager ? [$relationManager] : [];
+    }
+
+    /**
+     * Stable relation-manager map used by the Event Workspace Quick Actions.
+     */
+    public static function relationManagerMap(): array
+    {
         return [
-            RelationManagers\AssignedUsersRelationManager::class,     // 0
-            RelationManagers\CardTypesRelationManager::class,         // 1
-            RelationManagers\InviteesRelationManager::class,          // 2
-            RelationManagers\InviteeUploadsRelationManager::class,    // 3
-            RelationManagers\CardTemplatesRelationManager::class,     // 4
-            RelationManagers\GeneratedCardsRelationManager::class,    // 5
-            RelationManagers\MessageTemplatesRelationManager::class,  // 6
-            RelationManagers\MessageLogsRelationManager::class,       // 7
-            RelationManagers\SmsLogsRelationManager::class,           // 8
-            RelationManagers\CheckInsRelationManager::class,          // 9
-            RelationManagers\AuditLogsRelationManager::class,         // 10
+            self::RELATION_ASSIGNED_USERS => RelationManagers\AssignedUsersRelationManager::class,
+            self::RELATION_CARD_TYPES => RelationManagers\CardTypesRelationManager::class,
+            self::RELATION_INVITEES => RelationManagers\InviteesRelationManager::class,
+            self::RELATION_INVITEE_UPLOADS => RelationManagers\InviteeUploadsRelationManager::class,
+            self::RELATION_CARD_TEMPLATES => RelationManagers\CardTemplatesRelationManager::class,
+            self::RELATION_GENERATED_CARDS => RelationManagers\GeneratedCardsRelationManager::class,
+            self::RELATION_MESSAGE_TEMPLATES => RelationManagers\MessageTemplatesRelationManager::class,
+            self::RELATION_MESSAGE_LOGS => RelationManagers\MessageLogsRelationManager::class,
+            self::RELATION_SMS_LOGS => RelationManagers\SmsLogsRelationManager::class,
+            self::RELATION_CHECK_INS => RelationManagers\CheckInsRelationManager::class,
+            self::RELATION_AUDIT_LOGS => RelationManagers\AuditLogsRelationManager::class,
         ];
+    }
+
+    /**
+     * Build a URL that opens one relation manager without restoring all tabs.
+     */
+    public static function relationManagerUrl(
+        Event|int|string $record,
+        string $relation
+    ): string {
+        abort_unless(
+            array_key_exists($relation, static::relationManagerMap()),
+            404,
+            'Unknown event workspace section.'
+        );
+
+        return static::getUrl('section', [
+            'record' => $record instanceof Event ? $record->getRouteKey() : $record,
+            'section' => $relation,
+            'relation' => $relation,
+            'activeRelationManager' => 0,
+        ]);
     }
 
     public static function getPages(): array
@@ -1320,6 +1417,7 @@ class EventResource extends Resource
             'index' => Pages\ListEvents::route('/'),
             'create' => Pages\CreateEvent::route('/create'),
             'view' => Pages\ViewEvent::route('/{record}'),
+            'section' => Pages\ManageEventSection::route('/{record}/section/{section}'),
             'edit' => Pages\EditEvent::route('/{record}/edit'),
             'send-message' => Pages\SendEventMessage::route('/{record}/send-message'),
             'invitee-responses' => Pages\InviteeResponseTracker::route('/{record}/invitee-responses'),
