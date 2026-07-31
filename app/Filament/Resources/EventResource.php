@@ -416,17 +416,46 @@ class EventResource extends Resource
                             ->helperText('When enabled, one welcome SMS is queued after a successful check-in. SMS failure will not reverse the check-in.')
                             ->default(false)
                             ->live()
+                            ->afterStateUpdated(function (
+                                Forms\Set $set,
+                                ?bool $state
+                            ): void {
+                                if (! $state) {
+                                    $set('welcome_sms_message', null);
+                                }
+                            })
                             ->columnSpanFull(),
 
                         Forms\Components\Textarea::make('welcome_sms_message')
                             ->label('Welcome SMS Message')
-                            ->default('Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe. Furahia tukio hili maalum.')
                             ->placeholder('Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe.')
                             ->helperText(EliveMessagePlaceholders::helperText())
                             ->rows(5)
                             ->maxLength(480)
-                            ->required(fn (Forms\Get $get): bool => (bool) $get('welcome_sms_enabled'))
-                            ->visible(fn (Forms\Get $get): bool => (bool) $get('welcome_sms_enabled'))
+                            ->default(
+                                'Karibu #NAME# kwenye #EVENT_NAME#. Tunafurahi kuwa nawe. Furahia tukio hili maalum.'
+                            )
+                            ->visible(
+                                fn (Forms\Get $get): bool =>
+                                    filter_var(
+                                        $get('welcome_sms_enabled'),
+                                        FILTER_VALIDATE_BOOLEAN
+                                    )
+                            )
+                            ->required(
+                                fn (Forms\Get $get): bool =>
+                                    filter_var(
+                                        $get('welcome_sms_enabled'),
+                                        FILTER_VALIDATE_BOOLEAN
+                                    )
+                            )
+                            ->dehydrated(
+                                fn (Forms\Get $get): bool =>
+                                    filter_var(
+                                        $get('welcome_sms_enabled'),
+                                        FILTER_VALIDATE_BOOLEAN
+                                    )
+                            )
                             ->columnSpanFull(),
                     ])
                     ->collapsible(),

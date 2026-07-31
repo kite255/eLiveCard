@@ -204,7 +204,10 @@ class CheckInService
                     userId: $user?->id,
                 );
 
-                $this->dispatchWelcomeSmsAfterCommit($lockedInvitee);
+                $this->dispatchWelcomeSmsAfterCommit(
+                    invitee: $lockedInvitee,
+                    previousCheckedInCount: $previousCheckedInCount,
+                );
 
                 return [
                     'success' => true,
@@ -303,42 +306,83 @@ class CheckInService
             : CheckIn::METHOD_QR;
     }
 
-    private function dispatchWelcomeSmsAfterCommit(Invitee $invitee): void
-    {
+    private function dispatchWelcomeSmsAfterCommit(
+        Invitee $invitee,
+        int $previousCheckedInCount
+    ): void {
         $event = $invitee->event;
 
         if (! $event || ! (bool) ($event->welcome_sms_enabled ?? false)) {
             return;
         }
 
-        DB::afterCommit(function () use ($invitee): void {
+        // Send the welcome SMS only after the invitee's first successful entry.
+        // Additional guests checked in later must not trigger duplicate messages.
+        if ($previousCheckedInCount > 0) {
+            return;
+        }
+
+        $phone = trim((string) ($invitee->phone ?? ''));
+
+        if ($phone === '') {
+            Log::info('Welcome SMS skipped because invitee phone is missing', [
+                'invitee_id' => $invitee->id,
+                'event_id' => $invitee->event_id,
+            ]);
+
+            AuditLogService::record(
+                action: 'invitee.welcome_sms_skipped',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Welcome SMS was skipped because the invitee has no phone number.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'reason' => 'missing_phone',
+                ],
+            );
+
+            return;
+        }
+
+        $inviteeId = (int) $invitee->id;
+        $eventId = (int) $invitee->event_id;
+
+        DB::afterCommit(function () use (
+            $invitee,
+            $inviteeId,
+            $eventId,
+            $phone
+        ): void {
             try {
-                SendWelcomeSmsJob::dispatch($invitee->id);
+                SendWelcomeSmsJob::dispatch($inviteeId)
+                    ->onQueue('messages');
 
                 AuditLogService::record(
                     action: 'invitee.welcome_sms_queued',
                     subject: $invitee,
-                    eventId: $invitee->event_id,
-                    description: 'Welcome SMS was queued after successful check-in.',
+                    eventId: $eventId,
+                    description: 'Welcome SMS was queued after the first successful check-in.',
                     metadata: [
-                        'invitee_id' => $invitee->id,
-                        'phone' => $invitee->phone,
+                        'invitee_id' => $inviteeId,
+                        'phone' => $phone,
+                        'queue' => 'messages',
                     ],
                 );
             } catch (Throwable $exception) {
                 Log::warning('Failed to dispatch welcome SMS job after check-in', [
-                    'invitee_id' => $invitee->id,
-                    'event_id' => $invitee->event_id,
+                    'invitee_id' => $inviteeId,
+                    'event_id' => $eventId,
                     'error' => $exception->getMessage(),
                 ]);
 
                 AuditLogService::record(
                     action: 'invitee.welcome_sms_queue_failed',
                     subject: $invitee,
-                    eventId: $invitee->event_id,
+                    eventId: $eventId,
                     description: 'Welcome SMS could not be queued after check-in.',
                     metadata: [
-                        'invitee_id' => $invitee->id,
+                        'invitee_id' => $inviteeId,
+                        'phone' => $phone,
                         'error' => $exception->getMessage(),
                     ],
                 );

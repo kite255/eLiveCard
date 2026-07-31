@@ -23,11 +23,20 @@ class SendWelcomeSmsJob implements ShouldQueue
 
     public int $timeout = 90;
 
-    public int $backoff = 15;
+    /**
+     * Retry delays in seconds.
+     *
+     * The increasing delay avoids repeatedly calling the SMS provider during
+     * a short outage.
+     *
+     * @var array<int, int>
+     */
+    public array $backoff = [15, 60, 180];
 
     public function __construct(
         public int $inviteeId
     ) {
+        $this->onQueue('messages');
     }
 
     public function middleware(): array
@@ -37,6 +46,11 @@ class SendWelcomeSmsJob implements ShouldQueue
                 ->releaseAfter(10)
                 ->expireAfter(120),
         ];
+    }
+
+    public function retryUntil(): \DateTimeInterface
+    {
+        return now()->addMinutes(10);
     }
 
     public function handle(SmsService $smsService): void
@@ -123,7 +137,29 @@ class SendWelcomeSmsJob implements ShouldQueue
         $templateMessage = $this->welcomeSmsTemplate($event);
         $message = EliveMessagePlaceholders::render($templateMessage, $invitee);
 
-        if (blank($invitee->phone)) {
+        if (blank(trim($message))) {
+            Log::warning('Welcome SMS skipped because the rendered message is empty.', [
+                'invitee_id' => $invitee->id,
+                'event_id' => $event->id,
+            ]);
+
+            AuditLogService::record(
+                action: 'welcome_sms.message_empty',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Welcome SMS was skipped because the rendered message was empty.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'attempt' => $this->attempts(),
+                ],
+            );
+
+            return;
+        }
+
+        $phone = trim((string) ($invitee->phone ?? ''));
+
+        if ($phone === '') {
             $smsLogId = $this->recordSmsLog(
                 invitee: $invitee,
                 message: $message,
@@ -205,7 +241,7 @@ class SendWelcomeSmsJob implements ShouldQueue
                 metadata: [
                     'invitee_id' => $invitee->id,
                     'invitee_name' => $invitee->name,
-                    'phone' => $invitee->phone,
+                    'phone' => $phone,
                     'sms_type' => 'welcome_sms',
                     'status' => $status,
                     'message_id' => $result['message_id'] ?? null,
@@ -214,6 +250,19 @@ class SendWelcomeSmsJob implements ShouldQueue
                     'driver' => $result['driver'] ?? null,
                     'attempt' => $this->attempts(),
                     'message_length' => mb_strlen($message),
+                ],
+            );
+
+            AuditLogService::record(
+                action: 'welcome_sms.job_completed',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Welcome SMS queue job completed successfully.',
+                metadata: [
+                    'invitee_id' => $invitee->id,
+                    'status' => $status,
+                    'message_id' => $result['message_id'] ?? null,
+                    'attempt' => $this->attempts(),
                 ],
             );
         } catch (Throwable $exception) {
