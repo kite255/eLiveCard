@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
+use App\Models\MessageTemplate;
 use Carbon\Carbon;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Arr;
@@ -17,8 +18,10 @@ use Throwable;
 
 class WhatsAppApiCloudService
 {
-    public function sendInvitation(Invitee $invitee): array
-    {
+    public function sendInvitation(
+        Invitee $invitee,
+        string $languageCode = MessageTemplate::LANGUAGE_ENGLISH
+    ): array {
         $invitee->loadMissing([
             'event',
             'cardType',
@@ -38,21 +41,33 @@ class WhatsAppApiCloudService
             );
         }
 
-        $templateName = trim(
-            (string) config(
-                'services.whatsapp.templates.invitation',
-                'event_invitation_en'
-            )
+        if (blank($invitee->short_code)) {
+            throw new RuntimeException(
+                'The invitee does not have a short code required for WhatsApp RSVP and location buttons.'
+            );
+        }
+
+        $languageCode = $this->normalizeLanguage($languageCode);
+
+        $messageTemplate = MessageTemplate::activeWhatsappTemplate(
+            eventId: (int) $event->id,
+            type: MessageTemplate::TYPE_INVITATION,
+            language: $languageCode,
         );
 
-        $languageCode = trim(
-            (string) config(
-                'services.whatsapp.template_language',
-                'en'
-            )
-        );
+        if (! $messageTemplate) {
+            throw new RuntimeException(
+                "No active {$this->languageLabel($languageCode)} WhatsApp invitation template was found."
+            );
+        }
 
-        $imageUrl = $this->resolveInvitationImageUrl($invitee);
+        if (blank($messageTemplate->whatsapp_template_name)) {
+            throw new RuntimeException(
+                'The selected WhatsApp invitation template does not have a Meta template name.'
+            );
+        }
+
+        $imageUrl = $this->resolveCardImageUrl($invitee);
 
         if (blank($imageUrl)) {
             throw new RuntimeException(
@@ -60,35 +75,176 @@ class WhatsAppApiCloudService
             );
         }
 
+        /*
+         * Meta invitation template:
+         *
+         * HEADER
+         * Image
+         *
+         * BODY
+         * {{1}} Invitee name
+         * {{2}} Event name
+         * {{3}} Card type
+         * {{4}} Venue
+         * {{5}} Event time
+         *
+         * BUTTON 0
+         * Attending / Nitahudhuria
+         *
+         * BUTTON 1
+         * Not Attending / Sitahudhuria
+         *
+         * BUTTON 2
+         * LOCATION / ENEO
+         * https://digital.elive.co.tz/l/{{1}}
+         *
+         * For the URL button, Meta expects only the dynamic suffix:
+         * $invitee->short_code
+         */
         $components = [
-            [
-                'type' => 'header',
-                'parameters' => [
-                    [
-                        'type' => 'image',
-                        'image' => [
-                            'link' => $imageUrl,
-                        ],
-                    ],
-                ],
-            ],
+            $this->imageHeaderComponent($imageUrl),
+
             [
                 'type' => 'body',
                 'parameters' => [
-                    $this->textParameter($invitee->name),
-                    $this->textParameter($event->title),
+                    $this->textParameter(
+                        $invitee->name
+                    ),
+
+                    $this->textParameter(
+                        $event->title
+                            ?? $event->name
+                            ?? 'Event'
+                    ),
+
                     $this->textParameter(
                         $invitee->cardType?->name
                             ?? $invitee->card_type
                             ?? 'Invitation'
                     ),
+
                     $this->textParameter(
                         $event->venue_name
                             ?? $event->venue
                             ?? 'Venue will be communicated'
                     ),
+
                     $this->textParameter(
                         $this->formatEventTime($event)
+                    ),
+                ],
+            ],
+
+            $this->quickReplyButtonComponent(
+                index: 0,
+                payload: 'rsvp_attending:'.$invitee->short_code,
+            ),
+
+            $this->quickReplyButtonComponent(
+                index: 1,
+                payload: 'rsvp_not_attending:'.$invitee->short_code,
+            ),
+
+            $this->urlButtonComponent(
+                index: 2,
+                value: (string) $invitee->short_code,
+            ),
+        ];
+
+        return $this->sendTemplate(
+            phone: (string) $invitee->phone,
+            templateName: (string) $messageTemplate->whatsapp_template_name,
+            languageCode: $languageCode,
+            components: $components,
+            invitee: $invitee,
+            messageType: MessageTemplate::TYPE_INVITATION,
+        );
+    }
+
+    public function sendEnglishInvitation(
+        Invitee $invitee
+    ): array {
+        return $this->sendInvitation(
+            invitee: $invitee,
+            languageCode: MessageTemplate::LANGUAGE_ENGLISH,
+        );
+    }
+
+    public function sendSwahiliInvitation(
+        Invitee $invitee
+    ): array {
+        return $this->sendInvitation(
+            invitee: $invitee,
+            languageCode: MessageTemplate::LANGUAGE_SWAHILI,
+        );
+    }
+
+    public function sendContributionCard(
+        Invitee $invitee,
+        string $languageCode = MessageTemplate::LANGUAGE_SWAHILI
+    ): array {
+        $invitee->loadMissing([
+            'event',
+            'cardType',
+        ]);
+
+        $event = $invitee->event;
+
+        if (! $event) {
+            throw new RuntimeException(
+                'The selected invitee is not attached to an event.'
+            );
+        }
+
+        if (blank($invitee->phone)) {
+            throw new RuntimeException(
+                'The selected invitee does not have a phone number.'
+            );
+        }
+
+        $languageCode = $this->normalizeLanguage($languageCode);
+
+        $messageTemplate = MessageTemplate::activeWhatsappTemplate(
+            eventId: (int) $event->id,
+            type: MessageTemplate::TYPE_CONTRIBUTION,
+            language: $languageCode,
+        );
+
+        if (! $messageTemplate) {
+            throw new RuntimeException(
+                "No active {$this->languageLabel($languageCode)} WhatsApp contribution-card template was found."
+            );
+        }
+
+        if (blank($messageTemplate->whatsapp_template_name)) {
+            throw new RuntimeException(
+                'The selected WhatsApp contribution-card template does not have a Meta template name.'
+            );
+        }
+
+        $imageUrl = $this->resolveCardImageUrl($invitee);
+
+        if (blank($imageUrl)) {
+            throw new RuntimeException(
+                'The WhatsApp contribution-card template requires an image header, but no public card image was found.'
+            );
+        }
+
+        /*
+         * contribution_card_sw:
+         *
+         * HEADER: image
+         * BODY {{1}}: invitee name
+         * No buttons
+         */
+        $components = [
+            $this->imageHeaderComponent($imageUrl),
+
+            [
+                'type' => 'body',
+                'parameters' => [
+                    $this->textParameter(
+                        $invitee->name
                     ),
                 ],
             ],
@@ -96,11 +252,20 @@ class WhatsAppApiCloudService
 
         return $this->sendTemplate(
             phone: (string) $invitee->phone,
-            templateName: $templateName,
+            templateName: (string) $messageTemplate->whatsapp_template_name,
             languageCode: $languageCode,
             components: $components,
             invitee: $invitee,
-            messageType: 'invitation',
+            messageType: MessageTemplate::TYPE_CONTRIBUTION,
+        );
+    }
+
+    public function sendSwahiliContributionCard(
+        Invitee $invitee
+    ): array {
+        return $this->sendContributionCard(
+            invitee: $invitee,
+            languageCode: MessageTemplate::LANGUAGE_SWAHILI,
         );
     }
 
@@ -138,23 +303,19 @@ class WhatsAppApiCloudService
     public function sendTemplate(
         string $phone,
         string $templateName,
-        string $languageCode = 'en',
+        string $languageCode = MessageTemplate::LANGUAGE_ENGLISH,
         array $components = [],
         ?Invitee $invitee = null,
         string $messageType = 'template',
     ): array {
         $templateName = trim($templateName);
-        $languageCode = trim($languageCode);
+        $languageCode = $this->normalizeLanguage(
+            $languageCode
+        );
 
         if ($templateName === '') {
             throw new RuntimeException(
                 'The WhatsApp template name is required.'
-            );
-        }
-
-        if ($languageCode === '') {
-            throw new RuntimeException(
-                'The WhatsApp template language is required.'
             );
         }
 
@@ -195,7 +356,9 @@ class WhatsAppApiCloudService
     ): array {
         $this->validateConfiguration();
 
-        $recipient = (string) ($payload['to'] ?? '');
+        $recipient = (string) (
+            $payload['to'] ?? ''
+        );
 
         if ($recipient === '') {
             throw new RuntimeException(
@@ -214,15 +377,23 @@ class WhatsAppApiCloudService
 
         try {
             $response = Http::withToken(
-                (string) config('services.whatsapp.access_token')
+                (string) config(
+                    'services.whatsapp.access_token'
+                )
             )
                 ->acceptJson()
                 ->asJson()
                 ->connectTimeout(
-                    (int) config('services.whatsapp.connect_timeout', 10)
+                    (int) config(
+                        'services.whatsapp.connect_timeout',
+                        10
+                    )
                 )
                 ->timeout(
-                    (int) config('services.whatsapp.timeout', 30)
+                    (int) config(
+                        'services.whatsapp.timeout',
+                        30
+                    )
                 )
                 ->retry(
                     times: (int) config(
@@ -241,7 +412,10 @@ class WhatsAppApiCloudService
                     },
                     throw: false,
                 )
-                ->post($this->messagesEndpoint(), $payload);
+                ->post(
+                    $this->messagesEndpoint(),
+                    $payload
+                );
 
             $responseData = $response->json();
 
@@ -263,11 +437,13 @@ class WhatsAppApiCloudService
                 );
             }
 
-            $providerMessageId = trim((string) data_get(
-                $responseData,
-                'messages.0.id',
-                ''
-            ));
+            $providerMessageId = trim(
+                (string) data_get(
+                    $responseData,
+                    'messages.0.id',
+                    ''
+                )
+            );
 
             $this->markMessageSubmitted(
                 messageLogId: $pendingLogId,
@@ -306,15 +482,18 @@ class WhatsAppApiCloudService
                 errorMessage: $exception->getMessage(),
             );
 
-            Log::error('WhatsApp Cloud API request failed.', [
-                'invitee_id' => $invitee?->id,
-                'event_id' => $invitee?->event_id,
-                'recipient' => $recipient,
-                'message_type' => $messageType,
-                'template_name' => $templateName,
-                'error' => $exception->getMessage(),
-                'exception' => $exception::class,
-            ]);
+            Log::error(
+                'WhatsApp Cloud API request failed.',
+                [
+                    'invitee_id' => $invitee?->id,
+                    'event_id' => $invitee?->event_id,
+                    'recipient' => $recipient,
+                    'message_type' => $messageType,
+                    'template_name' => $templateName,
+                    'error' => $exception->getMessage(),
+                    'exception' => $exception::class,
+                ]
+            );
 
             throw $exception;
         }
@@ -330,12 +509,21 @@ class WhatsAppApiCloudService
         ?string $templateName,
     ): never {
         $errorMessage = (string) (
-            data_get($responseData, 'error.error_data.details')
-            ?? data_get($responseData, 'error.message')
+            data_get(
+                $responseData,
+                'error.error_data.details'
+            )
+            ?? data_get(
+                $responseData,
+                'error.message'
+            )
             ?? 'WhatsApp Cloud API rejected the message.'
         );
 
-        $errorCode = data_get($responseData, 'error.code');
+        $errorCode = data_get(
+            $responseData,
+            'error.code'
+        );
 
         $this->markMessageFailed(
             messageLogId: $messageLogId,
@@ -348,17 +536,20 @@ class WhatsAppApiCloudService
             errorMessage: $errorMessage,
         );
 
-        Log::error('WhatsApp Cloud API rejected a message.', [
-            'status_code' => $response->status(),
-            'invitee_id' => $invitee?->id,
-            'event_id' => $invitee?->event_id,
-            'recipient' => $recipient,
-            'message_type' => $messageType,
-            'template_name' => $templateName,
-            'error_code' => $errorCode,
-            'error_message' => $errorMessage,
-            'response' => $responseData,
-        ]);
+        Log::error(
+            'WhatsApp Cloud API rejected a message.',
+            [
+                'status_code' => $response->status(),
+                'invitee_id' => $invitee?->id,
+                'event_id' => $invitee?->event_id,
+                'recipient' => $recipient,
+                'message_type' => $messageType,
+                'template_name' => $templateName,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
+                'response' => $responseData,
+            ]
+        );
 
         throw new RuntimeException(
             filled($errorCode)
@@ -367,14 +558,99 @@ class WhatsAppApiCloudService
         );
     }
 
+    protected function imageHeaderComponent(
+        string $imageUrl
+    ): array {
+        return [
+            'type' => 'header',
+            'parameters' => [
+                [
+                    'type' => 'image',
+                    'image' => [
+                        'link' => $imageUrl,
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    protected function quickReplyButtonComponent(
+        int $index,
+        string $payload
+    ): array {
+        return [
+            'type' => 'button',
+            'sub_type' => 'quick_reply',
+            'index' => (string) $index,
+            'parameters' => [
+                [
+                    'type' => 'payload',
+                    'payload' => $payload,
+                ],
+            ],
+        ];
+    }
+
+    protected function urlButtonComponent(
+        int $index,
+        string $value
+    ): array {
+        return [
+            'type' => 'button',
+            'sub_type' => 'url',
+            'index' => (string) $index,
+            'parameters' => [
+                [
+                    'type' => 'text',
+                    'text' => $value,
+                ],
+            ],
+        ];
+    }
+
+    protected function normalizeLanguage(
+        string $languageCode
+    ): string {
+        $languageCode = strtolower(
+            trim($languageCode)
+        );
+
+        return match ($languageCode) {
+            'sw',
+            'sw_tz' =>
+                MessageTemplate::LANGUAGE_SWAHILI,
+
+            'en',
+            'en_us',
+            'en_gb' =>
+                MessageTemplate::LANGUAGE_ENGLISH,
+
+            default => throw new RuntimeException(
+                "Unsupported WhatsApp template language: {$languageCode}"
+            ),
+        };
+    }
+
+    protected function languageLabel(
+        string $languageCode
+    ): string {
+        return MessageTemplate::languages()[$languageCode]
+            ?? strtoupper($languageCode);
+    }
+
     protected function messagesEndpoint(): string
     {
         $version = trim(
-            (string) config('services.whatsapp.api_version', 'v25.0')
+            (string) config(
+                'services.whatsapp.api_version',
+                'v25.0'
+            )
         );
 
         $phoneNumberId = trim(
-            (string) config('services.whatsapp.phone_number_id')
+            (string) config(
+                'services.whatsapp.phone_number_id'
+            )
         );
 
         $baseUrl = rtrim(
@@ -390,14 +666,20 @@ class WhatsAppApiCloudService
 
     protected function validateConfiguration(): void
     {
-        if (! (bool) config('services.whatsapp.enabled', false)) {
+        if (! (bool) config(
+            'services.whatsapp.enabled',
+            false
+        )) {
             throw new RuntimeException(
                 'WhatsApp sending is disabled. Set WHATSAPP_ENABLED=true.'
             );
         }
 
         $driver = trim(
-            (string) config('services.whatsapp.driver', 'log')
+            (string) config(
+                'services.whatsapp.driver',
+                'log'
+            )
         );
 
         if ($driver !== 'meta_cloud_api') {
@@ -412,8 +694,15 @@ class WhatsAppApiCloudService
             'access_token',
             'phone_number_id',
         ] as $key) {
-            if (blank(config("services.whatsapp.{$key}"))) {
-                $missing[] = "services.whatsapp.{$key}";
+            if (
+                blank(
+                    config(
+                        "services.whatsapp.{$key}"
+                    )
+                )
+            ) {
+                $missing[] =
+                    "services.whatsapp.{$key}";
             }
         }
 
@@ -425,9 +714,14 @@ class WhatsAppApiCloudService
         }
     }
 
-    protected function normalizePhone(string $phone): string
-    {
-        $phone = preg_replace('/\D+/', '', $phone) ?: '';
+    protected function normalizePhone(
+        string $phone
+    ): string {
+        $phone = preg_replace(
+            '/\D+/',
+            '',
+            $phone
+        ) ?: '';
 
         if ($phone === '') {
             throw new RuntimeException(
@@ -436,7 +730,10 @@ class WhatsAppApiCloudService
         }
 
         if (str_starts_with($phone, '0')) {
-            $phone = '255'.substr($phone, 1);
+            $phone = '255'.substr(
+                $phone,
+                1
+            );
         } elseif (
             ! str_starts_with($phone, '255')
             && strlen($phone) === 9
@@ -444,7 +741,12 @@ class WhatsAppApiCloudService
             $phone = '255'.$phone;
         }
 
-        if (! preg_match('/^[1-9][0-9]{7,14}$/', $phone)) {
+        if (
+            ! preg_match(
+                '/^[1-9][0-9]{7,14}$/',
+                $phone
+            )
+        ) {
             throw new RuntimeException(
                 'The WhatsApp phone number must be in international format.'
             );
@@ -453,38 +755,73 @@ class WhatsAppApiCloudService
         return $phone;
     }
 
-    protected function resolveInvitationImageUrl(
+    protected function resolveCardImageUrl(
         Invitee $invitee
     ): ?string {
         $generatedCard = GeneratedCard::query()
-            ->where('invitee_id', $invitee->id)
+            ->where(
+                'invitee_id',
+                $invitee->id
+            )
             ->whereNotNull('file_path')
-            ->where(function ($query): void {
-                $query
-                    ->where('status', 'generated')
-                    ->orWhereNull('status');
-            })
+            ->where(
+                function ($query): void {
+                    $query
+                        ->where(
+                            'status',
+                            'generated'
+                        )
+                        ->orWhereNull(
+                            'status'
+                        );
+                }
+            )
             ->latest('generated_at')
             ->latest('id')
             ->first();
 
-        $path = trim((string) ($generatedCard?->file_path ?? ''));
+        $path = trim(
+            (string) (
+                $generatedCard?->file_path
+                ?? ''
+            )
+        );
 
         if ($path !== '') {
             if (
-                str_starts_with($path, 'https://')
-                || str_starts_with($path, 'http://')
+                str_starts_with(
+                    $path,
+                    'https://'
+                )
+                || str_starts_with(
+                    $path,
+                    'http://'
+                )
             ) {
                 return $path;
             }
 
-            $path = ltrim($path, '/');
+            $path = ltrim(
+                $path,
+                '/'
+            );
 
-            if (str_starts_with($path, 'storage/')) {
-                return url('/'.$path);
+            if (
+                str_starts_with(
+                    $path,
+                    'storage/'
+                )
+            ) {
+                return url(
+                    '/'.$path
+                );
             }
 
-            return url(Storage::disk('public')->url($path));
+            return url(
+                Storage::disk(
+                    'public'
+                )->url($path)
+            );
         }
 
         $fallbackUrl = trim(
@@ -499,9 +836,11 @@ class WhatsAppApiCloudService
             : null;
     }
 
-    protected function formatEventTime(object $event): string
-    {
-        $value = $event->start_time
+    protected function formatEventTime(
+        object $event
+    ): string {
+        $value =
+            $event->start_time
             ?? $event->event_time
             ?? null;
 
@@ -510,7 +849,9 @@ class WhatsAppApiCloudService
         }
 
         try {
-            return Carbon::parse($value)->format('H:i');
+            return Carbon::parse(
+                $value
+            )->format('H:i');
         } catch (Throwable) {
             return (string) $value;
         }
@@ -539,7 +880,10 @@ class WhatsAppApiCloudService
             return null;
         }
 
-        $columns = Schema::getColumnListing('message_logs');
+        $columns = Schema::getColumnListing(
+            'message_logs'
+        );
+
         $now = now();
 
         $row = [
@@ -558,10 +902,12 @@ class WhatsAppApiCloudService
             'provider' => 'WhatsApp Cloud API',
             'provider_name' => 'WhatsApp Cloud API',
             'provider_status' => 'pending',
+
             'request_payload' => json_encode(
                 $requestPayload,
                 JSON_UNESCAPED_SLASHES
             ),
+
             'meta' => json_encode(
                 [
                     'template_name' => $templateName,
@@ -569,18 +915,25 @@ class WhatsAppApiCloudService
                 ],
                 JSON_UNESCAPED_SLASHES
             ),
+
             'created_at' => $now,
             'updated_at' => $now,
         ];
 
-        $insertable = Arr::only($row, $columns);
+        $insertable = Arr::only(
+            $row,
+            $columns
+        );
 
         if ($insertable === []) {
             return null;
         }
 
-        return (int) DB::table('message_logs')
-            ->insertGetId($insertable);
+        return (int) DB::table(
+            'message_logs'
+        )->insertGetId(
+            $insertable
+        );
     }
 
     protected function markMessageSubmitted(
@@ -590,12 +943,16 @@ class WhatsAppApiCloudService
     ): void {
         if (
             ! $messageLogId
-            || ! Schema::hasTable('message_logs')
+            || ! Schema::hasTable(
+                'message_logs'
+            )
         ) {
             return;
         }
 
-        $columns = Schema::getColumnListing('message_logs');
+        $columns = Schema::getColumnListing(
+            'message_logs'
+        );
 
         $update = [
             'status' => 'submitted',
@@ -604,21 +961,32 @@ class WhatsAppApiCloudService
             'message_id' => $providerMessageId,
             'wamid' => $providerMessageId,
             'external_message_id' => $providerMessageId,
+
             'provider_response' => json_encode(
                 $responseData,
                 JSON_UNESCAPED_SLASHES
             ),
+
             'response' => json_encode(
                 $responseData,
                 JSON_UNESCAPED_SLASHES
             ),
+
             'sent_at' => now(),
             'updated_at' => now(),
         ];
 
         DB::table('message_logs')
-            ->where('id', $messageLogId)
-            ->update(Arr::only($update, $columns));
+            ->where(
+                'id',
+                $messageLogId
+            )
+            ->update(
+                Arr::only(
+                    $update,
+                    $columns
+                )
+            );
     }
 
     protected function markMessageFailed(
@@ -628,12 +996,16 @@ class WhatsAppApiCloudService
     ): void {
         if (
             ! $messageLogId
-            || ! Schema::hasTable('message_logs')
+            || ! Schema::hasTable(
+                'message_logs'
+            )
         ) {
             return;
         }
 
-        $columns = Schema::getColumnListing('message_logs');
+        $columns = Schema::getColumnListing(
+            'message_logs'
+        );
 
         $encodedResponse = $responseData !== null
             ? json_encode(
@@ -654,8 +1026,16 @@ class WhatsAppApiCloudService
         ];
 
         DB::table('message_logs')
-            ->where('id', $messageLogId)
-            ->update(Arr::only($update, $columns));
+            ->where(
+                'id',
+                $messageLogId
+            )
+            ->update(
+                Arr::only(
+                    $update,
+                    $columns
+                )
+            );
     }
 
     protected function updateInviteeAfterSubmission(
@@ -679,9 +1059,14 @@ class WhatsAppApiCloudService
             'whatsapp_error' => null,
         ];
 
-        $invitee->forceFill(
-            Arr::only($updates, $columns)
-        )->saveQuietly();
+        $invitee
+            ->forceFill(
+                Arr::only(
+                    $updates,
+                    $columns
+                )
+            )
+            ->saveQuietly();
     }
 
     protected function updateInviteeAfterFailure(
@@ -705,8 +1090,13 @@ class WhatsAppApiCloudService
             'failed_at' => now(),
         ];
 
-        $invitee->forceFill(
-            Arr::only($updates, $columns)
-        )->saveQuietly();
+        $invitee
+            ->forceFill(
+                Arr::only(
+                    $updates,
+                    $columns
+                )
+            )
+            ->saveQuietly();
     }
 }
