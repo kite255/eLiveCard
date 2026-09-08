@@ -101,6 +101,17 @@ class WhatsAppApiCloudService
          * For the URL button, Meta expects only the dynamic suffix:
          * $invitee->short_code
          */
+        /*
+         * Diagnostic-safe payload:
+         *
+         * - Keep the image header.
+         * - Keep the five body parameters required by the approved template.
+         * - Keep only the dynamic LOCATION / ENEO URL button parameter.
+         * - Do not send payload parameters for the two quick-reply buttons.
+         *
+         * This isolates Meta error #132012 while preserving the approved
+         * quick-reply buttons as static template buttons.
+         */
         $components = [
             $this->imageHeaderComponent($imageUrl),
 
@@ -134,16 +145,6 @@ class WhatsAppApiCloudService
                     ),
                 ],
             ],
-
-            $this->quickReplyButtonComponent(
-                index: 0,
-                payload: 'rsvp_attending:'.$invitee->short_code,
-            ),
-
-            $this->quickReplyButtonComponent(
-                index: 1,
-                payload: 'rsvp_not_attending:'.$invitee->short_code,
-            ),
 
             $this->urlButtonComponent(
                 index: 2,
