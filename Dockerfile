@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
     libjpeg62-turbo-dev \
     libfreetype6-dev \
+    libmagickwand-dev \
+    imagemagick \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j1 \
         pdo \
@@ -23,6 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gd \
         exif \
         bcmath \
+    && pecl install imagick \
+    && docker-php-ext-enable imagick \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
