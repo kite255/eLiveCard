@@ -994,7 +994,7 @@ class InviteesRelationManager extends RelationManager
                                 ->searchable()
                                 ->preload()
                                 ->required()
-                                ->helperText('Choose the exact Meta template to send, for example event_invitation_en, event_invitation_sw, or event_ticket_en.'),
+                                ->helperText('Choose the exact approved Meta template to send, for example event_invitation_en, event_invitation_sw, or contribution_card_sw.'),
 
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
@@ -1509,6 +1509,7 @@ class InviteesRelationManager extends RelationManager
                                 ->label('Message Type')
                                 ->options([
                                     'invitation' => 'Invitation',
+                                    'contribution' => 'Contribution Card',
                                     'rsvp_pending_reminder' => 'RSVP Pending Reminder',
                                     'attending_reminder' => 'Attending Reminder',
                                     'event_day_reminder' => 'Event Day Reminder',
@@ -2239,6 +2240,7 @@ class InviteesRelationManager extends RelationManager
                                 ->label('Message Type')
                                 ->options([
                                     'invitation' => 'Invitation',
+                                    'contribution' => 'Contribution Card',
                                     'rsvp_pending_reminder' => 'RSVP Pending Reminder',
                                     'attending_reminder' => 'Attending Reminder',
                                     'event_day_reminder' => 'Event Day Reminder',
@@ -2664,20 +2666,34 @@ class InviteesRelationManager extends RelationManager
 
     protected function activeMessageTemplate(string $channel, string $type): ?MessageTemplate
     {
+        $eventId = (int) $this->getOwnerRecord()->id;
+
         return MessageTemplate::query()
-            ->where('event_id', $this->getOwnerRecord()->id)
             ->where('channel', $channel)
             ->where('type', $type)
             ->where('status', 'active')
+            ->where(function (Builder $query) use ($eventId): void {
+                $query
+                    ->where('event_id', $eventId)
+                    ->orWhereNull('event_id');
+            })
+            ->orderByRaw('CASE WHEN event_id = ? THEN 0 ELSE 1 END', [$eventId])
             ->latest('id')
             ->first();
     }
 
     protected function messageTemplateById(int $messageTemplateId, ?string $channel = null): ?MessageTemplate
     {
+        $eventId = (int) $this->getOwnerRecord()->id;
+
         return MessageTemplate::query()
-            ->where('event_id', $this->getOwnerRecord()->id)
-            ->when($channel, fn ($query) => $query->where('channel', $channel))
+            ->where(function (Builder $query) use ($eventId): void {
+                $query
+                    ->where('event_id', $eventId)
+                    ->orWhereNull('event_id');
+            })
+            ->when($channel, fn (Builder $query): Builder => $query->where('channel', $channel))
+            ->where('status', 'active')
             ->where('id', $messageTemplateId)
             ->first();
     }
@@ -2693,20 +2709,55 @@ class InviteesRelationManager extends RelationManager
 
     protected function whatsappMessageTemplateOptions(): array
     {
-        return MessageTemplate::query()
-            ->where('event_id', $this->getOwnerRecord()->id)
+        $eventId = (int) $this->getOwnerRecord()->id;
+
+        $templates = MessageTemplate::query()
             ->where('channel', 'whatsapp')
+            ->where('status', 'active')
             ->whereNotNull('whatsapp_template_name')
             ->where('whatsapp_template_name', '!=', '')
+            ->where(function (Builder $query) use ($eventId): void {
+                $query
+                    ->where('event_id', $eventId)
+                    ->orWhereNull('event_id');
+            })
+            ->orderByRaw('CASE WHEN event_id = ? THEN 0 ELSE 1 END', [$eventId])
             ->orderBy('type')
             ->orderBy('name')
-            ->get()
-            ->mapWithKeys(function (MessageTemplate $template): array {
-                $status = $template->status ?: 'unknown';
-                $providerName = $template->whatsapp_template_name ?: 'missing_provider_name';
+            ->orderByDesc('id')
+            ->get();
+
+        /*
+         * If an event-specific template and a global template point to the same
+         * approved Meta template/language/type, keep the event-specific record.
+         * Global templates remain available as fallbacks for templates that the
+         * event has not overridden.
+         */
+        return $templates
+            ->unique(function (MessageTemplate $template): string {
+                return implode('|', [
+                    strtolower((string) $template->type),
+                    strtolower((string) $template->whatsapp_template_name),
+                    strtolower((string) ($template->whatsapp_language_code ?? '')),
+                ]);
+            })
+            ->mapWithKeys(function (MessageTemplate $template) use ($eventId): array {
+                $providerName = (string) $template->whatsapp_template_name;
+                $language = strtoupper((string) ($template->whatsapp_language_code ?? ''));
+                $scope = (int) ($template->event_id ?? 0) === $eventId
+                    ? 'Event'
+                    : 'Global';
+
+                $label = "{$template->name} — {$providerName}";
+
+                if ($language !== '') {
+                    $label .= " ({$language})";
+                }
+
+                $label .= " [{$scope}]";
 
                 return [
-                    $template->id => "{$template->name} — {$providerName} [{$status}]",
+                    $template->id => $label,
                 ];
             })
             ->toArray();
@@ -2806,12 +2857,17 @@ class InviteesRelationManager extends RelationManager
             ];
         }
 
-        if (blank($invitee->short_code)) {
+        $requiresShortCode = in_array($templateType, [
+            'invitation',
+            'rsvp_pending_reminder',
+        ], true);
+
+        if ($requiresShortCode && blank($invitee->short_code)) {
             return [
                 'status' => 'failed',
                 'type' => 'danger',
                 'title' => 'Missing private link',
-                'body' => 'This invitee has no short code/private invitation link.',
+                'body' => 'This WhatsApp template requires the invitee short code/private invitation link.',
             ];
         }
 
@@ -2961,11 +3017,14 @@ class InviteesRelationManager extends RelationManager
                 '#EVENT_DATE#',
                 '#EVENT_TIME#',
                 '#EVENT_VENUE#',
+                '#VENUE#',
                 '#INVITATION_LINK#',
+                '#PRIVATE_INVITATION_URL#',
                 '#RSVP_LINK#',
                 '#SERIAL_NUMBER#',
                 '#CARD_TYPE#',
                 '#GUEST_COUNT#',
+                '#ALLOWED_GUESTS#',
                 '#TABLE_NUMBER#',
             ],
             [
@@ -2974,10 +3033,13 @@ class InviteesRelationManager extends RelationManager
                 $this->formatWhatsappEventDate($event),
                 $this->formatWhatsappEventTime($event),
                 (string) ($event?->venue_name ?? $event?->venue ?? '-'),
+                (string) ($event?->venue_name ?? $event?->venue ?? '-'),
+                $this->privateInvitationUrl($invitee),
                 $this->privateInvitationUrl($invitee),
                 filled($invitee->rsvp_token) ? route('invitee.rsvp', $invitee->rsvp_token) : '-',
                 (string) ($invitee->serial_number ?? '-'),
                 (string) ($invitee->cardType?->name ?? '-'),
+                (string) ($invitee->allowed_guests ?? 1),
                 (string) ($invitee->allowed_guests ?? 1),
                 (string) ($invitee->table_number ?? '-'),
             ],
@@ -3237,35 +3299,63 @@ class InviteesRelationManager extends RelationManager
             $components = [];
 
             /*
-             * The Meta template `event_invitation` has an image header.
-             * WhatsApp Cloud API requires the header image parameter to be sent
-             * together with the body parameters.
+             * Approved Meta templates currently used by eLive Card:
+             *
+             * event_invitation_en / event_invitation_sw
+             * - image header
+             * - 5 body parameters
+             * - invitation buttons as approved in Meta
+             *
+             * contribution_card_sw
+             * - image header
+             * - 1 body parameter: invitee name
+             * - no buttons
              */
-            if ($providerTemplateName === 'event_invitation_en') {
+            if (in_array($providerTemplateName, [
+                'event_invitation_en',
+                'event_invitation_sw',
+                'contribution_card_sw',
+            ], true)) {
                 $headerImageUrl = $this->whatsappHeaderImageUrl($invitee);
 
-                if (filled($headerImageUrl)) {
-                    $components[] = [
-                        'type' => 'header',
-                        'parameters' => [
-                            [
-                                'type' => 'image',
-                                'image' => [
-                                    'link' => $headerImageUrl,
-                                ],
+                if (blank($headerImageUrl)) {
+                    throw ValidationException::withMessages([
+                        'whatsapp_header' => 'The selected WhatsApp template requires an image header, but no public card image was found.',
+                    ]);
+                }
+
+                $components[] = [
+                    'type' => 'header',
+                    'parameters' => [
+                        [
+                            'type' => 'image',
+                            'image' => [
+                                'link' => $headerImageUrl,
                             ],
                         ],
-                    ];
-                }
+                    ],
+                ];
             }
 
-            $components[] = [
-                'type' => 'body',
-                'parameters' => $this->buildWhatsappTemplateBodyParameters($invitee),
-            ];
+            if ($providerTemplateName === 'contribution_card_sw' || $templateType === 'contribution') {
+                $components[] = [
+                    'type' => 'body',
+                    'parameters' => [
+                        [
+                            'type' => 'text',
+                            'text' => (string) ($invitee->name ?? 'Mgeni'),
+                        ],
+                    ],
+                ];
+            } else {
+                $components[] = [
+                    'type' => 'body',
+                    'parameters' => $this->buildWhatsappTemplateBodyParameters($invitee),
+                ];
 
-            foreach ($this->buildWhatsappTemplateButtonComponents($invitee, $templateType) as $buttonComponent) {
-                $components[] = $buttonComponent;
+                foreach ($this->buildWhatsappTemplateButtonComponents($invitee, $templateType) as $buttonComponent) {
+                    $components[] = $buttonComponent;
+                }
             }
 
             return [
@@ -3484,6 +3574,7 @@ class InviteesRelationManager extends RelationManager
     protected function messageLogTypeFromTemplateType(string $templateType): string
     {
         return match ($templateType) {
+            'contribution' => 'contribution_card',
             'rsvp_pending_reminder' => 'rsvp_pending_reminder',
             'attending_reminder' => 'attending_reminder',
             'event_day_reminder' => 'event_day_reminder',
