@@ -102,15 +102,18 @@ class WhatsAppApiCloudService
          * $invitee->short_code
          */
         /*
-         * Diagnostic-safe payload:
+         * Diagnostic payload for Meta error #132012.
          *
-         * - Keep the image header.
-         * - Keep the five body parameters required by the approved template.
-         * - Keep only the dynamic LOCATION / ENEO URL button parameter.
-         * - Do not send payload parameters for the two quick-reply buttons.
+         * Send only the components that must definitely match the approved
+         * template structure:
          *
-         * This isolates Meta error #132012 while preserving the approved
-         * quick-reply buttons as static template buttons.
+         * - image header
+         * - five body parameters
+         *
+         * Do not send any button components during this test. The quick-reply
+         * buttons and LOCATION / ENEO button remain part of the approved Meta
+         * template itself; we are only omitting their runtime parameters here
+         * to isolate the parameter-format mismatch.
          */
         $components = [
             $this->imageHeaderComponent($imageUrl),
@@ -145,11 +148,6 @@ class WhatsAppApiCloudService
                     ),
                 ],
             ],
-
-            $this->urlButtonComponent(
-                index: 2,
-                value: (string) $invitee->short_code,
-            ),
         ];
 
         return $this->sendTemplate(
