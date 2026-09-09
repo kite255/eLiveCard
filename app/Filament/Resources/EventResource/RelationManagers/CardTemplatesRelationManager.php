@@ -17,6 +17,9 @@ use Illuminate\Support\Str;
 
 class CardTemplatesRelationManager extends RelationManager
 {
+    protected const REQUIRED_TEMPLATE_WIDTH = 1080;
+    protected const REQUIRED_TEMPLATE_HEIGHT = 1465;
+
     /**
      * Default vertical position for starter QR placeholders.
      */
@@ -103,6 +106,14 @@ class CardTemplatesRelationManager extends RelationManager
                                 'image/png',
                                 'image/webp',
                             ])
+                            ->rules([
+                                'image',
+                                'dimensions:width=' . self::REQUIRED_TEMPLATE_WIDTH
+                                    . ',height=' . self::REQUIRED_TEMPLATE_HEIGHT,
+                            ])
+                            ->validationMessages([
+                                'dimensions' => 'The card template must be exactly 1080 × 1465 pixels.',
+                            ])
                             ->maxSize(1536)
                             ->maxFiles(1)
                             ->imagePreviewHeight('320')
@@ -111,14 +122,14 @@ class CardTemplatesRelationManager extends RelationManager
                             ->uploadButtonPosition('center')
                             ->uploadProgressIndicatorPosition('center')
                             ->removeUploadedFileButtonPosition('right')
-                            ->helperText('Upload a high-resolution JPG, PNG, or WEBP image. Recommended: 1080 × 1920 pixels. Maximum size: 1.5 MB.')
+                            ->helperText('Upload exactly 1080 × 1465 px. JPG, PNG, or WEBP only. Maximum size: 1.5 MB.')
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('width')
                             ->label('Template Width')
                             ->numeric()
                             ->minValue(1)
-                            ->default(1080)
+                            ->default(self::REQUIRED_TEMPLATE_WIDTH)
                             ->required()
                             ->readOnly()
                             ->suffix('px')
@@ -128,7 +139,7 @@ class CardTemplatesRelationManager extends RelationManager
                             ->label('Template Height')
                             ->numeric()
                             ->minValue(1)
-                            ->default(1920)
+                            ->default(self::REQUIRED_TEMPLATE_HEIGHT)
                             ->required()
                             ->readOnly()
                             ->suffix('px')
@@ -227,7 +238,7 @@ class CardTemplatesRelationManager extends RelationManager
                     ->label('Upload Template')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->modalHeading('Upload Card Template')
-                    ->modalDescription('Upload a high-quality invitation background and configure how it will be used.')
+                    ->modalDescription('Upload an invitation background exactly 1080 × 1465 pixels.')
                     ->modalWidth('4xl')
                     ->modalSubmitActionLabel('Upload Template')
                     ->visible(fn (): bool => $this->canManageCardTemplates())
@@ -261,7 +272,7 @@ class CardTemplatesRelationManager extends RelationManager
 
                         EliveNotification::success(
                             title: 'Template uploaded successfully',
-                            body: "Image size: {$record->width} × {$record->height} pixels. The template is ready for placeholder design.",
+                            body: 'The 1080 × 1465 card template was uploaded successfully and is ready for placeholder design.',
                             context: $record,
                             persistent: true,
                             actionLabel: 'Design Placeholders',
@@ -331,7 +342,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->after(function (CardTemplate $record): void {
                             EliveNotification::success(
                                 title: 'Template updated successfully',
-                                body: "The latest template details have been saved. Image size: {$record->width} × {$record->height} pixels.",
+                                body: 'The template was updated successfully. Required size: 1080 × 1465 pixels.',
                                 context: $record,
                                 actionLabel: 'Design Placeholders',
                                 actionUrl: route('card-templates.designer', $record),
@@ -812,8 +823,29 @@ class CardTemplatesRelationManager extends RelationManager
             return;
         }
 
-        $data['width'] = (int) ($imageSize[0] ?? ($data['width'] ?? 1080));
-        $data['height'] = (int) ($imageSize[1] ?? ($data['height'] ?? 1920));
+        $sourceWidth = (int) ($imageSize[0] ?? 0);
+        $sourceHeight = (int) ($imageSize[1] ?? 0);
+
+        if (
+            $sourceWidth !== self::REQUIRED_TEMPLATE_WIDTH
+            || $sourceHeight !== self::REQUIRED_TEMPLATE_HEIGHT
+        ) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'template_image' => 'The card template must be exactly 1080 × 1465 pixels.',
+            ]);
+        }
+
+        $data['width'] = self::REQUIRED_TEMPLATE_WIDTH;
+        $data['height'] = self::REQUIRED_TEMPLATE_HEIGHT;
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('card_templates', 'source_width')) {
+            $data['source_width'] = self::REQUIRED_TEMPLATE_WIDTH;
+        }
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('card_templates', 'source_height')) {
+            $data['source_height'] = self::REQUIRED_TEMPLATE_HEIGHT;
+        }
+
         $data['template_image'] = $path;
     }
 

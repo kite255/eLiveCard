@@ -20,6 +20,9 @@ use Throwable;
 
 class CardTemplateResource extends Resource
 {
+    protected const REQUIRED_TEMPLATE_WIDTH = 1080;
+    protected const REQUIRED_TEMPLATE_HEIGHT = 1465;
+
     protected static ?string $model = CardTemplate::class;
 
     protected static bool $shouldRegisterNavigation = false;
@@ -171,14 +174,17 @@ class CardTemplateResource extends Resource
             return false;
         }
 
-        $record->source_width = $sourceWidth;
-        $record->source_height = $sourceHeight;
-        $record->width = CardTemplate::DESIGNER_REFERENCE_WIDTH;
-        $record->height = CardTemplate::calculateDesignerHeight(
-            sourceWidth: $sourceWidth,
-            sourceHeight: $sourceHeight,
-            designerWidth: CardTemplate::DESIGNER_REFERENCE_WIDTH,
-        );
+        if (
+            (int) $sourceWidth !== self::REQUIRED_TEMPLATE_WIDTH
+            || (int) $sourceHeight !== self::REQUIRED_TEMPLATE_HEIGHT
+        ) {
+            return false;
+        }
+
+        $record->source_width = self::REQUIRED_TEMPLATE_WIDTH;
+        $record->source_height = self::REQUIRED_TEMPLATE_HEIGHT;
+        $record->width = self::REQUIRED_TEMPLATE_WIDTH;
+        $record->height = self::REQUIRED_TEMPLATE_HEIGHT;
 
         $record->save();
 
@@ -223,7 +229,7 @@ class CardTemplateResource extends Resource
                     ->columns(3),
 
                 Forms\Components\Section::make('Template Image')
-                    ->description('The system automatically reads the uploaded image dimensions and keeps the designer in the same aspect ratio.')
+                    ->description('Only 1080 × 1465 px card templates are accepted so the designer and generated output stay aligned.')
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->schema([
                         Forms\Components\FileUpload::make('template_image')
@@ -240,20 +246,28 @@ class CardTemplateResource extends Resource
                                 'image/png',
                                 'image/webp',
                             ])
+                            ->rules([
+                                'image',
+                                'dimensions:width=' . self::REQUIRED_TEMPLATE_WIDTH
+                                    . ',height=' . self::REQUIRED_TEMPLATE_HEIGHT,
+                            ])
+                            ->validationMessages([
+                                'dimensions' => 'The card template must be exactly 1080 × 1465 pixels.',
+                            ])
                             ->maxSize(5120)
                             ->downloadable()
                             ->openable()
                             ->required()
                             ->columnSpanFull()
                             ->helperText(
-                                'Use PNG, JPG, or WEBP. Width and height are detected automatically; do not resize the card manually.'
+                                'Upload exactly 1080 × 1465 px. Accepted formats: PNG, JPG, or WEBP. Maximum size: 5 MB.'
                             ),
 
                         Forms\Components\Placeholder::make('automatic_dimensions')
                             ->label('Automatic Size')
                             ->content(function (?CardTemplate $record): string {
                                 if (! $record || ! $record->hasTemplateImage()) {
-                                    return 'The real source size will be detected automatically after the template is saved.';
+                                    return 'Required template size: 1080 × 1465px.';
                                 }
 
                                 $sourceWidth = $record->source_image_width;
@@ -264,7 +278,7 @@ class CardTemplateResource extends Resource
                                 return "Source: {$sourceWidth} × {$sourceHeight}px · Designer: {$designerWidth} × {$designerHeight}px";
                             })
                             ->helperText(
-                                'The browser designer uses a normalized width while preserving the exact source-image aspect ratio.'
+                                'The designer and generator use the same 1080 × 1465 reference dimensions.'
                             )
                             ->columnSpanFull(),
                     ]),
@@ -396,20 +410,28 @@ class CardTemplateResource extends Resource
                             return;
                         }
 
-                        $record->source_width = $sourceWidth;
-                        $record->source_height = $sourceHeight;
-                        $record->width = CardTemplate::DESIGNER_REFERENCE_WIDTH;
-                        $record->height = CardTemplate::calculateDesignerHeight(
-                            sourceWidth: $sourceWidth,
-                            sourceHeight: $sourceHeight,
-                        );
+                        if (
+                            (int) $sourceWidth !== self::REQUIRED_TEMPLATE_WIDTH
+                            || (int) $sourceHeight !== self::REQUIRED_TEMPLATE_HEIGHT
+                        ) {
+                            Notification::make()
+                                ->title('Invalid template dimensions')
+                                ->body('The card template must be exactly 1080 × 1465 pixels.')
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        $record->source_width = self::REQUIRED_TEMPLATE_WIDTH;
+                        $record->source_height = self::REQUIRED_TEMPLATE_HEIGHT;
+                        $record->width = self::REQUIRED_TEMPLATE_WIDTH;
+                        $record->height = self::REQUIRED_TEMPLATE_HEIGHT;
                         $record->save();
 
                         Notification::make()
                             ->title('Template size refreshed')
-                            ->body(
-                                "Source {$sourceWidth} × {$sourceHeight}px · Designer {$record->designer_width} × {$record->designer_height}px."
-                            )
+                            ->body('Template confirmed at 1080 × 1465 pixels.')
                             ->success()
                             ->send();
                     }),
