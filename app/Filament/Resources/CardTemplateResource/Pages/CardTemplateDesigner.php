@@ -28,11 +28,23 @@ class CardTemplateDesigner extends Page
 
     public ?string $sampleQrCodeUrl = null;
 
+    /**
+     * The browser designer and generated output must use one shared canvas.
+     */
+    public int $designerWidth = CardTemplate::REQUIRED_TEMPLATE_WIDTH;
+
+    public int $designerHeight = CardTemplate::REQUIRED_TEMPLATE_HEIGHT;
+
     public function mount(int|string $record): void
     {
         $this->template = CardTemplate::query()
             ->with(['event', 'placeholders'])
             ->findOrFail($record);
+
+        $this->normalizeTemplateCanvas();
+
+        $this->designerWidth = CardTemplate::REQUIRED_TEMPLATE_WIDTH;
+        $this->designerHeight = CardTemplate::REQUIRED_TEMPLATE_HEIGHT;
 
         $this->loadPlaceholders();
         $this->loadSampleQrCode();
@@ -134,7 +146,7 @@ class CardTemplateDesigner extends Page
                 'x_percent' => 10,
                 'y_percent' => 72,
                 'width_percent' => 22,
-                'height_percent' => 12,
+                'height_percent' => $this->qrHeightPercentForWidth(22),
                 'font_size' => 12,
                 'font_family' => CardTemplatePlaceholder::FONT_MONTSERRAT,
                 'font_color' => '#111827',
@@ -279,7 +291,9 @@ class CardTemplateDesigner extends Page
             'x_percent' => 10,
             'y_percent' => 10,
             'width_percent' => $type === 'qr_code' ? 22 : 30,
-            'height_percent' => $type === 'qr_code' ? 12 : 6,
+            'height_percent' => $type === 'qr_code'
+                ? $this->qrHeightPercentForWidth(22)
+                : 6,
             'font_size' => 16,
             'font_family' => CardTemplatePlaceholder::defaultFontFamily(),
             'font_color' => '#000000',
@@ -379,6 +393,34 @@ class CardTemplateDesigner extends Page
                 $fontFamily = CardTemplatePlaceholder::defaultFontFamily();
             }
 
+            $isQrCode = $key === CardTemplatePlaceholder::PLACEHOLDER_QR_CODE;
+
+            $widthPercent = $this->clampPercent(
+                $placeholder['width_percent'] ?? ($isQrCode ? 22 : 20),
+                1,
+                100
+            );
+
+            $heightPercent = $isQrCode
+                ? $this->qrHeightPercentForWidth($widthPercent)
+                : $this->clampPercent(
+                    $placeholder['height_percent'] ?? 6,
+                    1,
+                    100
+                );
+
+            $xPercent = $this->clampPercent(
+                $placeholder['x_percent'] ?? 0,
+                0,
+                max(0, 100 - $widthPercent)
+            );
+
+            $yPercent = $this->clampPercent(
+                $placeholder['y_percent'] ?? 0,
+                0,
+                max(0, 100 - $heightPercent)
+            );
+
             CardTemplatePlaceholder::query()->updateOrCreate(
                 [
                     'card_template_id' => $this->template->id,
@@ -387,16 +429,24 @@ class CardTemplateDesigner extends Page
                 [
                     'label' => $placeholder['label'] ?? Str::headline($key),
 
-                    'x_percent' => $this->clampPercent($placeholder['x_percent'] ?? 0),
-                    'y_percent' => $this->clampPercent($placeholder['y_percent'] ?? 0),
-                    'width_percent' => $this->clampPercent($placeholder['width_percent'] ?? 20, 1, 100),
-                    'height_percent' => $this->clampPercent($placeholder['height_percent'] ?? 6, 1, 100),
+                    'x_percent' => $xPercent,
+                    'y_percent' => $yPercent,
+                    'width_percent' => $widthPercent,
+                    'height_percent' => $heightPercent,
 
                     'font_size' => max(8, min(120, (int) ($placeholder['font_size'] ?? 16))),
                     'font_family' => $fontFamily,
                     'font_color' => $placeholder['font_color'] ?? '#000000',
-                    'font_weight' => $placeholder['font_weight'] ?? 'normal',
-                    'text_align' => $placeholder['text_align'] ?? 'center',
+                    'font_weight' => in_array(
+                        $placeholder['font_weight'] ?? 'normal',
+                        ['normal', 'bold'],
+                        true
+                    ) ? $placeholder['font_weight'] : 'normal',
+                    'text_align' => in_array(
+                        $placeholder['text_align'] ?? 'center',
+                        ['left', 'center', 'right'],
+                        true
+                    ) ? $placeholder['text_align'] : 'center',
 
                     'qr_size' => max(60, min(800, (int) ($placeholder['qr_size'] ?? 220))),
                     'qr_color' => $placeholder['qr_color'] ?? '#111827',
@@ -410,7 +460,7 @@ class CardTemplateDesigner extends Page
 
         Notification::make()
             ->title('Design saved')
-            ->body('Placeholder positions, styles, and fonts have been saved successfully.')
+            ->body('Placeholder positions and styles were saved on the 1080 × 1465 designer canvas.')
             ->success()
             ->send();
 
@@ -419,6 +469,47 @@ class CardTemplateDesigner extends Page
 
         $this->loadPlaceholders();
         $this->loadSampleQrCode();
+    }
+
+    /**
+     * Keep legacy records on the exact eLive Card designer canvas.
+     */
+    protected function normalizeTemplateCanvas(): void
+    {
+        $updates = [];
+
+        if ((int) $this->template->width !== CardTemplate::REQUIRED_TEMPLATE_WIDTH) {
+            $updates['width'] = CardTemplate::REQUIRED_TEMPLATE_WIDTH;
+        }
+
+        if ((int) $this->template->height !== CardTemplate::REQUIRED_TEMPLATE_HEIGHT) {
+            $updates['height'] = CardTemplate::REQUIRED_TEMPLATE_HEIGHT;
+        }
+
+        if ((int) $this->template->source_width !== CardTemplate::REQUIRED_TEMPLATE_WIDTH) {
+            $updates['source_width'] = CardTemplate::REQUIRED_TEMPLATE_WIDTH;
+        }
+
+        if ((int) $this->template->source_height !== CardTemplate::REQUIRED_TEMPLATE_HEIGHT) {
+            $updates['source_height'] = CardTemplate::REQUIRED_TEMPLATE_HEIGHT;
+        }
+
+        if (! empty($updates)) {
+            $this->template->forceFill($updates)->save();
+            $this->template->refresh();
+        }
+    }
+
+    /**
+     * Convert a QR width percentage into the height percentage required to keep
+     * the QR visually square on a 1080 × 1465 portrait canvas.
+     */
+    protected function qrHeightPercentForWidth(float $widthPercent): float
+    {
+        $heightPercent = $widthPercent
+            * (CardTemplate::REQUIRED_TEMPLATE_WIDTH / CardTemplate::REQUIRED_TEMPLATE_HEIGHT);
+
+        return $this->clampPercent($heightPercent, 1, 100);
     }
 
     protected function clampPercent(mixed $value, float $min = 0, float $max = 100): float
