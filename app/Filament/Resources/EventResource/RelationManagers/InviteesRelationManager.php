@@ -808,30 +808,67 @@ class InviteesRelationManager extends RelationManager
                             ->columns(3),
                     ])
                     ->action(function (array $data): void {
-                        $this->validateNoDuplicateInviteeName($data['name'] ?? null);
+                        try {
+                            $this->validateNoDuplicateInviteeName($data['name'] ?? null);
 
-                        $preparedData = $this->prepareInviteeData($data);
+                            $preparedData = $this->prepareInviteeData($data);
 
-                        $invitee = Invitee::create($preparedData);
+                            /*
+                             * Save the invitee first. Audit logging and card
+                             * generation are follow-up operations and must not make
+                             * a successful database save appear to have failed.
+                             */
+                            $invitee = DB::transaction(
+                                fn (): Invitee => Invitee::create($preparedData)
+                            );
 
-                        AuditLogService::created(
-                            subject: $invitee,
-                            eventId: $invitee->event_id,
-                            description: 'Invitee was added manually.',
-                            metadata: [
-                                'source' => 'manual',
-                                'card_type_id' => $invitee->card_type_id,
-                                'allowed_guests' => $invitee->allowed_guests,
-                            ],
-                        );
+                            try {
+                                AuditLogService::created(
+                                    subject: $invitee,
+                                    eventId: $invitee->event_id,
+                                    description: 'Invitee was added manually.',
+                                    metadata: [
+                                        'source' => 'manual',
+                                        'card_type_id' => $invitee->card_type_id,
+                                        'allowed_guests' => $invitee->allowed_guests,
+                                    ],
+                                );
+                            } catch (Throwable $auditException) {
+                                report($auditException);
+                            }
 
-                        $this->queueAutomaticCardGeneration($invitee);
+                            try {
+                                $this->queueAutomaticCardGeneration($invitee);
+                            } catch (Throwable $generationException) {
+                                report($generationException);
 
-                        $this->brandedNotification()
-                            ->title('eLive Card • Invitee added')
-                            ->body('Serial number, QR code, private link, and card generation have been started automatically.')
-                            ->success()
-                            ->send();
+                                $this->brandedNotification()
+                                    ->title('eLive Card • Invitee saved')
+                                    ->body('The invitee was saved successfully, but card generation could not be started automatically. Use Generate / Regenerate Card from the invitee menu.')
+                                    ->warning()
+                                    ->persistent()
+                                    ->send();
+
+                                return;
+                            }
+
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee added')
+                                ->body('The invitee was saved successfully. Serial number, QR code, private link, and card generation have been started automatically.')
+                                ->success()
+                                ->send();
+                        } catch (ValidationException $exception) {
+                            throw $exception;
+                        } catch (Throwable $exception) {
+                            report($exception);
+
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee could not be saved')
+                                ->body($exception->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
                     }),
 
                 Tables\Actions\Action::make('generate_missing_cards')
@@ -4137,11 +4174,19 @@ class InviteesRelationManager extends RelationManager
         }
 
         if (! empty($data['card_type_id'])) {
-            $cardType = CardType::find($data['card_type_id']);
+            $cardType = CardType::query()
+                ->whereKey($data['card_type_id'])
+                ->where('event_id', $this->getOwnerRecord()->id)
+                ->where('is_active', true)
+                ->first();
 
-            if ($cardType) {
-                $data['allowed_guests'] = $cardType->allowed_people ?? 1;
+            if (! $cardType) {
+                throw ValidationException::withMessages([
+                    'card_type_id' => 'Please select a valid active card type for this event.',
+                ]);
             }
+
+            $data['allowed_guests'] = $cardType->allowed_people ?? 1;
         }
 
         $data['serial_number'] = filled($data['serial_number'] ?? null)
