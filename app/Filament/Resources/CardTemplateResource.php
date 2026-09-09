@@ -7,6 +7,7 @@ use App\Models\CardTemplate;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Services\CardGenerationService;
+use App\Rules\AllowedCardTemplateDimensions;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -20,9 +21,6 @@ use Throwable;
 
 class CardTemplateResource extends Resource
 {
-    protected const REQUIRED_TEMPLATE_WIDTH = 1080;
-    protected const REQUIRED_TEMPLATE_HEIGHT = 1465;
-
     protected static ?string $model = CardTemplate::class;
 
     protected static bool $shouldRegisterNavigation = false;
@@ -174,17 +172,14 @@ class CardTemplateResource extends Resource
             return false;
         }
 
-        if (
-            (int) $sourceWidth !== self::REQUIRED_TEMPLATE_WIDTH
-            || (int) $sourceHeight !== self::REQUIRED_TEMPLATE_HEIGHT
-        ) {
+        if (! CardTemplate::hasAllowedDimensions($sourceWidth, $sourceHeight)) {
             return false;
         }
 
-        $record->source_width = self::REQUIRED_TEMPLATE_WIDTH;
-        $record->source_height = self::REQUIRED_TEMPLATE_HEIGHT;
-        $record->width = self::REQUIRED_TEMPLATE_WIDTH;
-        $record->height = self::REQUIRED_TEMPLATE_HEIGHT;
+        $record->source_width = $sourceWidth;
+        $record->source_height = $sourceHeight;
+        $record->width = $sourceWidth;
+        $record->height = $sourceHeight;
 
         $record->save();
 
@@ -229,7 +224,7 @@ class CardTemplateResource extends Resource
                     ->columns(3),
 
                 Forms\Components\Section::make('Template Image')
-                    ->description('Only 1080 × 1465 px card templates are accepted so the designer and generated output stay aligned.')
+                    ->description('Only 1080 × 1350 px or 595 × 842 px templates are accepted. The designer keeps the exact uploaded size.')
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->schema([
                         Forms\Components\FileUpload::make('template_image')
@@ -247,12 +242,7 @@ class CardTemplateResource extends Resource
                                 'image/webp',
                             ])
                             ->rules([
-                                'image',
-                                'dimensions:width=' . self::REQUIRED_TEMPLATE_WIDTH
-                                    . ',height=' . self::REQUIRED_TEMPLATE_HEIGHT,
-                            ])
-                            ->validationMessages([
-                                'dimensions' => 'The card template must be exactly 1080 × 1465 pixels.',
+                                new AllowedCardTemplateDimensions(),
                             ])
                             ->maxSize(5120)
                             ->downloadable()
@@ -260,14 +250,14 @@ class CardTemplateResource extends Resource
                             ->required()
                             ->columnSpanFull()
                             ->helperText(
-                                'Upload exactly 1080 × 1465 px. Accepted formats: PNG, JPG, or WEBP. Maximum size: 5 MB.'
+                                'Allowed sizes only: 1080 × 1350 px or 595 × 842 px. PNG, JPG, or WEBP.'
                             ),
 
                         Forms\Components\Placeholder::make('automatic_dimensions')
                             ->label('Automatic Size')
                             ->content(function (?CardTemplate $record): string {
                                 if (! $record || ! $record->hasTemplateImage()) {
-                                    return 'Required template size: 1080 × 1465px.';
+                                    return 'The real source size will be detected automatically after the template is saved.';
                                 }
 
                                 $sourceWidth = $record->source_image_width;
@@ -278,7 +268,7 @@ class CardTemplateResource extends Resource
                                 return "Source: {$sourceWidth} × {$sourceHeight}px · Designer: {$designerWidth} × {$designerHeight}px";
                             })
                             ->helperText(
-                                'The designer and generator use the same 1080 × 1465 reference dimensions.'
+                                'The designer, preview, and generated card use the exact uploaded dimensions so placeholder positions stay consistent.'
                             )
                             ->columnSpanFull(),
                     ]),
@@ -410,28 +400,25 @@ class CardTemplateResource extends Resource
                             return;
                         }
 
-                        if (
-                            (int) $sourceWidth !== self::REQUIRED_TEMPLATE_WIDTH
-                            || (int) $sourceHeight !== self::REQUIRED_TEMPLATE_HEIGHT
-                        ) {
+                        if (! CardTemplate::hasAllowedDimensions($sourceWidth, $sourceHeight)) {
                             Notification::make()
-                                ->title('Invalid template dimensions')
-                                ->body('The card template must be exactly 1080 × 1465 pixels.')
+                                ->title('Unsupported template size')
+                                ->body('Allowed sizes are 1080 × 1350 px or 595 × 842 px.')
                                 ->danger()
                                 ->send();
 
                             return;
                         }
 
-                        $record->source_width = self::REQUIRED_TEMPLATE_WIDTH;
-                        $record->source_height = self::REQUIRED_TEMPLATE_HEIGHT;
-                        $record->width = self::REQUIRED_TEMPLATE_WIDTH;
-                        $record->height = self::REQUIRED_TEMPLATE_HEIGHT;
+                        $record->source_width = $sourceWidth;
+                        $record->source_height = $sourceHeight;
+                        $record->width = $sourceWidth;
+                        $record->height = $sourceHeight;
                         $record->save();
 
                         Notification::make()
                             ->title('Template size refreshed')
-                            ->body('Template confirmed at 1080 × 1465 pixels.')
+                            ->body("Template confirmed at {$sourceWidth} × {$sourceHeight}px.")
                             ->success()
                             ->send();
                     }),

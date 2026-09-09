@@ -42,16 +42,31 @@
 
         /*
         |--------------------------------------------------------------------------
-        | Fixed eLive Card Designer Canvas
+        | Exact Template Canvas Size
         |--------------------------------------------------------------------------
-        | Upload, designer, preview, and generated output all use exactly the same
-        | logical dimensions. This prevents mixed aspect-ratio/scaling behavior.
+        | Each supported upload keeps its own dimensions. The designer, preview,
+        | placeholder percentages, and final generated card use this same canvas.
         */
-        $sourceWidth = \App\Models\CardTemplate::REQUIRED_TEMPLATE_WIDTH;
-        $sourceHeight = \App\Models\CardTemplate::REQUIRED_TEMPLATE_HEIGHT;
+        $sourceWidth = max(
+            1,
+            (int) (
+                $template->source_width
+                ?: $template->width
+                ?: \App\Models\CardTemplate::DESIGNER_REFERENCE_WIDTH
+            )
+        );
 
-        $templateWidth = \App\Models\CardTemplate::REQUIRED_TEMPLATE_WIDTH;
-        $templateHeight = \App\Models\CardTemplate::REQUIRED_TEMPLATE_HEIGHT;
+        $sourceHeight = max(
+            1,
+            (int) (
+                $template->source_height
+                ?: $template->height
+                ?: \App\Models\CardTemplate::DESIGNER_REFERENCE_HEIGHT
+            )
+        );
+
+        $templateWidth = max(1, (int) ($template->width ?: $sourceWidth));
+        $templateHeight = max(1, (int) ($template->height ?: $sourceHeight));
 
         /*
         |--------------------------------------------------------------------------
@@ -321,7 +336,7 @@
 
                 <div class="designer-note">
                     Drag placeholders, resize using the corner handle, or use direction buttons for precise movement.
-                    The canvas is fixed at 1080 × 1465 px. Placeholder positions, sizes, fonts, and QR settings are saved exactly as shown and used by card generation.
+                    The canvas uses the exact uploaded template size. Placeholder percentages, fonts, and QR settings are saved against this canvas and used unchanged during card generation.
                 </div>
             </div>
 
@@ -571,7 +586,7 @@
 
                         <template x-if="isQr(current)">
                             <div class="qr-helper-note">
-                                QR Visible Size controls the exact QR box on the card. QR Output Size controls raster quality only. A safe internal quiet zone is preserved for reliable scanning. Foreground and background colors update the preview immediately. Unsafe color combinations cannot be saved.
+                                QR Visible Size controls the QR box on the card. QR Output Size controls image quality only. A safe internal quiet zone is preserved for reliable scanning. Foreground and background colors update the preview immediately. Unsafe color combinations cannot be saved.
                             </div>
                         </template>
                     </div>
@@ -1079,7 +1094,6 @@
             align-items: center;
             overflow: hidden;
             user-select: none;
-            box-sizing: border-box;
         }
 
         .placeholder-box.selected {
@@ -1807,9 +1821,6 @@
                 qrPreviewPending: {},
 
                 init() {
-                    this.templateWidth = 1080;
-                    this.templateHeight = 1465;
-
                     Object.values(this.placeholders || {}).forEach((placeholder) => {
                         if (!this.isQr(placeholder)) {
                             return;
@@ -1849,14 +1860,14 @@
 
                         const squarePixels =
                             (widthPercent / 100)
-                            * 1080;
+                            * Math.max(1, Number(this.templateWidth || 1080));
 
                         placeholder.width_percent = widthPercent;
 
                         placeholder.height_percent = clamp(
                             (
                                 squarePixels
-                                / 1465
+                                / Math.max(1, Number(this.templateHeight || 1350))
                             ) * 100,
                             1,
                             100 - Number(placeholder.y_percent || 0)
@@ -1995,7 +2006,7 @@
                     const availableHeight = Math.max(360, workspace.clientHeight - 8);
 
                     const widthZoom = (availableWidth / Number(this.templateWidth || 1080)) * 100;
-                    const heightZoom = (availableHeight / Number(this.templateHeight || 1465)) * 100;
+                    const heightZoom = (availableHeight / Number(this.templateHeight || 1350)) * 100;
 
                     this.zoom = clamp(Math.min(widthZoom, heightZoom, 100), 25, 100);
                 },
@@ -2021,10 +2032,10 @@
                     );
 
                     const widthScale = availableWidth
-                        / 1080;
+                        / Math.max(1, Number(this.templateWidth || 1080));
 
                     const heightScale = availableHeight
-                        / 1465;
+                        / Math.max(1, Number(this.templateHeight || 1350));
 
                     this.previewScale = Math.max(
                         0.05,
@@ -2057,10 +2068,7 @@
                         justifyContent: this.justifyContent(
                             placeholder.text_align || 'center'
                         ),
-                        alignItems: 'center',
                         lineHeight: '1.1',
-                        boxSizing: 'border-box',
-                        padding: '0',
                     };
                 },
 
@@ -2141,14 +2149,14 @@
 
                     const squarePixels =
                         (widthPercent / 100)
-                        * 1080;
+                        * Math.max(1, Number(this.templateWidth || 1080));
 
                     this.current.width_percent = widthPercent;
 
                     this.current.height_percent = clamp(
                         (
                             squarePixels
-                            / 1465
+                            / Math.max(1, Number(this.templateHeight || 1350))
                         ) * 100,
                         1,
                         100 - Number(this.current.y_percent || 0)
@@ -2531,12 +2539,12 @@
                     if (designer.isQr(item)) {
                         const templateWidth = Math.max(
                             1,
-                            1080
+                            Number(designer.templateWidth || 1080)
                         );
 
                         const templateHeight = Math.max(
                             1,
-                            1465
+                            Number(designer.templateHeight || 1350)
                         );
 
                         const requestedWidthPixels =
