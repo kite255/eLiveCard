@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class CardTemplate extends Model
@@ -16,13 +17,16 @@ class CardTemplate extends Model
     public const STATUS_ARCHIVED = 'archived';
 
     /**
-     * Stable browser editing width used by the card designer.
+     * eLive Card standard template dimensions.
      *
-     * The designer height is calculated automatically from the real source
-     * image aspect ratio so the designer and generated card share the same
-     * coordinate system.
+     * The upload, designer, and generated output must all use the same logical
+     * dimensions so placeholder positions and sizes remain WYSIWYG.
      */
-    public const DESIGNER_REFERENCE_WIDTH = 1080;
+    public const REQUIRED_TEMPLATE_WIDTH = 1080;
+    public const REQUIRED_TEMPLATE_HEIGHT = 1465;
+
+    public const DESIGNER_REFERENCE_WIDTH = self::REQUIRED_TEMPLATE_WIDTH;
+    public const DESIGNER_REFERENCE_HEIGHT = self::REQUIRED_TEMPLATE_HEIGHT;
 
     protected $fillable = [
         'event_id',
@@ -83,34 +87,46 @@ class CardTemplate extends Model
                 return;
             }
 
-            if (
-                filled($cardTemplate->source_width)
-                && filled($cardTemplate->source_height)
-                && ! $cardTemplate->isDirty('template_image')
-            ) {
-                return;
-            }
-
+            /*
+            |--------------------------------------------------------------------------
+            | Enforce one eLive Card template dimension everywhere
+            |--------------------------------------------------------------------------
+            | UI validation is helpful, but model-level validation prevents another
+            | controller, import, API, job, or future admin screen from saving an
+            | unsupported template size.
+            */
             [$sourceWidth, $sourceHeight] = $cardTemplate->detectSourceDimensions();
 
-            if ($sourceWidth && $sourceHeight) {
-                $cardTemplate->source_width = $sourceWidth;
-                $cardTemplate->source_height = $sourceHeight;
+            /*
+             * When editing a record without replacing the image, an already-known
+             * source dimension can safely be used if storage detection is
+             * temporarily unavailable.
+             */
+            $sourceWidth ??= (int) ($cardTemplate->source_width ?: 0);
+            $sourceHeight ??= (int) ($cardTemplate->source_height ?: 0);
 
-                /*
-                |--------------------------------------------------------------------------
-                | Keep legacy width/height useful
-                |--------------------------------------------------------------------------
-                | These values become the normalized designer canvas dimensions,
-                | not the original high-resolution source dimensions.
-                */
-                $cardTemplate->width = self::DESIGNER_REFERENCE_WIDTH;
-                $cardTemplate->height = self::calculateDesignerHeight(
-                    sourceWidth: $sourceWidth,
-                    sourceHeight: $sourceHeight,
-                    designerWidth: self::DESIGNER_REFERENCE_WIDTH,
-                );
+            if (
+                $sourceWidth !== self::REQUIRED_TEMPLATE_WIDTH
+                || $sourceHeight !== self::REQUIRED_TEMPLATE_HEIGHT
+            ) {
+                throw ValidationException::withMessages([
+                    'template_image' => sprintf(
+                        'The card template must be exactly %d × %d pixels.',
+                        self::REQUIRED_TEMPLATE_WIDTH,
+                        self::REQUIRED_TEMPLATE_HEIGHT,
+                    ),
+                ]);
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Keep all stored dimensions synchronized
+            |--------------------------------------------------------------------------
+            */
+            $cardTemplate->source_width = self::REQUIRED_TEMPLATE_WIDTH;
+            $cardTemplate->source_height = self::REQUIRED_TEMPLATE_HEIGHT;
+            $cardTemplate->width = self::DESIGNER_REFERENCE_WIDTH;
+            $cardTemplate->height = self::DESIGNER_REFERENCE_HEIGHT;
         });
     }
 
@@ -213,7 +229,7 @@ class CardTemplate extends Model
 
         return max(
             1,
-            (int) ($width ?: $this->width ?: self::DESIGNER_REFERENCE_WIDTH)
+            (int) ($width ?: $this->width ?: self::REQUIRED_TEMPLATE_WIDTH)
         );
     }
 
@@ -232,7 +248,7 @@ class CardTemplate extends Model
 
         return max(
             1,
-            (int) ($height ?: $this->height ?: 1920)
+            (int) ($height ?: $this->height ?: self::REQUIRED_TEMPLATE_HEIGHT)
         );
     }
 
@@ -241,7 +257,7 @@ class CardTemplate extends Model
      */
     public function getDesignerWidthAttribute(): int
     {
-        return self::DESIGNER_REFERENCE_WIDTH;
+        return self::REQUIRED_TEMPLATE_WIDTH;
     }
 
     /**
@@ -251,23 +267,19 @@ class CardTemplate extends Model
      */
     public function getDesignerHeightAttribute(): int
     {
-        return self::calculateDesignerHeight(
-            sourceWidth: $this->source_image_width,
-            sourceHeight: $this->source_image_height,
-            designerWidth: $this->designer_width,
-        );
+        return self::REQUIRED_TEMPLATE_HEIGHT;
     }
 
     /**
      * Scale factor from designer pixels to the actual generated image.
      *
      * Example:
-     * source width 3500 / designer width 1080 = 3.2407...
+     * With the fixed 1080 × 1465 template standard, the normal scale is 1.0.
      */
     public function getDesignerToSourceScaleAttribute(): float
     {
         return $this->source_image_width
-            / max(1, $this->designer_width);
+            / max(1, self::REQUIRED_TEMPLATE_WIDTH);
     }
 
     /**
@@ -278,6 +290,14 @@ class CardTemplate extends Model
         int $sourceHeight,
         int $designerWidth = self::DESIGNER_REFERENCE_WIDTH,
     ): int {
+        /*
+         * Current eLive Card templates are fixed at 1080 × 1465.
+         * Keep this method for compatibility with existing callers.
+         */
+        if ($designerWidth === self::DESIGNER_REFERENCE_WIDTH) {
+            return self::DESIGNER_REFERENCE_HEIGHT;
+        }
+
         $sourceWidth = max(1, $sourceWidth);
         $sourceHeight = max(1, $sourceHeight);
         $designerWidth = max(1, $designerWidth);
@@ -288,6 +308,12 @@ class CardTemplate extends Model
                 $designerWidth * ($sourceHeight / $sourceWidth)
             )
         );
+    }
+
+    public static function hasAllowedDimensions(int $width, int $height): bool
+    {
+        return $width === self::REQUIRED_TEMPLATE_WIDTH
+            && $height === self::REQUIRED_TEMPLATE_HEIGHT;
     }
 
     /**
