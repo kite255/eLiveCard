@@ -522,48 +522,17 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Designer QR box is the source of truth
+        | Exact designer QR geometry
         |--------------------------------------------------------------------------
-        | The saved placeholder rectangle defines the visible QR size and position.
-        | No hidden padding is added here. This keeps generation consistent with
-        | the designer once the designer QR preview also uses zero inner padding.
+        | The placeholder rectangle is the source of truth for the visible QR.
+        | The generated QR fills the largest square that fits inside that
+        | rectangle. qr_size is not allowed to shrink the visible QR.
         */
-        /*
-        |--------------------------------------------------------------------------
-        | Match QR size authored in the designer
-        |--------------------------------------------------------------------------
-        | qr_size is saved in designer pixels just like font_size. Scale it to the
-        | real source image, then constrain it to the saved placeholder rectangle.
-        */
-        $designerScale = $this->resolveDesignerScaleFromPlaceholder(
-            placeholder: $placeholder,
-            imageWidth: $imageWidth,
-        );
-
-        $savedQrSize = max(
-            1,
-            (int) ($placeholder->qr_size ?: CardTemplatePlaceholder::DEFAULT_QR_SIZE)
-        );
-
-        $scaledQrSize = max(
-            1,
-            (int) round($savedQrSize * $designerScale)
-        );
-
         $visibleQrSize = max(
             1,
             min(
-                $scaledQrSize,
                 $boxWidth,
                 $boxHeight
-            )
-        );
-
-        $qrRasterSize = min(
-            CardTemplatePlaceholder::MAX_QR_SIZE,
-            max(
-                CardTemplatePlaceholder::MIN_QR_SIZE,
-                $visibleQrSize
             )
         );
 
@@ -602,22 +571,41 @@ class CardGenerationService
             $qrBackgroundColor = CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR;
         }
 
-        $qrBinary = $this->buildColoredQrPng(
-            sourcePath: $qrFullPath,
-            size: $qrRasterSize,
-            foregroundHex: $qrColor,
-            backgroundHex: $qrBackgroundColor,
-        );
-
-        $qrImage = $manager->read($qrBinary);
-
         /*
         |--------------------------------------------------------------------------
-        | Resize to the exact visible designer square
+        | Match the designer preview for default QR colors
         |--------------------------------------------------------------------------
-        | The generated QR must fill the saved square exactly. There is no extra
-        | margin, padding, or safe-area adjustment here.
+        | The browser designer displays the stored QR image itself. For normal
+        | black/white QR codes, use that same source image and resize it directly.
+        | This preserves the original quiet zone and visual proportions.
+        |
+        | Custom colors still use the recoloring pipeline below.
         */
+        $usesDefaultColors =
+            strtoupper($qrColor) === strtoupper(CardTemplatePlaceholder::DEFAULT_QR_COLOR)
+            && strtoupper($qrBackgroundColor) === strtoupper(CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR);
+
+        if ($usesDefaultColors) {
+            $qrImage = $manager->read($qrFullPath);
+        } else {
+            $qrRasterSize = min(
+                CardTemplatePlaceholder::MAX_QR_SIZE,
+                max(
+                    CardTemplatePlaceholder::MIN_QR_SIZE,
+                    $visibleQrSize
+                )
+            );
+
+            $qrBinary = $this->buildColoredQrPng(
+                sourcePath: $qrFullPath,
+                size: $qrRasterSize,
+                foregroundHex: $qrColor,
+                backgroundHex: $qrBackgroundColor,
+            );
+
+            $qrImage = $manager->read($qrBinary);
+        }
+
         if (
             $qrImage->width() !== $visibleQrSize
             || $qrImage->height() !== $visibleQrSize
@@ -630,18 +618,12 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Center the exact QR square inside the saved rectangle
+        | Center inside the exact saved placeholder rectangle
         |--------------------------------------------------------------------------
         */
         $placeX = $x + (int) round(($boxWidth - $visibleQrSize) / 2);
         $placeY = $y + (int) round(($boxHeight - $visibleQrSize) / 2);
 
-        /*
-        | Do not draw an extra background rectangle here. The generated QR bitmap
-        | already contains the requested background color. Drawing an additional
-        | rectangle can make the QR appear to have a larger visual frame than the
-        | designer preview.
-        */
         $image->place(
             $qrImage,
             'top-left',
