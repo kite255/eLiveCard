@@ -104,8 +104,17 @@ class CardGenerationService
             $manager = new ImageManager(new Driver());
             $image = $manager->read($templatePath);
 
-            $this->resizeTemplateIfTooLarge($image);
-
+            /*
+            |--------------------------------------------------------------------------
+            | Preserve the designer canvas exactly
+            |--------------------------------------------------------------------------
+            | Placeholder positions, box sizes, font sizes, and QR sizes are saved
+            | against the uploaded template. Resizing the template during generation
+            | changes that coordinate system and causes generated cards to drift from
+            | what the designer showed.
+            |
+            | Therefore generation always uses the original uploaded image dimensions.
+            */
             $imageWidth = $image->width();
             $imageHeight = $image->height();
 
@@ -381,8 +390,16 @@ class CardGenerationService
         );
 
         $lineHeight = max(10, (int) round($fontSize * 1.22));
-        $textBlockHeight = max($lineHeight, count($lines) * $lineHeight);
-        $startY = $y + max(0, (int) round(($boxHeight - $textBlockHeight) / 2));
+
+        /*
+        |--------------------------------------------------------------------------
+        | Preserve the designer Y position
+        |--------------------------------------------------------------------------
+        | The saved y_percent represents the top edge of the placeholder. Do not
+        | vertically recenter text inside the box because that moves the rendered
+        | text away from the exact position chosen in the card designer.
+        */
+        $startY = $y;
 
         foreach ($lines as $index => $line) {
             $lineY = $startY + ($index * $lineHeight);
@@ -433,41 +450,21 @@ class CardGenerationService
             minimumHeight: 40,
         );
 
-        $maxBoxSize = max(1, min($boxWidth, $boxHeight));
-
         /*
         |--------------------------------------------------------------------------
-        | QR size protection
+        | Preserve the designer QR box exactly
         |--------------------------------------------------------------------------
-        | Keep the QR fully inside the placeholder so its background does not
-        | overlap nearby event text or other placeholders.
+        | The QR placeholder's saved width/height define its visible size. Do not
+        | add automatic padding or shrink the QR because that makes the generated
+        | card differ from the designer preview.
         */
-        $requestedQrSize = (int) (
-            $placeholder->qr_size
-            ?: CardTemplatePlaceholder::DEFAULT_QR_SIZE
-        );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Match the designer placeholder size
-        |--------------------------------------------------------------------------
-        | The placeholder controls the QR's visible physical size.
-        | qr_size is treated as an output-quality preference, not as a limit
-        | that can make the generated QR smaller than the designed box.
-        */
-        $padding = max(
-            2,
-            (int) round($maxBoxSize * 0.015)
-        );
-
-        $availableQrSize = max(
+        $qrSize = max(
             1,
-            $maxBoxSize - ($padding * 2)
-        );
-
-        $qrSize = min(
-            $availableQrSize,
-            CardTemplatePlaceholder::MAX_QR_SIZE
+            min(
+                $boxWidth,
+                $boxHeight,
+                CardTemplatePlaceholder::MAX_QR_SIZE
+            )
         );
 
         $qrFullPath = $this->getInviteeQrFullPath($invitee);
@@ -522,23 +519,19 @@ class CardGenerationService
 
         $qrImage = $manager->read($qrBinary);
 
-        $backgroundSize = $maxBoxSize;
+        $backgroundSize = $qrSize;
 
-        $backgroundX = $x + (int) round(
-            ($boxWidth - $backgroundSize) / 2
-        );
-
-        $backgroundY = $y + (int) round(
-            ($boxHeight - $backgroundSize) / 2
-        );
-
-        $placeX = $backgroundX + (int) round(
-            ($backgroundSize - $qrSize) / 2
-        );
-
-        $placeY = $backgroundY + (int) round(
-            ($backgroundSize - $qrSize) / 2
-        );
+        /*
+        |--------------------------------------------------------------------------
+        | Preserve the placeholder's top-left position
+        |--------------------------------------------------------------------------
+        | Use the saved x/y coordinates directly. This prevents the QR from being
+        | recentered to a different location during generation.
+        */
+        $backgroundX = $x;
+        $backgroundY = $y;
+        $placeX = $x;
+        $placeY = $y;
 
         if (method_exists($image, 'drawRectangle')) {
             $image->drawRectangle(
@@ -839,11 +832,26 @@ class CardGenerationService
         int $minimumWidth,
         int $minimumHeight,
     ): array {
-        $safeX = $this->percentToPixels($this->safeMarginPercent, $imageWidth);
-        $safeY = $this->percentToPixels($this->safeMarginPercent, $imageHeight);
+        /*
+        |--------------------------------------------------------------------------
+        | Exact designer coordinates
+        |--------------------------------------------------------------------------
+        | x_percent, y_percent, width_percent, and height_percent are the source of
+        | truth. Do not force a synthetic safe margin because doing so changes the
+        | position selected in the template designer.
+        |
+        | We only clip the box when it would extend beyond the real image boundary.
+        */
 
-        $x = $this->percentToPixels($placeholder->x_percent ?? 0, $imageWidth);
-        $y = $this->percentToPixels($placeholder->y_percent ?? 0, $imageHeight);
+        $x = $this->percentToPixels(
+            $placeholder->x_percent ?? 0,
+            $imageWidth
+        );
+
+        $y = $this->percentToPixels(
+            $placeholder->y_percent ?? 0,
+            $imageHeight
+        );
 
         $boxWidth = max(
             $minimumWidth,
@@ -861,14 +869,18 @@ class CardGenerationService
             )
         );
 
-        $maxRight = max($safeX + 1, $imageWidth - $safeX);
-        $maxBottom = max($safeY + 1, $imageHeight - $safeY);
+        $x = max(0, min($x, max(0, $imageWidth - 1)));
+        $y = max(0, min($y, max(0, $imageHeight - 1)));
 
-        $x = max($safeX, min($x, $maxRight - $minimumWidth));
-        $y = max($safeY, min($y, $maxBottom - $minimumHeight));
+        $boxWidth = min(
+            $boxWidth,
+            max(1, $imageWidth - $x)
+        );
 
-        $boxWidth = min($boxWidth, max($minimumWidth, $maxRight - $x));
-        $boxHeight = min($boxHeight, max($minimumHeight, $maxBottom - $y));
+        $boxHeight = min(
+            $boxHeight,
+            max(1, $imageHeight - $y)
+        );
 
         return [
             (int) $x,
