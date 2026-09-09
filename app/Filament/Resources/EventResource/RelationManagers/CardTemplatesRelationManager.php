@@ -15,6 +15,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class CardTemplatesRelationManager extends RelationManager
 {
@@ -107,6 +108,19 @@ class CardTemplatesRelationManager extends RelationManager
                             ->rules([
                                 new AllowedCardTemplateDimensions(),
                             ])
+                            ->live()
+                            ->afterStateUpdated(function ($state, callable $set): void {
+                                $dimensions = $this->detectUploadedImageDimensions($state);
+
+                                if (! $dimensions) {
+                                    return;
+                                }
+
+                                [$width, $height] = $dimensions;
+
+                                $set('width', $width);
+                                $set('height', $height);
+                            })
                             ->maxSize(5120)
                             ->maxFiles(1)
                             ->imagePreviewHeight('320')
@@ -335,7 +349,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->after(function (CardTemplate $record): void {
                             EliveNotification::success(
                                 title: 'Template updated successfully',
-                                body: "The template was updated successfully. Original size preserved: {$record->width} × {$record->height}px.",
+                                body: "The latest template details have been saved. Image size: {$record->width} × {$record->height} pixels.",
                                 context: $record,
                                 actionLabel: 'Design Placeholders',
                                 actionUrl: route('card-templates.designer', $record),
@@ -487,12 +501,7 @@ class CardTemplatesRelationManager extends RelationManager
                                         CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
 
                                     'height_percent' =>
-                                        round(
-                                            CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT
-                                            * ((int) ($record->width ?: 1080))
-                                            / max(1, (int) ($record->height ?: 1350)),
-                                            4
-                                        ),
+                                        CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
 
                                     'font_size' =>
                                         CardTemplatePlaceholder::DEFAULT_FONT_SIZE,
@@ -585,12 +594,7 @@ class CardTemplatesRelationManager extends RelationManager
                                         'width_percent' =>
                                             CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
                                         'height_percent' =>
-                                            round(
-                                                CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT
-                                                * ((int) ($record->width ?: 1080))
-                                                / max(1, (int) ($record->height ?: 1350)),
-                                                4
-                                            ),
+                                            CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
                                         'qr_size' =>
                                             CardTemplatePlaceholder::DEFAULT_QR_SIZE,
                                         'qr_color' =>
@@ -803,6 +807,50 @@ class CardTemplatesRelationManager extends RelationManager
         );
     }
 
+    /**
+     * Read the image dimensions immediately from the Livewire temporary upload
+     * or from an already-stored public file.
+     *
+     * @return array{0:int,1:int}|null
+     */
+    protected function detectUploadedImageDimensions(mixed $state): ?array
+    {
+        $value = is_array($state)
+            ? collect($state)->filter()->first()
+            : $state;
+
+        $fullPath = null;
+
+        if ($value instanceof TemporaryUploadedFile) {
+            $fullPath = $value->getRealPath();
+        } elseif (is_string($value) && filled($value)) {
+            $path = $this->normalizeTemplateImagePath($value);
+
+            if ($path && Storage::disk('public')->exists($path)) {
+                $fullPath = Storage::disk('public')->path($path);
+            }
+        }
+
+        if (! $fullPath || ! is_file($fullPath)) {
+            return null;
+        }
+
+        $imageSize = @getimagesize($fullPath);
+
+        if (! is_array($imageSize) || ! isset($imageSize[0], $imageSize[1])) {
+            return null;
+        }
+
+        $width = (int) $imageSize[0];
+        $height = (int) $imageSize[1];
+
+        if ($width <= 0 || $height <= 0) {
+            return null;
+        }
+
+        return [$width, $height];
+    }
+
     protected function setImageDimensions(array &$data): void
     {
         if (blank($data['template_image'] ?? null)) {
@@ -813,13 +861,28 @@ class CardTemplatesRelationManager extends RelationManager
             ? collect($data['template_image'])->filter()->first()
             : $data['template_image'];
 
-        $path = $this->normalizeTemplateImagePath($imageValue);
+        /*
+        |--------------------------------------------------------------------------
+        | Normal create/edit flow
+        |--------------------------------------------------------------------------
+        | By the time Filament mutates the form data the file is normally stored
+        | and template_image is a public-disk path.
+        */
+        if ($imageValue instanceof TemporaryUploadedFile) {
+            $fullPath = $imageValue->getRealPath();
+            $path = null;
+        } else {
+            $path = $this->normalizeTemplateImagePath(
+                is_string($imageValue) ? $imageValue : null
+            );
 
-        if (blank($path) || ! Storage::disk('public')->exists($path)) {
-            return;
+            if (blank($path) || ! Storage::disk('public')->exists($path)) {
+                return;
+            }
+
+            $fullPath = Storage::disk('public')->path($path);
         }
 
-        $fullPath = Storage::disk('public')->path($path);
         $imageSize = @getimagesize($fullPath);
 
         if (! is_array($imageSize)) {
@@ -846,7 +909,9 @@ class CardTemplatesRelationManager extends RelationManager
             $data['source_height'] = $height;
         }
 
-        $data['template_image'] = $path;
+        if (filled($path)) {
+            $data['template_image'] = $path;
+        }
     }
 
     protected function normalizeTemplateImagePath(?string $path): ?string
