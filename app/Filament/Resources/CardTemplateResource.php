@@ -16,6 +16,7 @@ use Filament\Tables;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Throwable;
 
 class CardTemplateResource extends Resource
 {
@@ -146,6 +147,44 @@ class CardTemplateResource extends Resource
             ->value('id');
     }
 
+    /**
+     * Ensure old templates also receive their real source dimensions.
+     *
+     * New templates are handled automatically by CardTemplate::saving().
+     */
+    protected static function ensureAutomaticDimensions(CardTemplate $record): bool
+    {
+        if (! $record->hasTemplateImage()) {
+            return false;
+        }
+
+        if (
+            (int) $record->source_width > 0
+            && (int) $record->source_height > 0
+        ) {
+            return true;
+        }
+
+        [$sourceWidth, $sourceHeight] = $record->detectSourceDimensions();
+
+        if (! $sourceWidth || ! $sourceHeight) {
+            return false;
+        }
+
+        $record->source_width = $sourceWidth;
+        $record->source_height = $sourceHeight;
+        $record->width = CardTemplate::DESIGNER_REFERENCE_WIDTH;
+        $record->height = CardTemplate::calculateDesignerHeight(
+            sourceWidth: $sourceWidth,
+            sourceHeight: $sourceHeight,
+            designerWidth: CardTemplate::DESIGNER_REFERENCE_WIDTH,
+        );
+
+        $record->save();
+
+        return true;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -184,14 +223,16 @@ class CardTemplateResource extends Resource
                     ->columns(3),
 
                 Forms\Components\Section::make('Template Image')
-                    ->description('Upload the card background image without invitee name, QR code, or serial number.')
+                    ->description('The system automatically reads the uploaded image dimensions and keeps the designer in the same aspect ratio.')
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->schema([
                         Forms\Components\FileUpload::make('template_image')
                             ->label('Card Template Image')
                             ->image()
                             ->disk('public')
-                            ->directory(fn ($get): string => 'card-templates/event-' . ($get('event_id') ?: 'unassigned'))
+                            ->directory(
+                                fn ($get): string => 'card-templates/event-' . ($get('event_id') ?: 'unassigned')
+                            )
                             ->visibility('public')
                             ->imagePreviewHeight('360')
                             ->acceptedFileTypes([
@@ -204,24 +245,28 @@ class CardTemplateResource extends Resource
                             ->openable()
                             ->required()
                             ->columnSpanFull()
-                            ->helperText('Use PNG, JPG, or WEBP. Recommended: high quality portrait invitation card.'),
+                            ->helperText(
+                                'Use PNG, JPG, or WEBP. Width and height are detected automatically; do not resize the card manually.'
+                            ),
 
-                        Forms\Components\Grid::make(2)
-                            ->schema([
-                                Forms\Components\TextInput::make('width')
-                                    ->label('Image Width')
-                                    ->numeric()
-                                    ->minValue(1)
-                                    ->suffix('px')
-                                    ->helperText('Optional. Example: 1080.'),
+                        Forms\Components\Placeholder::make('automatic_dimensions')
+                            ->label('Automatic Size')
+                            ->content(function (?CardTemplate $record): string {
+                                if (! $record || ! $record->hasTemplateImage()) {
+                                    return 'The real source size will be detected automatically after the template is saved.';
+                                }
 
-                                Forms\Components\TextInput::make('height')
-                                    ->label('Image Height')
-                                    ->numeric()
-                                    ->minValue(1)
-                                    ->suffix('px')
-                                    ->helperText('Optional. Example: 1920.'),
-                            ]),
+                                $sourceWidth = $record->source_image_width;
+                                $sourceHeight = $record->source_image_height;
+                                $designerWidth = $record->designer_width;
+                                $designerHeight = $record->designer_height;
+
+                                return "Source: {$sourceWidth} × {$sourceHeight}px · Designer: {$designerWidth} × {$designerHeight}px";
+                            })
+                            ->helperText(
+                                'The browser designer uses a normalized width while preserving the exact source-image aspect ratio.'
+                            )
+                            ->columnSpanFull(),
                     ]),
             ]);
     }
@@ -230,7 +275,9 @@ class CardTemplateResource extends Resource
     {
         return $table
             ->heading('Card Templates')
-            ->description('Upload templates, design placeholders, activate templates, and generate personalized invitation cards.')
+            ->description(
+                'Upload templates, design placeholders, activate templates, and generate personalized invitation cards.'
+            )
             ->columns([
                 Tables\Columns\ImageColumn::make('template_image')
                     ->label('Template')
@@ -238,7 +285,7 @@ class CardTemplateResource extends Resource
                     ->height(76)
                     ->width(56)
                     ->extraImgAttributes([
-                        'class' => 'rounded-xl object-cover ring-1 ring-gray-200 dark:ring-gray-700',
+                        'class' => 'rounded-xl object-contain bg-white ring-1 ring-gray-200 dark:ring-gray-700',
                     ]),
 
                 Tables\Columns\TextColumn::make('name')
@@ -246,12 +293,16 @@ class CardTemplateResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight(FontWeight::SemiBold)
-                    ->description(fn (CardTemplate $record): string => $record->event?->title ?? 'No event assigned'),
+                    ->description(
+                        fn (CardTemplate $record): string => $record->event?->title ?? 'No event assigned'
+                    ),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Status')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => CardTemplate::statuses()[$state] ?? ucfirst($state))
+                    ->formatStateUsing(
+                        fn (string $state): string => CardTemplate::statuses()[$state] ?? ucfirst($state)
+                    )
                     ->color(fn (string $state): string => match ($state) {
                         CardTemplate::STATUS_ACTIVE => 'success',
                         CardTemplate::STATUS_DRAFT => 'warning',
@@ -262,11 +313,10 @@ class CardTemplateResource extends Resource
                 Tables\Columns\TextColumn::make('dimensions')
                     ->label('Size')
                     ->state(function (CardTemplate $record): string {
-                        if (! $record->width || ! $record->height) {
-                            return 'Not set';
-                        }
-
-                        return "{$record->width} × {$record->height}px";
+                        return "{$record->source_image_width} × {$record->source_image_height}px";
+                    })
+                    ->description(function (CardTemplate $record): string {
+                        return "Designer {$record->designer_width} × {$record->designer_height}px";
                     })
                     ->badge()
                     ->color('gray'),
@@ -313,9 +363,56 @@ class CardTemplateResource extends Resource
                     ->color('info')
                     ->button()
                     ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record))
-                    ->url(fn (CardTemplate $record): string => static::getUrl('designer', [
-                        'record' => $record,
-                    ])),
+                    ->action(function (CardTemplate $record) {
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Upgrade legacy templates before opening the designer.
+                        |--------------------------------------------------------------------------
+                        */
+                        static::ensureAutomaticDimensions($record);
+
+                        return redirect()->to(
+                            static::getUrl('designer', ['record' => $record])
+                        );
+                    }),
+
+                Action::make('refresh_dimensions')
+                    ->label('Refresh Size')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('gray')
+                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record))
+                    ->action(function (CardTemplate $record): void {
+                        [$sourceWidth, $sourceHeight] = $record->detectSourceDimensions();
+
+                        if (! $sourceWidth || ! $sourceHeight) {
+                            Notification::make()
+                                ->title('Unable to detect image size')
+                                ->body(
+                                    'The template image could not be read from public storage. Confirm the file exists and storage:link is configured.'
+                                )
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
+                        $record->source_width = $sourceWidth;
+                        $record->source_height = $sourceHeight;
+                        $record->width = CardTemplate::DESIGNER_REFERENCE_WIDTH;
+                        $record->height = CardTemplate::calculateDesignerHeight(
+                            sourceWidth: $sourceWidth,
+                            sourceHeight: $sourceHeight,
+                        );
+                        $record->save();
+
+                        Notification::make()
+                            ->title('Template size refreshed')
+                            ->body(
+                                "Source {$sourceWidth} × {$sourceHeight}px · Designer {$record->designer_width} × {$record->designer_height}px."
+                            )
+                            ->success()
+                            ->send();
+                    }),
 
                 Action::make('activate')
                     ->label('Activate')
@@ -323,8 +420,12 @@ class CardTemplateResource extends Resource
                     ->color('success')
                     ->requiresConfirmation()
                     ->modalHeading('Activate Template')
-                    ->modalDescription('Activate this template only after placing and saving placeholders.')
-                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record) && ! $record->isActive())
+                    ->modalDescription(
+                        'Activate this template only after placing and saving placeholders.'
+                    )
+                    ->visible(
+                        fn (CardTemplate $record): bool => static::canAccessRecord($record) && ! $record->isActive()
+                    )
                     ->action(function (CardTemplate $record): void {
                         if (! $record->event_id) {
                             Notification::make()
@@ -346,10 +447,24 @@ class CardTemplateResource extends Resource
                             return;
                         }
 
+                        if (! static::ensureAutomaticDimensions($record)) {
+                            Notification::make()
+                                ->title('Image dimensions unavailable')
+                                ->body(
+                                    'The system could not read the template image dimensions. Check the uploaded file and public storage.'
+                                )
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
                         if ($record->visiblePlaceholders()->count() === 0) {
                             Notification::make()
                                 ->title('No visible placeholders found')
-                                ->body('Open the designer and save placeholders before activating this template.')
+                                ->body(
+                                    'Open the designer and save placeholders before activating this template.'
+                                )
                                 ->warning()
                                 ->send();
 
@@ -379,8 +494,12 @@ class CardTemplateResource extends Resource
                     ->color('warning')
                     ->requiresConfirmation()
                     ->modalHeading('Generate Personalized Cards')
-                    ->modalDescription('This will generate cards for all invitees under this template event.')
-                    ->visible(fn (CardTemplate $record): bool => static::canAccessRecord($record) && $record->isActive())
+                    ->modalDescription(
+                        'This will generate cards for all invitees under this template event.'
+                    )
+                    ->visible(
+                        fn (CardTemplate $record): bool => static::canAccessRecord($record) && $record->isActive()
+                    )
                     ->action(function (CardTemplate $record): void {
                         if (! static::canAccessRecord($record)) {
                             Notification::make()
@@ -395,7 +514,9 @@ class CardTemplateResource extends Resource
                         if (! $record->event_id) {
                             Notification::make()
                                 ->title('Template has no event')
-                                ->body('Please assign this template to an event before generating cards.')
+                                ->body(
+                                    'Please assign this template to an event before generating cards.'
+                                )
                                 ->danger()
                                 ->send();
 
@@ -422,10 +543,24 @@ class CardTemplateResource extends Resource
                             return;
                         }
 
+                        if (! static::ensureAutomaticDimensions($record)) {
+                            Notification::make()
+                                ->title('Image dimensions unavailable')
+                                ->body(
+                                    'The system could not read the template image dimensions. Check the uploaded file and public storage.'
+                                )
+                                ->danger()
+                                ->send();
+
+                            return;
+                        }
+
                         if ($record->visiblePlaceholders()->count() === 0) {
                             Notification::make()
                                 ->title('No visible placeholders found')
-                                ->body('Please open the designer and save placeholder positions first.')
+                                ->body(
+                                    'Please open the designer and save placeholder positions first.'
+                                )
                                 ->warning()
                                 ->send();
 
@@ -456,7 +591,7 @@ class CardTemplateResource extends Resource
                             try {
                                 $service->generate($record, $invitee);
                                 $generatedCount++;
-                            } catch (\Throwable $exception) {
+                            } catch (Throwable $exception) {
                                 report($exception);
                                 $failedCount++;
                             }
@@ -465,7 +600,9 @@ class CardTemplateResource extends Resource
                         if ($failedCount > 0) {
                             Notification::make()
                                 ->title('Cards generated with some errors')
-                                ->body("Generated: {$generatedCount}. Failed: {$failedCount}. Check Laravel logs.")
+                                ->body(
+                                    "Generated: {$generatedCount}. Failed: {$failedCount}. Check Laravel logs."
+                                )
                                 ->warning()
                                 ->send();
 
@@ -474,7 +611,9 @@ class CardTemplateResource extends Resource
 
                         Notification::make()
                             ->title('Cards generated successfully')
-                            ->body("{$generatedCount} personalized cards generated successfully.")
+                            ->body(
+                                "{$generatedCount} personalized cards generated successfully."
+                            )
                             ->success()
                             ->send();
                     }),
@@ -490,17 +629,23 @@ class CardTemplateResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
-                        ->visible(fn (): bool => auth()->user()?->canManageCardDesigns() ?? false),
+                        ->visible(
+                            fn (): bool => auth()->user()?->canManageCardDesigns() ?? false
+                        ),
                 ]),
             ])
             ->emptyStateIcon('heroicon-o-photo')
             ->emptyStateHeading('No card templates yet')
-            ->emptyStateDescription('Upload a card template first, then open the designer to place invitee placeholders.')
+            ->emptyStateDescription(
+                'Upload a card template first, then open the designer to place invitee placeholders.'
+            )
             ->emptyStateActions([
                 Tables\Actions\CreateAction::make()
                     ->label('Create Template')
                     ->icon('heroicon-o-plus')
-                    ->visible(fn (): bool => auth()->user()?->canManageCardDesigns() ?? false),
+                    ->visible(
+                        fn (): bool => auth()->user()?->canManageCardDesigns() ?? false
+                    ),
             ])
             ->defaultSort('created_at', 'desc');
     }

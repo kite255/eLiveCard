@@ -92,17 +92,38 @@ class CardGenerationService
 
             /*
             |--------------------------------------------------------------------------
-            | Preserve the designer canvas exactly
+            | Generate on the original source image
             |--------------------------------------------------------------------------
-            | Placeholder positions, box sizes, font sizes, and QR sizes are saved
-            | against the uploaded template. Resizing the template during generation
-            | changes that coordinate system and causes generated cards to drift from
-            | what the designer showed.
-            |
-            | Therefore generation always uses the original uploaded image dimensions.
+            | The designer uses the same aspect ratio as this source image and stores
+            | placeholder geometry as percentages. Therefore X/Y/width/height can be
+            | applied directly to the original high-resolution image without resizing.
             */
             $imageWidth = $image->width();
             $imageHeight = $image->height();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Keep persisted source dimensions accurate
+            |--------------------------------------------------------------------------
+            | This also upgrades older templates the first time they are generated.
+            */
+            if (
+                (int) $template->source_width !== (int) $imageWidth
+                || (int) $template->source_height !== (int) $imageHeight
+            ) {
+                $template->forceFill([
+                    'source_width' => $imageWidth,
+                    'source_height' => $imageHeight,
+                    'width' => CardTemplate::DESIGNER_REFERENCE_WIDTH,
+                    'height' => CardTemplate::calculateDesignerHeight(
+                        sourceWidth: $imageWidth,
+                        sourceHeight: $imageHeight,
+                        designerWidth: CardTemplate::DESIGNER_REFERENCE_WIDTH,
+                    ),
+                ])->saveQuietly();
+
+                $template->refresh();
+            }
 
             $placeholders = $template->placeholders()
                 ->where(function ($query) {
@@ -331,16 +352,17 @@ class CardGenerationService
         |--------------------------------------------------------------------------
         | Placeholder geometry is stored as percentages and therefore already
         | scales correctly on the real image. Font size is stored in pixels on the
-        | designer canvas, so it must be scaled from the stored template height to
-        | the actual uploaded image height.
+        | designer canvas, so it must be scaled from the stored template width to
+        | the actual uploaded image width. The designer preview itself scales from
+        | this width, so width is the correct reference axis for CSS-like font size.
         |
         | Example for the current event:
-        | 1920 designer height -> 4749 real image height
-        | scale = 4749 / 1920 ~= 2.473
+        | 1080 designer width -> 3500 real image width
+        | scale = 3500 / 1080 ~= 3.241
         */
         $fontScale = $this->resolveFontScale(
             template: $template,
-            imageHeight: $imageHeight,
+            imageWidth: $imageWidth,
         );
 
         $savedFontSize = max(
@@ -401,9 +423,16 @@ class CardGenerationService
             );
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Match browser designer line-height
+        |--------------------------------------------------------------------------
+        | placeholderStyle() uses lineHeight: 1.1, so generation must use the same
+        | multiplier to keep vertical placement as close as possible.
+        */
         $lineHeight = max(
             10,
-            (int) round($fontSize * 1.22)
+            (int) round($fontSize * 1.10)
         );
 
         $textBlockHeight = max(
@@ -484,13 +513,27 @@ class CardGenerationService
         | saved placeholder box. qr_size is only a quality/source preference; it
         | must not independently change the visible designer geometry.
         */
-        $qrSize = max(
+        $visibleQrSize = max(
             1,
             min(
                 $boxWidth,
-                $boxHeight,
-                CardTemplatePlaceholder::MAX_QR_SIZE
+                $boxHeight
             )
+        );
+
+        /*
+        | qr_size controls raster quality, not visible placement. Generate a sharp
+        | source bitmap at a safe quality size, then resize it to the exact visible
+        | designer square before placing it.
+        */
+        $requestedOutputSize = max(
+            CardTemplatePlaceholder::MIN_QR_SIZE,
+            (int) ($placeholder->qr_size ?: CardTemplatePlaceholder::DEFAULT_QR_SIZE)
+        );
+
+        $qrRasterSize = min(
+            CardTemplatePlaceholder::MAX_QR_SIZE,
+            max($requestedOutputSize, min($visibleQrSize, CardTemplatePlaceholder::MAX_QR_SIZE))
         );
 
         $qrFullPath = $this->getInviteeQrFullPath($invitee);
@@ -530,30 +573,40 @@ class CardGenerationService
 
         $qrBinary = $this->buildColoredQrPng(
             sourcePath: $qrFullPath,
-            size: $qrSize,
+            size: $qrRasterSize,
             foregroundHex: $qrColor,
             backgroundHex: $qrBackgroundColor,
         );
 
         $qrImage = $manager->read($qrBinary);
 
+        if (
+            $qrImage->width() !== $visibleQrSize
+            || $qrImage->height() !== $visibleQrSize
+        ) {
+            $qrImage->resize(
+                $visibleQrSize,
+                $visibleQrSize
+            );
+        }
+
         /*
         |--------------------------------------------------------------------------
-        | Center exact square inside designer rectangle
+        | Center the exact designer square inside the saved placeholder rectangle
         |--------------------------------------------------------------------------
         */
-        $placeX = $x + (int) round(($boxWidth - $qrSize) / 2);
-        $placeY = $y + (int) round(($boxHeight - $qrSize) / 2);
+        $placeX = $x + (int) round(($boxWidth - $visibleQrSize) / 2);
+        $placeY = $y + (int) round(($boxHeight - $visibleQrSize) / 2);
 
         if (method_exists($image, 'drawRectangle')) {
             $image->drawRectangle(
                 $placeX,
                 $placeY,
                 function ($rectangle) use (
-                    $qrSize,
+                    $visibleQrSize,
                     $qrBackgroundColor
                 ): void {
-                    $rectangle->size($qrSize, $qrSize);
+                    $rectangle->size($visibleQrSize, $visibleQrSize);
                     $rectangle->background($qrBackgroundColor);
                 }
             );
@@ -929,7 +982,7 @@ class CardGenerationService
                 fontFile: $fontFile,
             );
 
-            $lineHeight = max(10, (int) round($fontSize * 1.22));
+            $lineHeight = max(10, (int) round($fontSize * 1.10));
             $requiredHeight = count($lines) * $lineHeight;
 
             if ($requiredHeight <= $boxHeight) {
@@ -1047,17 +1100,25 @@ class CardGenerationService
 
     protected function resolveFontScale(
         CardTemplate $template,
-        int $imageHeight,
+        int $imageWidth,
     ): float {
-        $designerHeight = (float) ($template->height ?? 0);
-
-        if ($designerHeight <= 0) {
-            return 1.0;
-        }
+        /*
+        |--------------------------------------------------------------------------
+        | Use the same designer reference width as the browser
+        |--------------------------------------------------------------------------
+        | CardTemplate::designer_width is the normalized browser canvas width
+        | (currently 1080). Font size is stored in designer pixels, so only the
+        | width scale is required. Placeholder geometry itself remains percentage
+        | based and does not use this scale.
+        */
+        $designerWidth = max(
+            1,
+            (int) $template->designer_width
+        );
 
         return max(
             0.1,
-            $imageHeight / $designerHeight
+            $imageWidth / $designerWidth
         );
     }
 
@@ -1109,7 +1170,7 @@ class CardGenerationService
             return CardTemplatePlaceholder::defaultFontFamily();
         }
 
-        return 'Poppins';
+        return 'Montserrat';
     }
 
     protected function percentToPixels(mixed $percent, int $total): int
@@ -1171,11 +1232,19 @@ class CardGenerationService
             return true;
         }
 
-        return in_array($this->normalizePlaceholderKey((string) ($placeholder->placeholder_key ?? '')), [
-            'qr_code',
-            'qrcode',
-            'qr',
-        ], true);
+        return in_array(
+            $this->normalizePlaceholderKey(
+                (string) ($placeholder->placeholder_key ?? '')
+            ),
+            [
+                'qr_code',
+                'qrcode',
+                'qr',
+                'guest_qr_code',
+                'invitee_qr_code',
+            ],
+            true
+        );
     }
 
     protected function normalizePlaceholderKey(string $key): string
@@ -1223,6 +1292,10 @@ class CardGenerationService
         }
 
         $path = ltrim((string) $path, '/');
+
+        if (Str::startsWith($path, 'public/')) {
+            $path = Str::after($path, 'public/');
+        }
 
         if (Str::startsWith($path, 'storage/')) {
             $path = Str::after($path, 'storage/');

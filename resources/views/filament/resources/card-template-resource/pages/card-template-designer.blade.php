@@ -41,11 +41,96 @@
         }
 
         /*
-        | Keep the real uploaded template size for accurate placeholder percentages.
-        | If width/height are missing, use the common eLive portrait size.
+        |--------------------------------------------------------------------------
+        | Automatic Designer Canvas Size
+        |--------------------------------------------------------------------------
+        | The designer must always use the same aspect ratio as the uploaded image.
+        | Otherwise an image such as 3500x4749 displayed inside a 1080x1920 canvas
+        | is letterboxed by object-fit: contain, while placeholders are positioned
+        | against the full 1080x1920 canvas. That makes the generated card differ
+        | from the designer.
+        |
+        | We therefore:
+        | 1. Read the real uploaded image dimensions when possible.
+        | 2. Keep a stable 1080px designer reference width.
+        | 3. Derive the designer height automatically from the real image ratio.
+        |
+        | Example:
+        | source 3500x4749 -> designer 1080x1465.
         */
-        $templateWidth = $template->width ?: 1080;
-        $templateHeight = $template->height ?: 1920;
+        $sourceWidth = null;
+        $sourceHeight = null;
+        $normalizedTemplatePath = null;
+
+        if (filled($templatePath)) {
+            try {
+                $normalizedTemplatePath = trim((string) $templatePath);
+
+                if (
+                    ! str_starts_with($normalizedTemplatePath, 'http://')
+                    && ! str_starts_with($normalizedTemplatePath, 'https://')
+                    && ! str_starts_with($normalizedTemplatePath, 'data:image/')
+                ) {
+                    $normalizedTemplatePath = ltrim($normalizedTemplatePath, '/');
+
+                    if (str_starts_with($normalizedTemplatePath, 'public/')) {
+                        $normalizedTemplatePath = substr($normalizedTemplatePath, 7);
+                    }
+
+                    if (str_starts_with($normalizedTemplatePath, 'storage/')) {
+                        $normalizedTemplatePath = substr($normalizedTemplatePath, 8);
+                    }
+
+                    if (
+                        \Illuminate\Support\Facades\Storage::disk('public')
+                            ->exists($normalizedTemplatePath)
+                    ) {
+                        $fullTemplatePath = \Illuminate\Support\Facades\Storage::disk('public')
+                            ->path($normalizedTemplatePath);
+
+                        $imageSize = @getimagesize($fullTemplatePath);
+
+                        if (is_array($imageSize) && isset($imageSize[0], $imageSize[1])) {
+                            $sourceWidth = (int) $imageSize[0];
+                            $sourceHeight = (int) $imageSize[1];
+                        }
+                    }
+                }
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                $sourceWidth = null;
+                $sourceHeight = null;
+            }
+        }
+
+        /*
+        | Fall back to values already stored on the template for remote images,
+        | legacy records, or environments where the file cannot be inspected.
+        */
+        $sourceWidth = max(
+            1,
+            (int) ($sourceWidth ?: $template->width ?: 1080)
+        );
+
+        $sourceHeight = max(
+            1,
+            (int) ($sourceHeight ?: $template->height ?: 1920)
+        );
+
+        /*
+        | Use a stable browser-editing width. Placeholder coordinates remain
+        | percentage based, so the generated card can still use the original,
+        | high-resolution source image.
+        */
+        $templateWidth = 1080;
+
+        $templateHeight = max(
+            1,
+            (int) round(
+                $templateWidth * ($sourceHeight / $sourceWidth)
+            )
+        );
 
         /*
         |--------------------------------------------------------------------------
@@ -201,8 +286,13 @@
             </div>
 
             <div>
-                <span>Size</span>
-                <strong>{{ $templateWidth }} × {{ $templateHeight }} px</strong>
+                <span>Designer / Source</span>
+                <strong>
+                    {{ $templateWidth }} × {{ $templateHeight }} px
+                    <small style="display:block;color:#64748b;font-weight:600;margin-top:.15rem;">
+                        Source: {{ $sourceWidth }} × {{ $sourceHeight }} px
+                    </small>
+                </strong>
             </div>
         </div>
 
@@ -310,6 +400,7 @@
 
                 <div class="designer-note">
                     Drag placeholders, resize using the corner handle, or use direction buttons for precise movement.
+                    The canvas automatically follows the uploaded card's aspect ratio so saved placeholders match generated cards.
                 </div>
             </div>
 
@@ -1036,7 +1127,11 @@
             inset: 0;
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            /*
+             * The canvas aspect ratio is derived from the real image dimensions,
+             * so the image and placeholder coordinate system are identical.
+             */
+            object-fit: fill;
             object-position: center center;
             display: block;
             z-index: 1;
@@ -1647,7 +1742,7 @@
         .preview-canvas > .template-placeholder-bg {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: fill;
             object-position: center center;
             border-radius: 0;
         }
