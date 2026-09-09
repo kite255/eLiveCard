@@ -102,18 +102,18 @@ class WhatsAppApiCloudService
          * $invitee->short_code
          */
         /*
-         * Diagnostic payload for Meta error #132012.
+         * Controlled invitation payload.
          *
-         * Send only the components that must definitely match the approved
-         * template structure:
+         * The image header and five body parameters have already been accepted
+         * by Meta. Restore only the dynamic LOCATION / ENEO URL parameter here.
          *
-         * - image header
-         * - five body parameters
+         * The approved Meta button URL is:
+         * https://digital.elive.co.tz/l/{{1}}
          *
-         * Do not send any button components during this test. The quick-reply
-         * buttons and LOCATION / ENEO button remain part of the approved Meta
-         * template itself; we are only omitting their runtime parameters here
-         * to isolate the parameter-format mismatch.
+         * Therefore the runtime parameter must be only the invitee short code,
+         * for example: AF1GAK
+         *
+         * Quick-reply runtime payloads remain intentionally omitted for now.
          */
         $components = [
             $this->imageHeaderComponent($imageUrl),
@@ -148,6 +148,11 @@ class WhatsAppApiCloudService
                     ),
                 ],
             ],
+
+            $this->urlButtonComponent(
+                index: 2,
+                value: (string) $invitee->short_code,
+            ),
         ];
 
         return $this->sendTemplate(
@@ -766,9 +771,12 @@ class WhatsAppApiCloudService
             ->where(
                 function ($query): void {
                     $query
-                        ->where(
+                        ->whereIn(
                             'status',
-                            'generated'
+                            [
+                                GeneratedCard::STATUS_GENERATED,
+                                GeneratedCard::STATUS_SENT,
+                            ]
                         )
                         ->orWhereNull(
                             'status'
@@ -821,6 +829,17 @@ class WhatsAppApiCloudService
                     'public'
                 )->url($path)
             );
+        }
+
+        $inviteeCardUrl = trim(
+            (string) (
+                $invitee->generated_card_url
+                ?? ''
+            )
+        );
+
+        if ($inviteeCardUrl !== '') {
+            return $inviteeCardUrl;
         }
 
         $fallbackUrl = trim(
