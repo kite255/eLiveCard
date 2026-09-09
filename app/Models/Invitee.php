@@ -302,7 +302,10 @@ class Invitee extends Model
     public function latestSuccessfulGeneratedCard(): HasOne
     {
         return $this->hasOne(GeneratedCard::class)
-            ->where('status', 'generated')
+            ->whereIn('status', [
+                GeneratedCard::STATUS_GENERATED,
+                GeneratedCard::STATUS_SENT,
+            ])
             ->latestOfMany('generated_at');
     }
 
@@ -667,10 +670,21 @@ class Invitee extends Model
     public function getGeneratedCardPathAttribute($value): ?string
     {
         if (filled($value)) {
-            return $value;
+            return (string) $value;
         }
 
-        return $this->latestSuccessfulGeneratedCard?->file_path;
+        /*
+         * A generated invitation card remains usable after it has been sent.
+         * Do not lose the card path simply because GeneratedCard.status changed
+         * from "generated" to "sent".
+         */
+        $card = $this->relationLoaded('latestSuccessfulGeneratedCard')
+            ? $this->latestSuccessfulGeneratedCard
+            : $this->latestSuccessfulGeneratedCard()->first();
+
+        return filled($card?->file_path)
+            ? (string) $card->file_path
+            : null;
     }
 
     public function getGeneratedCardUrlAttribute(): ?string
@@ -679,6 +693,20 @@ class Invitee extends Model
 
         if (blank($path)) {
             return null;
+        }
+
+        $path = trim((string) $path);
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+
+        $path = ltrim($path, '/');
+
+        foreach (['storage/', 'public/'] as $prefix) {
+            if (str_starts_with($path, $prefix)) {
+                $path = substr($path, strlen($prefix));
+            }
         }
 
         return Storage::disk('public')->url($path);
@@ -695,8 +723,12 @@ class Invitee extends Model
         }
 
         return $this->generatedCards()
-            ->where('status', 'generated')
+            ->whereIn('status', [
+                GeneratedCard::STATUS_GENERATED,
+                GeneratedCard::STATUS_SENT,
+            ])
             ->whereNotNull('file_path')
+            ->where('file_path', '!=', '')
             ->exists();
     }
 
@@ -710,8 +742,12 @@ class Invitee extends Model
             })
             ->whereDoesntHave('generatedCards', function ($query) {
                 $query
-                    ->where('status', 'generated')
-                    ->whereNotNull('file_path');
+                    ->whereIn('status', [
+                        GeneratedCard::STATUS_GENERATED,
+                        GeneratedCard::STATUS_SENT,
+                    ])
+                    ->whereNotNull('file_path')
+                    ->where('file_path', '!=', '');
             });
     }
 
