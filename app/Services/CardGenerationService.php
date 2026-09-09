@@ -363,17 +363,11 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Scale designer font size to the real source-image canvas
+        | Designer settings are the source of truth
         |--------------------------------------------------------------------------
-        | Placeholder geometry is stored as percentages and therefore already
-        | scales correctly on the real image. Font size is stored in pixels on the
-        | designer canvas, so it must be scaled from the stored template width to
-        | the actual uploaded image width. The designer preview itself scales from
-        | this width, so width is the correct reference axis for CSS-like font size.
-        |
-        | Example for the current event:
-        | 1080 designer width -> 3500 real image width
-        | scale = 3500 / 1080 ~= 3.241
+        | x/y/width/height are percentage-based and therefore already scale to the
+        | real source image. font_size is authored on the designer canvas and must
+        | be scaled to the source-image canvas using the same designer width.
         */
         $fontScale = $this->resolveFontScale(
             template: $template,
@@ -394,16 +388,22 @@ class CardGenerationService
             $placeholder->font_color ?: CardTemplatePlaceholder::DEFAULT_FONT_COLOR
         );
 
-        $fontWeight = $placeholder->font_weight ?: 'normal';
+        $fontWeight = in_array(
+            (string) $placeholder->font_weight,
+            ['normal', 'bold'],
+            true
+        ) ? (string) $placeholder->font_weight : 'normal';
 
         $textAlign = in_array(
-            $placeholder->text_align,
+            (string) $placeholder->text_align,
             ['left', 'center', 'right'],
             true
-        ) ? $placeholder->text_align : 'center';
+        ) ? (string) $placeholder->text_align : 'center';
+
+        $fontFamily = $placeholder->font_family ?: $this->defaultFontFamily();
 
         $fontFile = $this->resolveFontFile(
-            fontFamily: $placeholder->font_family ?: $this->defaultFontFamily(),
+            fontFamily: $fontFamily,
             fontWeight: $fontWeight
         );
 
@@ -413,11 +413,10 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Match designer behaviour for single-line fields
+        | Match designer line behavior
         |--------------------------------------------------------------------------
-        | Name, card type, serial, table, category and guest-count placeholders
-        | remain on one line. Only shrink if the actual value is wider than the
-        | exact designer box.
+        | Single-line fields stay on one line and shrink only when width truly
+        | overflows. Multi-line fields wrap inside the exact saved box.
         */
         if ($this->isSingleLineTextPlaceholder($placeholderKey)) {
             $fontSize = $this->fitSingleLineFontSize(
@@ -438,33 +437,83 @@ class CardGenerationService
             );
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Match browser designer line-height
-        |--------------------------------------------------------------------------
-        | placeholderStyle() uses lineHeight: 1.1, so generation must use the same
-        | multiplier to keep vertical placement as close as possible.
-        */
         $lineHeight = max(
             10,
             (int) round($fontSize * 1.10)
         );
 
-        $textBlockHeight = max(
-            $lineHeight,
-            count($lines) * $lineHeight
-        );
-
         /*
         |--------------------------------------------------------------------------
-        | Same vertical alignment as designer
+        | Font-metric-aware vertical centering
         |--------------------------------------------------------------------------
-        | The preview centers the text inside the draggable placeholder rectangle.
+        | Use the real FreeType glyph metrics for one-line designer fields so the
+        | output matches the browser preview more closely.
         */
-        $startY = $y + max(
-            0,
-            (int) round(($boxHeight - $textBlockHeight) / 2)
-        );
+        if (
+            count($lines) === 1
+            && $fontFile
+            && file_exists($fontFile)
+            && function_exists('imagettfbbox')
+        ) {
+            $bbox = imagettfbbox(
+                $fontSize,
+                0,
+                $fontFile,
+                $lines[0]
+            );
+
+            if (is_array($bbox)) {
+                $glyphTop = min(
+                    (int) $bbox[1],
+                    (int) $bbox[3],
+                    (int) $bbox[5],
+                    (int) $bbox[7],
+                );
+
+                $glyphBottom = max(
+                    (int) $bbox[1],
+                    (int) $bbox[3],
+                    (int) $bbox[5],
+                    (int) $bbox[7],
+                );
+
+                $actualTextHeight = max(
+                    1,
+                    $glyphBottom - $glyphTop
+                );
+
+                $startY = $y + max(
+                    0,
+                    (int) round(
+                        ($boxHeight - $actualTextHeight) / 2
+                    )
+                );
+            } else {
+                $textBlockHeight = max(
+                    $lineHeight,
+                    count($lines) * $lineHeight
+                );
+
+                $startY = $y + max(
+                    0,
+                    (int) round(
+                        ($boxHeight - $textBlockHeight) / 2
+                    )
+                );
+            }
+        } else {
+            $textBlockHeight = max(
+                $lineHeight,
+                count($lines) * $lineHeight
+            );
+
+            $startY = $y + max(
+                0,
+                (int) round(
+                    ($boxHeight - $textBlockHeight) / 2
+                )
+            );
+        }
 
         foreach ($lines as $index => $line) {
             $lineY = $startY + ($index * $lineHeight);
@@ -522,17 +571,30 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Exact designer QR geometry
+        | Designer geometry is the source of truth
         |--------------------------------------------------------------------------
-        | The placeholder rectangle is the source of truth for the visible QR.
-        | The generated QR fills the largest square that fits inside that
-        | rectangle. qr_size is not allowed to shrink the visible QR.
+        | width_percent / height_percent define the visible square on the card.
+        | qr_size controls output raster quality only; it must not silently alter
+        | the visible placement selected in the designer.
         */
         $visibleQrSize = max(
             1,
             min(
                 $boxWidth,
                 $boxHeight
+            )
+        );
+
+        $savedQrOutputSize = max(
+            CardTemplatePlaceholder::MIN_QR_SIZE,
+            (int) ($placeholder->qr_size ?: CardTemplatePlaceholder::DEFAULT_QR_SIZE)
+        );
+
+        $qrRasterSize = min(
+            CardTemplatePlaceholder::MAX_QR_SIZE,
+            max(
+                $savedQrOutputSize,
+                $visibleQrSize
             )
         );
 
@@ -573,13 +635,11 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Match the designer preview for default QR colors
+        | Exact designer color handling
         |--------------------------------------------------------------------------
-        | The browser designer displays the stored QR image itself. For normal
-        | black/white QR codes, use that same source image and resize it directly.
-        | This preserves the original quiet zone and visual proportions.
-        |
-        | Custom colors still use the recoloring pipeline below.
+        | When custom QR colors/background are saved, rebuild the QR with exactly
+        | those colors. For default black/white, preserve the original QR source
+        | image so the preview and output share the same module/quiet-zone shape.
         */
         $usesDefaultColors =
             strtoupper($qrColor) === strtoupper(CardTemplatePlaceholder::DEFAULT_QR_COLOR)
@@ -588,14 +648,6 @@ class CardGenerationService
         if ($usesDefaultColors) {
             $qrImage = $manager->read($qrFullPath);
         } else {
-            $qrRasterSize = min(
-                CardTemplatePlaceholder::MAX_QR_SIZE,
-                max(
-                    CardTemplatePlaceholder::MIN_QR_SIZE,
-                    $visibleQrSize
-                )
-            );
-
             $qrBinary = $this->buildColoredQrPng(
                 sourcePath: $qrFullPath,
                 size: $qrRasterSize,
@@ -616,11 +668,6 @@ class CardGenerationService
             );
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Center inside the exact saved placeholder rectangle
-        |--------------------------------------------------------------------------
-        */
         $placeX = $x + (int) round(($boxWidth - $visibleQrSize) / 2);
         $placeY = $y + (int) round(($boxHeight - $visibleQrSize) / 2);
 
@@ -1174,11 +1221,31 @@ class CardGenerationService
             $box = imagettfbbox($fontSize, 0, $fontFile, $text);
 
             if (is_array($box)) {
-                return abs((int) $box[2] - (int) $box[0]);
+                $left = min(
+                    (int) $box[0],
+                    (int) $box[2],
+                    (int) $box[4],
+                    (int) $box[6],
+                );
+
+                $right = max(
+                    (int) $box[0],
+                    (int) $box[2],
+                    (int) $box[4],
+                    (int) $box[6],
+                );
+
+                return max(
+                    1,
+                    $right - $left
+                );
             }
         }
 
-        $averageCharWidth = max(5, (int) round($fontSize * 0.55));
+        $averageCharWidth = max(
+            5,
+            (int) round($fontSize * 0.55)
+        );
 
         return mb_strlen($text) * $averageCharWidth;
     }
