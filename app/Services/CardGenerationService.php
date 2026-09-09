@@ -135,7 +135,8 @@ class CardGenerationService
                         placeholder: $placeholder,
                         manager: $manager,
                         imageWidth: $imageWidth,
-                        imageHeight: $imageHeight
+                        imageHeight: $imageHeight,
+                        template: $template
                     );
 
                     continue;
@@ -337,7 +338,8 @@ class CardGenerationService
         string $text,
         CardTemplatePlaceholder $placeholder,
         int $imageWidth,
-        int $imageHeight
+        int $imageHeight,
+        CardTemplate $template
     ): void {
         $text = trim($text);
 
@@ -357,15 +359,30 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Designer is the source of truth
+        | Scale designer font size to the real source-image canvas
         |--------------------------------------------------------------------------
-        | font_size is used exactly as stored by the card designer.
-        | We do not apply an additional canvas scale because that creates a second,
-        | independent layout system and makes generated cards differ from preview.
+        | Placeholder geometry is stored as percentages and therefore already
+        | scales correctly on the real image. Font size is stored in pixels on the
+        | designer canvas, so it must be scaled from the stored template height to
+        | the actual uploaded image height.
+        |
+        | Example for the current event:
+        | 1920 designer height -> 4749 real image height
+        | scale = 4749 / 1920 ~= 2.473
         */
-        $fontSize = max(
+        $fontScale = $this->resolveFontScale(
+            template: $template,
+            imageHeight: $imageHeight,
+        );
+
+        $savedFontSize = max(
             8,
             (int) ($placeholder->font_size ?: CardTemplatePlaceholder::DEFAULT_FONT_SIZE)
+        );
+
+        $fontSize = max(
+            8,
+            (int) round($savedFontSize * $fontScale)
         );
 
         $fontColor = $this->normalizeHexColor(
@@ -832,6 +849,11 @@ class CardGenerationService
             $values['generated_at'] = now();
         }
 
+        /*
+         * Some existing installations do not have generated_cards.error_message.
+         * Only write it when the column exists so generation never fails because
+         * of schema differences.
+         */
         if ($error && Schema::hasColumn('generated_cards', 'error_message')) {
             $values['error_message'] = Str::limit($error, 1000);
         }
@@ -1053,6 +1075,22 @@ class CardGenerationService
         ]);
 
         return null;
+    }
+
+    protected function resolveFontScale(
+        CardTemplate $template,
+        int $imageHeight,
+    ): float {
+        $designerHeight = (float) ($template->height ?? 0);
+
+        if ($designerHeight <= 0) {
+            return 1.0;
+        }
+
+        return max(
+            0.1,
+            $imageHeight / $designerHeight
+        );
     }
 
     protected function isSingleLineTextPlaceholder(string $placeholderKey): bool
