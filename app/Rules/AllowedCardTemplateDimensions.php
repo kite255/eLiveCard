@@ -2,7 +2,6 @@
 
 namespace App\Rules;
 
-use App\Models\CardTemplate;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Http\UploadedFile;
@@ -12,12 +11,18 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class AllowedCardTemplateDimensions implements ValidationRule
 {
+    public const MIN_WIDTH = 595;
+    public const MIN_HEIGHT = 595;
+    public const MAX_WIDTH = 4000;
+    public const MAX_HEIGHT = 4000;
+
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         $path = $this->resolvePath($value);
 
         if (! $path || ! is_file($path)) {
             $fail('The uploaded card template could not be read.');
+
             return;
         }
 
@@ -25,14 +30,23 @@ class AllowedCardTemplateDimensions implements ValidationRule
 
         if (! is_array($size) || ! isset($size[0], $size[1])) {
             $fail('The uploaded file is not a valid image.');
+
             return;
         }
 
         $width = (int) $size[0];
         $height = (int) $size[1];
 
-        if (! CardTemplate::hasAllowedDimensions($width, $height)) {
-            $fail('The card template must be either 1080 × 1350 px or 595 × 842 px.');
+        if (
+            $width < self::MIN_WIDTH
+            || $height < self::MIN_HEIGHT
+            || $width > self::MAX_WIDTH
+            || $height > self::MAX_HEIGHT
+        ) {
+            $fail(
+                'The card template must be between 595 × 595 px and 4000 × 4000 px. '
+                . "Uploaded image is {$width} × {$height}px."
+            );
         }
     }
 
