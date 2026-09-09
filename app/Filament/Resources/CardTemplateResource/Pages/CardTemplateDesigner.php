@@ -427,7 +427,7 @@ class CardTemplateDesigner extends Page
                     'width_percent' => $widthPercent,
                     'height_percent' => $heightPercent,
 
-                    'font_size' => max(8, min(120, (int) ($placeholder['font_size'] ?? 16))),
+                    'font_size' => max(8, min(240, (int) ($placeholder['font_size'] ?? 16))),
                     'font_family' => $fontFamily,
                     'font_color' => $placeholder['font_color'] ?? '#000000',
                     'font_weight' => $placeholder['font_weight'] ?? 'normal',
@@ -468,7 +468,7 @@ class CardTemplateDesigner extends Page
         if (! CardTemplate::hasAllowedDimensions($width, $height)) {
             Notification::make()
                 ->title('Unsupported template dimensions')
-                ->body('Replace this template with either 1080 × 1350 px or 595 × 842 px before designing.')
+                ->body('This template is outside the supported quality range of 595 × 595 px to 4000 × 4000 px.')
                 ->danger()
                 ->persistent()
                 ->send();

@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class CardTemplate extends Model
@@ -16,18 +15,22 @@ class CardTemplate extends Model
     public const STATUS_ACTIVE = 'active';
     public const STATUS_ARCHIVED = 'archived';
 
-    public const SIZE_SOCIAL_WIDTH = 1080;
-    public const SIZE_SOCIAL_HEIGHT = 1350;
-
-    public const SIZE_A5_WIDTH = 595;
-    public const SIZE_A5_HEIGHT = 842;
+    /**
+     * Supported template quality limits.
+     *
+     * The system preserves the exact uploaded dimensions and aspect ratio.
+     */
+    public const MIN_TEMPLATE_WIDTH = 595;
+    public const MIN_TEMPLATE_HEIGHT = 595;
+    public const MAX_TEMPLATE_WIDTH = 4000;
+    public const MAX_TEMPLATE_HEIGHT = 4000;
 
     /**
-     * Backward-compatible default designer reference.
-     * New templates use their actual uploaded dimensions as the designer canvas.
+     * Fallback only for legacy records that do not have readable dimensions.
+     * New templates always use their actual uploaded size.
      */
-    public const DESIGNER_REFERENCE_WIDTH = self::SIZE_SOCIAL_WIDTH;
-    public const DESIGNER_REFERENCE_HEIGHT = self::SIZE_SOCIAL_HEIGHT;
+    public const DESIGNER_REFERENCE_WIDTH = 1080;
+    public const DESIGNER_REFERENCE_HEIGHT = 1350;
 
     protected $fillable = [
         'event_id',
@@ -100,11 +103,17 @@ class CardTemplate extends Model
             }
 
             if (! self::hasAllowedDimensions($sourceWidth, $sourceHeight)) {
-                throw ValidationException::withMessages([
-                    'template_image' => 'The card template must be either 1080 × 1350 px or 595 × 842 px.',
-                ]);
+                return;
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | Preserve the real upload canvas
+            |--------------------------------------------------------------------------
+            | width/height and source_width/source_height intentionally remain the
+            | exact uploaded dimensions. The designer and generator use this same
+            | canvas, so percentage-based placeholders remain aligned.
+            */
             $cardTemplate->source_width = $sourceWidth;
             $cardTemplate->source_height = $sourceHeight;
             $cardTemplate->width = $sourceWidth;
@@ -112,28 +121,23 @@ class CardTemplate extends Model
         });
     }
 
-    public static function allowedDimensions(): array
-    {
-        return [
-            ['width' => self::SIZE_SOCIAL_WIDTH, 'height' => self::SIZE_SOCIAL_HEIGHT, 'label' => 'Social Media 1080 × 1350'],
-            ['width' => self::SIZE_A5_WIDTH, 'height' => self::SIZE_A5_HEIGHT, 'label' => 'A5 Digital 595 × 842'],
-        ];
-    }
-
     public static function hasAllowedDimensions(int $width, int $height): bool
     {
-        foreach (self::allowedDimensions() as $size) {
-            if ($width === $size['width'] && $height === $size['height']) {
-                return true;
-            }
-        }
-
-        return false;
+        return $width >= self::MIN_TEMPLATE_WIDTH
+            && $height >= self::MIN_TEMPLATE_HEIGHT
+            && $width <= self::MAX_TEMPLATE_WIDTH
+            && $height <= self::MAX_TEMPLATE_HEIGHT;
     }
 
     public static function allowedDimensionsText(): string
     {
-        return '1080 × 1350 px or 595 × 842 px';
+        return sprintf(
+            '%d–%d px wide and %d–%d px high',
+            self::MIN_TEMPLATE_WIDTH,
+            self::MAX_TEMPLATE_WIDTH,
+            self::MIN_TEMPLATE_HEIGHT,
+            self::MAX_TEMPLATE_HEIGHT,
+        );
     }
 
     public static function statuses(): array

@@ -336,7 +336,7 @@
 
                 <div class="designer-note">
                     Drag placeholders, resize using the corner handle, or use direction buttons for precise movement.
-                    The canvas uses the exact uploaded template size. Placeholder percentages, fonts, and QR settings are saved against this canvas and used unchanged during card generation.
+                    The canvas uses the exact uploaded template size and aspect ratio. Placeholder percentages, fonts, and QR settings are saved against this canvas and used unchanged during card generation.
                 </div>
             </div>
 
@@ -441,7 +441,7 @@
                         <template x-if="! isQr(current)">
                             <label>
                                 Font Size
-                                <input type="number" min="8" max="120" x-model.number="current.font_size">
+                                <input type="number" min="8" max="240" x-model.number="current.font_size">
                             </label>
                         </template>
 

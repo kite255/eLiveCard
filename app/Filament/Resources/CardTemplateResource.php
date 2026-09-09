@@ -224,7 +224,7 @@ class CardTemplateResource extends Resource
                     ->columns(3),
 
                 Forms\Components\Section::make('Template Image')
-                    ->description('Only 1080 × 1350 px or 595 × 842 px templates are accepted. The designer keeps the exact uploaded size.')
+                    ->description('Upload a high-quality card image. The system preserves its exact dimensions and aspect ratio.')
                     ->icon('heroicon-o-cloud-arrow-up')
                     ->schema([
                         Forms\Components\FileUpload::make('template_image')
@@ -250,7 +250,7 @@ class CardTemplateResource extends Resource
                             ->required()
                             ->columnSpanFull()
                             ->helperText(
-                                'Allowed sizes only: 1080 × 1350 px or 595 × 842 px. PNG, JPG, or WEBP.'
+                                'Minimum 595 × 595 px, maximum 4000 × 4000 px. PNG, JPG, or WEBP. Original dimensions are preserved.'
                             ),
 
                         Forms\Components\Placeholder::make('automatic_dimensions')
@@ -403,7 +403,7 @@ class CardTemplateResource extends Resource
                         if (! CardTemplate::hasAllowedDimensions($sourceWidth, $sourceHeight)) {
                             Notification::make()
                                 ->title('Unsupported template size')
-                                ->body('Allowed sizes are 1080 × 1350 px or 595 × 842 px.')
+                                ->body('Template must be between 595 × 595 px and 4000 × 4000 px.')
                                 ->danger()
                                 ->send();
 

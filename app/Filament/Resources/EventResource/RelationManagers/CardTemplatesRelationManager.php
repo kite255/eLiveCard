@@ -107,7 +107,7 @@ class CardTemplatesRelationManager extends RelationManager
                             ->rules([
                                 new AllowedCardTemplateDimensions(),
                             ])
-                            ->maxSize(1536)
+                            ->maxSize(5120)
                             ->maxFiles(1)
                             ->imagePreviewHeight('320')
                             ->panelLayout('compact')
@@ -115,7 +115,7 @@ class CardTemplatesRelationManager extends RelationManager
                             ->uploadButtonPosition('center')
                             ->uploadProgressIndicatorPosition('center')
                             ->removeUploadedFileButtonPosition('right')
-                            ->helperText('Allowed sizes only: 1080 × 1350 px or 595 × 842 px. JPG, PNG, or WEBP. Maximum size: 1.5 MB.')
+                            ->helperText('Minimum 595 × 595 px, maximum 4000 × 4000 px. JPG, PNG, or WEBP. Original ratio is preserved. Maximum file size: 5 MB.')
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('width')
@@ -231,7 +231,7 @@ class CardTemplatesRelationManager extends RelationManager
                     ->label('Upload Template')
                     ->icon('heroicon-o-arrow-up-tray')
                     ->modalHeading('Upload Card Template')
-                    ->modalDescription('Upload a card template at exactly 1080 × 1350 px or 595 × 842 px.')
+                    ->modalDescription('Upload a high-quality card template. Its original dimensions and aspect ratio will be preserved.')
                     ->modalWidth('4xl')
                     ->modalSubmitActionLabel('Upload Template')
                     ->visible(fn (): bool => $this->canManageCardTemplates())
@@ -265,7 +265,7 @@ class CardTemplatesRelationManager extends RelationManager
 
                         EliveNotification::success(
                             title: 'Template uploaded successfully',
-                            body: "Template size: {$record->width} × {$record->height}px. Upload completed successfully and the template is ready for placeholder design.",
+                            body: "Template size: {$record->width} × {$record->height}px. Original dimensions were preserved and the template is ready for placeholder design.",
                             context: $record,
                             persistent: true,
                             actionLabel: 'Design Placeholders',
@@ -821,7 +821,7 @@ class CardTemplatesRelationManager extends RelationManager
 
         if (! CardTemplate::hasAllowedDimensions($width, $height)) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'template_image' => 'The card template must be either 1080 × 1350 px or 595 × 842 px.',
+                'template_image' => 'The card template must be between 595 × 595 px and 4000 × 4000 px.',
             ]);
         }
 

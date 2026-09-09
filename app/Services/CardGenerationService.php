@@ -74,7 +74,7 @@ class CardGenerationService
 
     public function generate(CardTemplate $template, Invitee $invitee): GeneratedCard
     {
-        ini_set('memory_limit', '768M');
+        ini_set('memory_limit', '1024M');
         set_time_limit(120);
 
         $template->loadMissing(['event', 'placeholders']);
@@ -103,7 +103,7 @@ class CardGenerationService
             |--------------------------------------------------------------------------
             | Generate on the exact uploaded template canvas
             |--------------------------------------------------------------------------
-            | Supported templates are 1080 × 1350 or 595 × 842. The designer uses
+            | Any template inside the supported quality range is rendered at its exact original size. The designer uses
             | the same width/height, so percentage geometry and saved font sizes
             | remain stable with no independent canvas conversion.
             */
