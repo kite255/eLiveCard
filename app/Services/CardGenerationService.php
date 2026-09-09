@@ -25,6 +25,14 @@ class CardGenerationService
      */
     protected int $jpegQuality = 95;
 
+    /**
+     * Controlled QR quiet zone around the actual QR modules.
+     *
+     * 10% on each side keeps the QR reliably scannable while avoiding the large
+     * inherited white margin that may already exist in stored invitee QR images.
+     */
+    protected float $qrQuietZoneRatio = 0.10;
+
     public function generateForInvitee(Invitee $invitee): GeneratedCard
     {
         $invitee->loadMissing(['event', 'cardType']);
@@ -641,6 +649,14 @@ class CardGenerationService
     /**
      * Build a sharp, recolored QR PNG from the existing secure QR image.
      */
+    /**
+     * Build a sharp, recolored QR PNG from the existing secure QR image.
+     *
+     * The source QR may already contain a large white border. We detect the real
+     * dark-module bounds first, remove that inherited whitespace, then add one
+     * controlled quiet zone. This keeps the generated QR visually consistent with
+     * the designer while preserving a safe scanning margin.
+     */
     protected function buildColoredQrPng(
         string $sourcePath,
         int $size,
@@ -672,10 +688,48 @@ class CardGenerationService
         $sourceWidth = imagesx($source);
         $sourceHeight = imagesy($source);
 
-        $size = max(1, min(
-            $size,
-            CardTemplatePlaceholder::MAX_QR_SIZE
-        ));
+        $size = max(
+            1,
+            min(
+                $size,
+                CardTemplatePlaceholder::MAX_QR_SIZE
+            )
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Detect the real QR-module bounds
+        |--------------------------------------------------------------------------
+        | Stored QR files may contain their own large white border. We crop only
+        | the surrounding whitespace, never the actual dark modules.
+        */
+        [$cropLeft, $cropTop, $cropRight, $cropBottom] =
+            $this->detectQrForegroundBounds(
+                source: $source,
+                sourceWidth: $sourceWidth,
+                sourceHeight: $sourceHeight,
+            );
+
+        $cropWidth = max(1, $cropRight - $cropLeft + 1);
+        $cropHeight = max(1, $cropBottom - $cropTop + 1);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Controlled quiet zone
+        |--------------------------------------------------------------------------
+        | The designer placeholder is the complete visible QR square. We reserve
+        | a predictable quiet zone inside that square instead of inheriting an
+        | unknown amount of whitespace from the source QR file.
+        */
+        $quietZone = max(
+            2,
+            (int) round($size * $this->qrQuietZoneRatio)
+        );
+
+        $innerSize = max(
+            1,
+            $size - ($quietZone * 2)
+        );
 
         $target = imagecreatetruecolor($size, $size);
 
@@ -713,39 +767,30 @@ class CardGenerationService
         |--------------------------------------------------------------------------
         | Nearest-neighbour QR mapping
         |--------------------------------------------------------------------------
-        | A luminance threshold identifies dark modules. Direct nearest-neighbour
-        | mapping preserves hard QR edges better than normal image resampling.
+        | Only the detected QR-module area is mapped into the inner square.
+        | Nearest-neighbour sampling keeps module edges crisp.
         */
-        for ($targetY = 0; $targetY < $size; $targetY++) {
+        for ($targetY = 0; $targetY < $innerSize; $targetY++) {
             $sourceY = min(
-                $sourceHeight - 1,
-                (int) floor(($targetY / $size) * $sourceHeight)
+                $cropBottom,
+                $cropTop + (int) floor(($targetY / $innerSize) * $cropHeight)
             );
 
-            for ($targetX = 0; $targetX < $size; $targetX++) {
+            for ($targetX = 0; $targetX < $innerSize; $targetX++) {
                 $sourceX = min(
-                    $sourceWidth - 1,
-                    (int) floor(($targetX / $size) * $sourceWidth)
+                    $cropRight,
+                    $cropLeft + (int) floor(($targetX / $innerSize) * $cropWidth)
                 );
 
-                $rgba = imagecolorat($source, $sourceX, $sourceY);
-
-                $alpha = ($rgba & 0x7F000000) >> 24;
-                $red = ($rgba >> 16) & 0xFF;
-                $green = ($rgba >> 8) & 0xFF;
-                $blue = $rgba & 0xFF;
-
-                $luminance = (0.2126 * $red)
-                    + (0.7152 * $green)
-                    + (0.0722 * $blue);
-
-                $isForeground = $alpha < 120 && $luminance < 160;
+                if (! $this->isQrForegroundPixel($source, $sourceX, $sourceY)) {
+                    continue;
+                }
 
                 imagesetpixel(
                     $target,
-                    $targetX,
-                    $targetY,
-                    $isForeground ? $foreground : $background
+                    $quietZone + $targetX,
+                    $quietZone + $targetY,
+                    $foreground
                 );
             }
         }
@@ -764,6 +809,77 @@ class CardGenerationService
         }
 
         return $png;
+    }
+
+    /**
+     * Find the bounding rectangle containing all dark QR modules.
+     *
+     * @return array{0:int,1:int,2:int,3:int}
+     */
+    protected function detectQrForegroundBounds(
+        $source,
+        int $sourceWidth,
+        int $sourceHeight,
+    ): array {
+        $left = $sourceWidth;
+        $top = $sourceHeight;
+        $right = -1;
+        $bottom = -1;
+
+        for ($y = 0; $y < $sourceHeight; $y++) {
+            for ($x = 0; $x < $sourceWidth; $x++) {
+                if (! $this->isQrForegroundPixel($source, $x, $y)) {
+                    continue;
+                }
+
+                $left = min($left, $x);
+                $top = min($top, $y);
+                $right = max($right, $x);
+                $bottom = max($bottom, $y);
+            }
+        }
+
+        /*
+        | If foreground detection fails for an unexpected source format, preserve
+        | the whole source image rather than generating a broken QR.
+        */
+        if ($right < $left || $bottom < $top) {
+            return [
+                0,
+                0,
+                max(0, $sourceWidth - 1),
+                max(0, $sourceHeight - 1),
+            ];
+        }
+
+        return [
+            $left,
+            $top,
+            $right,
+            $bottom,
+        ];
+    }
+
+    /**
+     * Determine whether one source pixel belongs to a dark QR module.
+     */
+    protected function isQrForegroundPixel(
+        $source,
+        int $x,
+        int $y,
+    ): bool {
+        $rgba = imagecolorat($source, $x, $y);
+
+        $alpha = ($rgba & 0x7F000000) >> 24;
+        $red = ($rgba >> 16) & 0xFF;
+        $green = ($rgba >> 8) & 0xFF;
+        $blue = $rgba & 0xFF;
+
+        $luminance = (0.2126 * $red)
+            + (0.7152 * $green)
+            + (0.0722 * $blue);
+
+        return $alpha < 120 && $luminance < 160;
     }
 
     /**
