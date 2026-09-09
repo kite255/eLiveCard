@@ -100,43 +100,78 @@ class CardGenerationService
 
             /*
             |--------------------------------------------------------------------------
-            | Generate on the original source image
+            | One canvas for both designer and generator
             |--------------------------------------------------------------------------
-            | The designer uses the same aspect ratio as this source image and stores
-            | placeholder geometry as percentages. Therefore X/Y/width/height can be
-            | applied directly to the original high-resolution image without resizing.
+            | This is the key WYSIWYG rule:
+            |
+            | 1. Read the original source card.
+            | 2. Resize it to the exact designer canvas.
+            | 3. Render ALL placeholders on that designer canvas using the values
+            |    saved by the designer (font_size, QR box, colors, alignment, etc).
+            | 4. Resize the completed card back to the original source resolution.
+            |
+            | This prevents mixed scaling where percentages use the source image
+            | while font_size / qr_size use a different browser canvas.
             */
-            $imageWidth = $image->width();
-            $imageHeight = $image->height();
+            $sourceWidth = $image->width();
+            $sourceHeight = $image->height();
+
+            [$designerWidth, $designerHeight] = $this->resolveDesignerCanvas(
+                template: $template,
+                sourceWidth: $sourceWidth,
+                sourceHeight: $sourceHeight,
+            );
+
+            if (
+                $image->width() !== $designerWidth
+                || $image->height() !== $designerHeight
+            ) {
+                $image->resize(
+                    $designerWidth,
+                    $designerHeight
+                );
+            }
+
+            $imageWidth = $designerWidth;
+            $imageHeight = $designerHeight;
 
             /*
             |--------------------------------------------------------------------------
-            | Keep persisted source dimensions accurate
+            | Keep persisted dimensions accurate
             |--------------------------------------------------------------------------
-            | This also upgrades older templates the first time they are generated.
             */
+            $dimensionUpdates = [];
+
             if (
                 Schema::hasColumn('card_templates', 'source_width')
-                && Schema::hasColumn('card_templates', 'source_height')
-                && (
-                    (int) $template->source_width !== (int) $imageWidth
-                    || (int) $template->source_height !== (int) $imageHeight
-                )
+                && (int) $template->source_width !== (int) $sourceWidth
             ) {
-                /*
-                 * Only synchronize the real source-image dimensions.
-                 *
-                 * Do not overwrite width / height here. Those values may represent
-                 * the actual browser designer canvas used when font_size and qr_size
-                 * were authored. Replacing them during generation destroys the scale
-                 * reference and makes generated text/QR differ from the preview.
-                 */
-                $updates = [
-                    'source_width' => $imageWidth,
-                    'source_height' => $imageHeight,
-                ];
+                $dimensionUpdates['source_width'] = $sourceWidth;
+            }
 
-                $template->forceFill($updates)->saveQuietly();
+            if (
+                Schema::hasColumn('card_templates', 'source_height')
+                && (int) $template->source_height !== (int) $sourceHeight
+            ) {
+                $dimensionUpdates['source_height'] = $sourceHeight;
+            }
+
+            if (
+                Schema::hasColumn('card_templates', 'width')
+                && (int) ($template->width ?? 0) <= 0
+            ) {
+                $dimensionUpdates['width'] = $designerWidth;
+            }
+
+            if (
+                Schema::hasColumn('card_templates', 'height')
+                && (int) ($template->height ?? 0) <= 0
+            ) {
+                $dimensionUpdates['height'] = $designerHeight;
+            }
+
+            if (! empty($dimensionUpdates)) {
+                $template->forceFill($dimensionUpdates)->saveQuietly();
                 $template->refresh();
             }
 
@@ -175,6 +210,24 @@ class CardGenerationService
                         template: $template
                     );
                 }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Export at the original source resolution
+            |--------------------------------------------------------------------------
+            | All visual elements have already been composed on the same designer
+            | canvas, so resizing the completed image scales text, QR, positions,
+            | spacing, and colors together.
+            */
+            if (
+                $image->width() !== $sourceWidth
+                || $image->height() !== $sourceHeight
+            ) {
+                $image->resize(
+                    $sourceWidth,
+                    $sourceHeight
+                );
             }
 
             $path = $this->buildGeneratedCardPath($template, $invitee);
@@ -363,25 +416,15 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Designer settings are the source of truth
+        | Exact designer font size
         |--------------------------------------------------------------------------
-        | x/y/width/height are percentage-based and therefore already scale to the
-        | real source image. font_size is authored on the designer canvas and must
-        | be scaled to the source-image canvas using the same designer width.
+        | Generation is now performed on the designer canvas itself, therefore the
+        | saved font_size is already in the correct coordinate system. Do not scale
+        | it again here.
         */
-        $fontScale = $this->resolveFontScale(
-            template: $template,
-            imageWidth: $imageWidth,
-        );
-
-        $savedFontSize = max(
-            8,
-            (int) ($placeholder->font_size ?: CardTemplatePlaceholder::DEFAULT_FONT_SIZE)
-        );
-
         $fontSize = max(
             8,
-            (int) round($savedFontSize * $fontScale)
+            (int) ($placeholder->font_size ?: CardTemplatePlaceholder::DEFAULT_FONT_SIZE)
         );
 
         $fontColor = $this->normalizeHexColor(
@@ -1285,83 +1328,128 @@ class CardGenerationService
         return null;
     }
 
+    /**
+     * Resolve the exact logical canvas used by the browser card designer.
+     *
+     * The designer width/height stored on the template are preferred. If a legacy
+     * template does not have them, fall back to the application's reference width
+     * and preserve the source-image aspect ratio.
+     *
+     * @return array{0:int,1:int}
+     */
+    protected function resolveDesignerCanvas(
+        CardTemplate $template,
+        int $sourceWidth,
+        int $sourceHeight,
+    ): array {
+        $designerWidth = 0;
+        $designerHeight = 0;
+
+        if (
+            isset($template->designer_width)
+            && (int) $template->designer_width > 0
+        ) {
+            $designerWidth = (int) $template->designer_width;
+        }
+
+        if (
+            isset($template->designer_height)
+            && (int) $template->designer_height > 0
+        ) {
+            $designerHeight = (int) $template->designer_height;
+        }
+
+        if (
+            $designerWidth <= 0
+            && isset($template->width)
+            && (int) $template->width > 0
+        ) {
+            $designerWidth = (int) $template->width;
+        }
+
+        if (
+            $designerHeight <= 0
+            && isset($template->height)
+            && (int) $template->height > 0
+        ) {
+            $designerHeight = (int) $template->height;
+        }
+
+        if ($designerWidth <= 0) {
+            $designerWidth = defined(CardTemplate::class . '::DESIGNER_REFERENCE_WIDTH')
+                ? max(1, (int) CardTemplate::DESIGNER_REFERENCE_WIDTH)
+                : 500;
+        }
+
+        /*
+         * If a legacy width accidentally equals the full source width, prefer the
+         * logical designer reference width instead of rendering at source size.
+         */
+        if (
+            $designerWidth >= $sourceWidth
+            && $sourceWidth > 700
+        ) {
+            $referenceWidth = defined(CardTemplate::class . '::DESIGNER_REFERENCE_WIDTH')
+                ? max(1, (int) CardTemplate::DESIGNER_REFERENCE_WIDTH)
+                : 500;
+
+            if ($referenceWidth < $sourceWidth) {
+                $designerWidth = $referenceWidth;
+                $designerHeight = 0;
+            }
+        }
+
+        if ($designerHeight <= 0) {
+            $designerHeight = max(
+                1,
+                (int) round(
+                    $designerWidth * ($sourceHeight / max(1, $sourceWidth))
+                )
+            );
+        }
+
+        /*
+         * Guard against an old height that no longer matches the source aspect
+         * ratio. The browser designer follows the source image aspect ratio, so
+         * keep the logical canvas consistent with it.
+         */
+        $expectedHeight = max(
+            1,
+            (int) round(
+                $designerWidth * ($sourceHeight / max(1, $sourceWidth))
+            )
+        );
+
+        $heightDifferenceRatio = abs(
+            $designerHeight - $expectedHeight
+        ) / max(1, $expectedHeight);
+
+        if ($heightDifferenceRatio > 0.02) {
+            $designerHeight = $expectedHeight;
+        }
+
+        return [
+            max(1, $designerWidth),
+            max(1, $designerHeight),
+        ];
+    }
+
     protected function resolveFontScale(
         CardTemplate $template,
         int $imageWidth,
     ): float {
         /*
-        |--------------------------------------------------------------------------
-        | Preserve the designer's real pixel scale
-        |--------------------------------------------------------------------------
-        | Placeholder geometry is percentage-based, but font_size and qr_size are
-        | pixel values authored in the browser designer. Generation must scale
-        | those pixel values from the designer canvas to the real source image.
-        */
-        $candidates = [];
-
-        if (isset($template->designer_width) && (int) $template->designer_width > 0) {
-            $candidates[] = (int) $template->designer_width;
-        }
-
-        if (isset($template->width) && (int) $template->width > 0) {
-            $candidates[] = (int) $template->width;
-        }
-
-        if (defined(CardTemplate::class . '::DESIGNER_REFERENCE_WIDTH')) {
-            $candidates[] = (int) CardTemplate::DESIGNER_REFERENCE_WIDTH;
-        }
-
-        $designerWidth = collect($candidates)
-            ->filter(fn (int $value): bool => $value > 0)
-            ->first();
-
-        if (! $designerWidth) {
-            $designerWidth = 500;
-        }
-
-        /*
-         * If a legacy record accidentally stores the full source width as the
-         * designer width, use the application's designer reference instead.
+         * Card generation now renders directly on the designer canvas, so callers
+         * operating on that canvas must not apply a second font scale.
          */
-        if ($designerWidth >= $imageWidth && $imageWidth > 700) {
-            $fallback = defined(CardTemplate::class . '::DESIGNER_REFERENCE_WIDTH')
-                ? (int) CardTemplate::DESIGNER_REFERENCE_WIDTH
-                : 500;
-
-            if ($fallback > 0 && $fallback < $imageWidth) {
-                $designerWidth = $fallback;
-            }
-        }
-
-        return max(
-            0.1,
-            $imageWidth / max(1, $designerWidth)
-        );
+        return 1.0;
     }
 
     protected function resolveDesignerScaleFromPlaceholder(
         CardTemplatePlaceholder $placeholder,
         int $imageWidth,
     ): float {
-        $template = $placeholder->relationLoaded('cardTemplate')
-            ? $placeholder->cardTemplate
-            : $placeholder->cardTemplate()->first();
-
-        if ($template instanceof CardTemplate) {
-            return $this->resolveFontScale(
-                template: $template,
-                imageWidth: $imageWidth,
-            );
-        }
-
-        $referenceWidth = defined(CardTemplate::class . '::DESIGNER_REFERENCE_WIDTH')
-            ? (int) CardTemplate::DESIGNER_REFERENCE_WIDTH
-            : 500;
-
-        return max(
-            0.1,
-            $imageWidth / max(1, $referenceWidth)
-        );
+        return 1.0;
     }
 
     protected function isSingleLineTextPlaceholder(string $placeholderKey): bool
