@@ -18,26 +18,12 @@ use Throwable;
 class CardGenerationService
 {
     /**
-     * Maximum working width/height for generated cards.
-     *
-     * 3200px keeps portrait invitations sharp while still reducing the chance
-     * of GD memory exhaustion for unusually large source images.
-     */
-    protected int $maxWorkingDimension = 3200;
-
-    /**
      * JPEG quality for final generated cards.
      *
      * Quality 95 provides sharp text, logos, and QR edges without the excessive
      * file size normally produced by quality 100.
      */
     protected int $jpegQuality = 95;
-
-    /**
-     * Safe margin used to prevent text and QR placeholders from touching or
-     * extending beyond the visible card edges.
-     */
-    protected float $safeMarginPercent = 3.0;
 
     public function generateForInvitee(Invitee $invitee): GeneratedCard
     {
@@ -135,8 +121,7 @@ class CardGenerationService
                         placeholder: $placeholder,
                         manager: $manager,
                         imageWidth: $imageWidth,
-                        imageHeight: $imageHeight,
-                        template: $template
+                        imageHeight: $imageHeight
                     );
 
                     continue;
@@ -150,7 +135,8 @@ class CardGenerationService
                         text: $value,
                         placeholder: $placeholder,
                         imageWidth: $imageWidth,
-                        imageHeight: $imageHeight
+                        imageHeight: $imageHeight,
+                        template: $template
                     );
                 }
             }
@@ -201,24 +187,6 @@ class CardGenerationService
 
             throw $exception;
         }
-    }
-
-    protected function resizeTemplateIfTooLarge($image): void
-    {
-        $width = $image->width();
-        $height = $image->height();
-        $largestSide = max($width, $height);
-
-        if ($largestSide <= $this->maxWorkingDimension) {
-            return;
-        }
-
-        $ratio = $this->maxWorkingDimension / $largestSide;
-
-        $newWidth = max(1, (int) round($width * $ratio));
-        $newHeight = max(1, (int) round($height * $ratio));
-
-        $image->resize($newWidth, $newHeight);
     }
 
     protected function ensureInviteeIdentity(Invitee $invitee): void
