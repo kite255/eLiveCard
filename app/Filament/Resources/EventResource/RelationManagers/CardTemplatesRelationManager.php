@@ -9,6 +9,7 @@ use App\Rules\AllowedCardTemplateDimensions;
 use App\Support\EliveNotification;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -277,15 +278,24 @@ class CardTemplatesRelationManager extends RelationManager
                             ],
                         );
 
-                        EliveNotification::success(
-                            title: 'Template uploaded successfully',
-                            body: "Template size: {$record->width} × {$record->height}px. Original dimensions were preserved and the template is ready for placeholder design.",
-                            context: $record,
-                            persistent: true,
-                            actionLabel: 'Design Placeholders',
-                            actionUrl: route('card-templates.designer', $record),
-                            openActionInNewTab: true,
-                        );
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Guaranteed Filament success notification
+                        |--------------------------------------------------------------------------
+                        | Use Filament's native notification here because this action runs inside
+                        | a relation-manager modal. This ensures the user receives a visible
+                        | confirmation after the record is successfully created.
+                        */
+                        Notification::make()
+                            ->title('Template uploaded successfully')
+                            ->body(
+                                "Template saved at {$record->width} × {$record->height}px. "
+                                . 'Original dimensions and aspect ratio were preserved. '
+                                . 'The template is ready for placeholder design.'
+                            )
+                            ->success()
+                            ->persistent()
+                            ->send();
                     })
                     ->successNotification(null),
             ])
@@ -347,14 +357,15 @@ class CardTemplatesRelationManager extends RelationManager
                             return $record;
                         })
                         ->after(function (CardTemplate $record): void {
-                            EliveNotification::success(
-                                title: 'Template updated successfully',
-                                body: "The latest template details have been saved. Image size: {$record->width} × {$record->height} pixels.",
-                                context: $record,
-                                actionLabel: 'Design Placeholders',
-                                actionUrl: route('card-templates.designer', $record),
-                                openActionInNewTab: true,
-                            );
+                            Notification::make()
+                                ->title('Template updated successfully')
+                                ->body(
+                                    "Template saved at {$record->width} × {$record->height}px. "
+                                    . 'Original dimensions and aspect ratio were preserved.'
+                                )
+                                ->success()
+                                ->persistent()
+                                ->send();
                         })
                         ->successNotification(null),
 
