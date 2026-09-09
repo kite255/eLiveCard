@@ -115,7 +115,7 @@ class CardTemplatesRelationManager extends RelationManager
                             ->uploadButtonPosition('center')
                             ->uploadProgressIndicatorPosition('center')
                             ->removeUploadedFileButtonPosition('right')
-                            ->helperText('Minimum 595 × 595 px, maximum 4000 × 4000 px. JPG, PNG, or WEBP. Original ratio is preserved. Maximum file size: 5 MB.')
+                            ->helperText('Minimum 595 × 595 px, maximum 6000 × 6000 px, up to 25 MP. JPG, PNG, or WEBP. Original dimensions and aspect ratio are preserved. Maximum file size: 5 MB.')
                             ->columnSpanFull(),
 
                         Forms\Components\TextInput::make('width')
@@ -335,7 +335,7 @@ class CardTemplatesRelationManager extends RelationManager
                         ->after(function (CardTemplate $record): void {
                             EliveNotification::success(
                                 title: 'Template updated successfully',
-                                body: "The latest template details have been saved. Image size: {$record->width} × {$record->height} pixels.",
+                                body: "The template was updated successfully. Original size preserved: {$record->width} × {$record->height}px.",
                                 context: $record,
                                 actionLabel: 'Design Placeholders',
                                 actionUrl: route('card-templates.designer', $record),
@@ -487,7 +487,12 @@ class CardTemplatesRelationManager extends RelationManager
                                         CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
 
                                     'height_percent' =>
-                                        CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
+                                        round(
+                                            CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT
+                                            * ((int) ($record->width ?: 1080))
+                                            / max(1, (int) ($record->height ?: 1350)),
+                                            4
+                                        ),
 
                                     'font_size' =>
                                         CardTemplatePlaceholder::DEFAULT_FONT_SIZE,
@@ -580,7 +585,12 @@ class CardTemplatesRelationManager extends RelationManager
                                         'width_percent' =>
                                             CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT,
                                         'height_percent' =>
-                                            CardTemplatePlaceholder::DEFAULT_QR_HEIGHT_PERCENT,
+                                            round(
+                                                CardTemplatePlaceholder::DEFAULT_QR_WIDTH_PERCENT
+                                                * ((int) ($record->width ?: 1080))
+                                                / max(1, (int) ($record->height ?: 1350)),
+                                                4
+                                            ),
                                         'qr_size' =>
                                             CardTemplatePlaceholder::DEFAULT_QR_SIZE,
                                         'qr_color' =>
@@ -821,7 +831,7 @@ class CardTemplatesRelationManager extends RelationManager
 
         if (! CardTemplate::hasAllowedDimensions($width, $height)) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'template_image' => 'The card template must be between 595 × 595 px and 4000 × 4000 px.',
+                'template_image' => 'The card template must be at least 595 × 595 px, no larger than 6000 × 6000 px, and must not exceed 25 MP.',
             ]);
         }
 

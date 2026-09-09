@@ -445,7 +445,7 @@ class CardTemplateDesigner extends Page
 
         Notification::make()
             ->title('Design saved')
-            ->body("Placeholder positions and styles were saved for the {$this->designerWidth} × {$this->designerHeight}px template.")
+            ->body("Placeholder positions and styles were saved against the exact {$this->designerWidth} × {$this->designerHeight}px template canvas.")
             ->success()
             ->send();
 
@@ -468,7 +468,7 @@ class CardTemplateDesigner extends Page
         if (! CardTemplate::hasAllowedDimensions($width, $height)) {
             Notification::make()
                 ->title('Unsupported template dimensions')
-                ->body('This template is outside the supported quality range of 595 × 595 px to 4000 × 4000 px.')
+                ->body('This template is outside the supported quality range. Use at least 595 × 595 px, no larger than 6000 × 6000 px, and up to 25 MP.')
                 ->danger()
                 ->persistent()
                 ->send();
@@ -523,7 +523,7 @@ class CardTemplateDesigner extends Page
 
         Notification::make()
             ->title('Designer reset')
-            ->body('Placeholder positions have been reset to default.')
+            ->body('Placeholder positions have been reset to defaults for this template canvas.')
             ->warning()
             ->send();
     }
@@ -534,7 +534,7 @@ class CardTemplateDesigner extends Page
 
         Notification::make()
             ->title('Preview opened')
-            ->body('Preview uses sample invitee data and an actual generated QR code.')
+            ->body('Preview uses this template\'s exact dimensions, sample invitee data, and an actual generated QR code.')
             ->info()
             ->send();
     }

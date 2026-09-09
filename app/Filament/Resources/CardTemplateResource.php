@@ -250,7 +250,7 @@ class CardTemplateResource extends Resource
                             ->required()
                             ->columnSpanFull()
                             ->helperText(
-                                'Minimum 595 × 595 px, maximum 4000 × 4000 px. PNG, JPG, or WEBP. Original dimensions are preserved.'
+                                'Minimum 595 × 595 px, maximum 6000 × 6000 px, up to 25 MP. PNG, JPG, or WEBP. Original dimensions and aspect ratio are preserved.'
                             ),
 
                         Forms\Components\Placeholder::make('automatic_dimensions')
@@ -403,7 +403,7 @@ class CardTemplateResource extends Resource
                         if (! CardTemplate::hasAllowedDimensions($sourceWidth, $sourceHeight)) {
                             Notification::make()
                                 ->title('Unsupported template size')
-                                ->body('Template must be between 595 × 595 px and 4000 × 4000 px.')
+                                ->body('Template must be at least 595 × 595 px, no larger than 6000 × 6000 px, and must not exceed 25 MP.')
                                 ->danger()
                                 ->send();
 
@@ -460,7 +460,7 @@ class CardTemplateResource extends Resource
                             Notification::make()
                                 ->title('Image dimensions unavailable')
                                 ->body(
-                                    'The system could not read the template image dimensions. Check the uploaded file and public storage.'
+                                    'The template dimensions are unavailable or outside the supported range. Use at least 595 × 595 px, no larger than 6000 × 6000 px, and up to 25 MP.'
                                 )
                                 ->danger()
                                 ->send();
@@ -556,7 +556,7 @@ class CardTemplateResource extends Resource
                             Notification::make()
                                 ->title('Image dimensions unavailable')
                                 ->body(
-                                    'The system could not read the template image dimensions. Check the uploaded file and public storage.'
+                                    'The template dimensions are unavailable or outside the supported range. Use at least 595 × 595 px, no larger than 6000 × 6000 px, and up to 25 MP.'
                                 )
                                 ->danger()
                                 ->send();
