@@ -108,20 +108,31 @@ class CardGenerationService
             | This also upgrades older templates the first time they are generated.
             */
             if (
-                (int) $template->source_width !== (int) $imageWidth
-                || (int) $template->source_height !== (int) $imageHeight
+                Schema::hasColumn('card_templates', 'source_width')
+                && Schema::hasColumn('card_templates', 'source_height')
+                && (
+                    (int) $template->source_width !== (int) $imageWidth
+                    || (int) $template->source_height !== (int) $imageHeight
+                )
             ) {
-                $template->forceFill([
+                $updates = [
                     'source_width' => $imageWidth,
                     'source_height' => $imageHeight,
-                    'width' => CardTemplate::DESIGNER_REFERENCE_WIDTH,
-                    'height' => CardTemplate::calculateDesignerHeight(
+                ];
+
+                if (Schema::hasColumn('card_templates', 'width')) {
+                    $updates['width'] = CardTemplate::DESIGNER_REFERENCE_WIDTH;
+                }
+
+                if (Schema::hasColumn('card_templates', 'height')) {
+                    $updates['height'] = CardTemplate::calculateDesignerHeight(
                         sourceWidth: $imageWidth,
                         sourceHeight: $imageHeight,
                         designerWidth: CardTemplate::DESIGNER_REFERENCE_WIDTH,
-                    ),
-                ])->saveQuietly();
+                    );
+                }
 
+                $template->forceFill($updates)->saveQuietly();
                 $template->refresh();
             }
 
@@ -509,9 +520,9 @@ class CardGenerationService
         |--------------------------------------------------------------------------
         | Designer QR box is the source of truth
         |--------------------------------------------------------------------------
-        | The visible QR occupies the largest square that fits inside the exact
-        | saved placeholder box. qr_size is only a quality/source preference; it
-        | must not independently change the visible designer geometry.
+        | The saved placeholder rectangle defines the visible QR size and position.
+        | No hidden padding is added here. This keeps generation consistent with
+        | the designer once the designer QR preview also uses zero inner padding.
         */
         $visibleQrSize = max(
             1,
@@ -522,9 +533,11 @@ class CardGenerationService
         );
 
         /*
-        | qr_size controls raster quality, not visible placement. Generate a sharp
-        | source bitmap at a safe quality size, then resize it to the exact visible
-        | designer square before placing it.
+        |--------------------------------------------------------------------------
+        | QR raster quality
+        |--------------------------------------------------------------------------
+        | qr_size only controls how much detail is used to build the QR bitmap.
+        | It does NOT change the visible designer geometry.
         */
         $requestedOutputSize = max(
             CardTemplatePlaceholder::MIN_QR_SIZE,
@@ -533,7 +546,13 @@ class CardGenerationService
 
         $qrRasterSize = min(
             CardTemplatePlaceholder::MAX_QR_SIZE,
-            max($requestedOutputSize, min($visibleQrSize, CardTemplatePlaceholder::MAX_QR_SIZE))
+            max(
+                $requestedOutputSize,
+                min(
+                    $visibleQrSize,
+                    CardTemplatePlaceholder::MAX_QR_SIZE
+                )
+            )
         );
 
         $qrFullPath = $this->getInviteeQrFullPath($invitee);
@@ -580,6 +599,13 @@ class CardGenerationService
 
         $qrImage = $manager->read($qrBinary);
 
+        /*
+        |--------------------------------------------------------------------------
+        | Resize to the exact visible designer square
+        |--------------------------------------------------------------------------
+        | The generated QR must fill the saved square exactly. There is no extra
+        | margin, padding, or safe-area adjustment here.
+        */
         if (
             $qrImage->width() !== $visibleQrSize
             || $qrImage->height() !== $visibleQrSize
@@ -592,26 +618,18 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Center the exact designer square inside the saved placeholder rectangle
+        | Center the exact QR square inside the saved rectangle
         |--------------------------------------------------------------------------
         */
         $placeX = $x + (int) round(($boxWidth - $visibleQrSize) / 2);
         $placeY = $y + (int) round(($boxHeight - $visibleQrSize) / 2);
 
-        if (method_exists($image, 'drawRectangle')) {
-            $image->drawRectangle(
-                $placeX,
-                $placeY,
-                function ($rectangle) use (
-                    $visibleQrSize,
-                    $qrBackgroundColor
-                ): void {
-                    $rectangle->size($visibleQrSize, $visibleQrSize);
-                    $rectangle->background($qrBackgroundColor);
-                }
-            );
-        }
-
+        /*
+        | Do not draw an extra background rectangle here. The generated QR bitmap
+        | already contains the requested background color. Drawing an additional
+        | rectangle can make the QR appear to have a larger visual frame than the
+        | designer preview.
+        */
         $image->place(
             $qrImage,
             'top-left',
@@ -1113,7 +1131,11 @@ class CardGenerationService
         */
         $designerWidth = max(
             1,
-            (int) $template->designer_width
+            (int) (
+                $template->designer_width
+                ?? $template->width
+                ?? CardTemplate::DESIGNER_REFERENCE_WIDTH
+            )
         );
 
         return max(

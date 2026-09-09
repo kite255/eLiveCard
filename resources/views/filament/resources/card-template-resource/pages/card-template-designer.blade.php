@@ -44,91 +44,47 @@
         |--------------------------------------------------------------------------
         | Automatic Designer Canvas Size
         |--------------------------------------------------------------------------
-        | The designer must always use the same aspect ratio as the uploaded image.
-        | Otherwise an image such as 3500x4749 displayed inside a 1080x1920 canvas
-        | is letterboxed by object-fit: contain, while placeholders are positioned
-        | against the full 1080x1920 canvas. That makes the generated card differ
-        | from the designer.
-        |
-        | We therefore:
-        | 1. Read the real uploaded image dimensions when possible.
-        | 2. Keep a stable 1080px designer reference width.
-        | 3. Derive the designer height automatically from the real image ratio.
-        |
-        | Example:
-        | source 3500x4749 -> designer 1080x1465.
-        */
-        $sourceWidth = null;
-        $sourceHeight = null;
-        $normalizedTemplatePath = null;
-
-        if (filled($templatePath)) {
-            try {
-                $normalizedTemplatePath = trim((string) $templatePath);
-
-                if (
-                    ! str_starts_with($normalizedTemplatePath, 'http://')
-                    && ! str_starts_with($normalizedTemplatePath, 'https://')
-                    && ! str_starts_with($normalizedTemplatePath, 'data:image/')
-                ) {
-                    $normalizedTemplatePath = ltrim($normalizedTemplatePath, '/');
-
-                    if (str_starts_with($normalizedTemplatePath, 'public/')) {
-                        $normalizedTemplatePath = substr($normalizedTemplatePath, 7);
-                    }
-
-                    if (str_starts_with($normalizedTemplatePath, 'storage/')) {
-                        $normalizedTemplatePath = substr($normalizedTemplatePath, 8);
-                    }
-
-                    if (
-                        \Illuminate\Support\Facades\Storage::disk('public')
-                            ->exists($normalizedTemplatePath)
-                    ) {
-                        $fullTemplatePath = \Illuminate\Support\Facades\Storage::disk('public')
-                            ->path($normalizedTemplatePath);
-
-                        $imageSize = @getimagesize($fullTemplatePath);
-
-                        if (is_array($imageSize) && isset($imageSize[0], $imageSize[1])) {
-                            $sourceWidth = (int) $imageSize[0];
-                            $sourceHeight = (int) $imageSize[1];
-                        }
-                    }
-                }
-            } catch (\Throwable $exception) {
-                report($exception);
-
-                $sourceWidth = null;
-                $sourceHeight = null;
-            }
-        }
-
-        /*
-        | Fall back to values already stored on the template for remote images,
-        | legacy records, or environments where the file cannot be inspected.
+        | CardTemplate is the single source of truth for image dimensions.
+        | The designer always preserves the exact uploaded-image aspect ratio.
         */
         $sourceWidth = max(
             1,
-            (int) ($sourceWidth ?: $template->width ?: 1080)
+            (int) (
+                $template->source_image_width
+                ?? $template->source_width
+                ?? $template->width
+                ?? 1080
+            )
         );
 
         $sourceHeight = max(
             1,
-            (int) ($sourceHeight ?: $template->height ?: 1920)
+            (int) (
+                $template->source_image_height
+                ?? $template->source_height
+                ?? $template->height
+                ?? 1920
+            )
         );
 
-        /*
-        | Use a stable browser-editing width. Placeholder coordinates remain
-        | percentage based, so the generated card can still use the original,
-        | high-resolution source image.
-        */
-        $templateWidth = 1080;
+        $templateWidth = max(
+            1,
+            (int) (
+                $template->designer_width
+                ?? \App\Models\CardTemplate::DESIGNER_REFERENCE_WIDTH
+                ?? 1080
+            )
+        );
 
         $templateHeight = max(
             1,
-            (int) round(
-                $templateWidth * ($sourceHeight / $sourceWidth)
+            (int) (
+                $template->designer_height
+                ?? \App\Models\CardTemplate::calculateDesignerHeight(
+                    sourceWidth: $sourceWidth,
+                    sourceHeight: $sourceHeight,
+                    designerWidth: $templateWidth,
+                )
             )
         );
 
@@ -400,7 +356,7 @@
 
                 <div class="designer-note">
                     Drag placeholders, resize using the corner handle, or use direction buttons for precise movement.
-                    The canvas automatically follows the uploaded card's aspect ratio so saved placeholders match generated cards.
+                    The canvas automatically follows the uploaded card's aspect ratio. Placeholder percentages and QR size are saved exactly as shown and used by card generation.
                 </div>
             </div>
 
@@ -650,7 +606,7 @@
 
                         <template x-if="isQr(current)">
                             <div class="qr-helper-note">
-                                QR Visible Size controls placement on the card. QR Output Size controls image quality. Foreground and background colors update the preview immediately. Unsafe color combinations cannot be saved.
+                                QR Visible Size controls the exact visible size on the card. QR Output Size controls image quality only. No hidden QR padding is applied. Foreground and background colors update the preview immediately. Unsafe color combinations cannot be saved.
                             </div>
                         </template>
                     </div>
@@ -1200,7 +1156,7 @@
         }
 
         .qr-preview {
-            --qr-frame-padding: 2%;
+            --qr-frame-padding: 0%;
             width: 100%;
             height: 100%;
             display: flex;
@@ -1236,7 +1192,7 @@
             height: 100%;
             max-width: 100%;
             max-height: 100%;
-            object-fit: contain;
+            object-fit: fill;
             object-position: center;
             padding: 0;
             margin: 0;
