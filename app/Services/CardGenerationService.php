@@ -18,12 +18,13 @@ use Throwable;
 class CardGenerationService
 {
     /**
-     * JPEG quality for final generated cards.
+     * High-quality JPEG output for final generated cards.
      *
-     * Quality 95 provides sharp text, logos, and QR edges without the excessive
-     * file size normally produced by quality 100.
+     * Keep the existing JPG workflow for WhatsApp/SMS compatibility, but encode
+     * at maximum JPEG quality so text, logos, small decorative details, and QR
+     * edges retain as much detail as possible.
      */
-    protected int $jpegQuality = 95;
+    protected int $jpegQuality = 100;
 
     /**
      * Controlled QR quiet zone around the actual QR modules.
@@ -73,7 +74,7 @@ class CardGenerationService
 
     public function generate(CardTemplate $template, Invitee $invitee): GeneratedCard
     {
-        ini_set('memory_limit', '512M');
+        ini_set('memory_limit', '768M');
         set_time_limit(120);
 
         $template->loadMissing(['event', 'placeholders']);
@@ -122,7 +123,6 @@ class CardGenerationService
             }
 
             $designerWidth = $imageWidth;
-            $designerHeight = $imageHeight;
 
             $dimensionUpdates = [];
 
@@ -185,9 +185,17 @@ class CardGenerationService
 
             $path = $this->buildGeneratedCardPath($template, $invitee);
 
+            /*
+            |--------------------------------------------------------------------------
+            | Maximum-quality final encoding
+            |--------------------------------------------------------------------------
+            | The card is rendered directly on the approved template dimensions
+            | without any final resize. JPEG quality 100 minimizes compression
+            | artifacts around text, QR modules, logos, and thin design elements.
+            */
             $encodedCard = $image->toJpeg(
                 quality: $this->jpegQuality,
-                progressive: true
+                progressive: false
             );
 
             Storage::disk('public')->makeDirectory(
@@ -586,12 +594,20 @@ class CardGenerationService
             (int) ($placeholder->qr_size ?: CardTemplatePlaceholder::DEFAULT_QR_SIZE)
         );
 
+        /*
+        |--------------------------------------------------------------------------
+        | Crisp QR raster
+        |--------------------------------------------------------------------------
+        | The final visible QR dimensions are the important dimensions for image
+        | quality. Custom QR images are rebuilt directly at that final size using
+        | nearest-neighbour module mapping, preventing blurry module edges.
+        |
+        | qr_size is retained as a validated designer/output setting, but the
+        | generated QR is never rendered below the visible placeholder size.
+        */
         $qrRasterSize = min(
             CardTemplatePlaceholder::MAX_QR_SIZE,
-            max(
-                $savedQrOutputSize,
-                $visibleQrSize
-            )
+            max(1, $visibleQrSize)
         );
 
         $qrFullPath = $this->getInviteeQrFullPath($invitee);
@@ -631,28 +647,21 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Exact designer color handling
+        | High-quality QR rendering
         |--------------------------------------------------------------------------
-        | When custom QR colors/background are saved, rebuild the QR with exactly
-        | those colors. For default black/white, preserve the original QR source
-        | image so the preview and output share the same module/quiet-zone shape.
+        | Rebuild every QR through the same nearest-neighbour routine. This avoids
+        | soft/bilinear resizing of the stored QR file and keeps module edges
+        | crisp for reliable scanning. The saved foreground/background colors and
+        | controlled quiet zone are preserved.
         */
-        $usesDefaultColors =
-            strtoupper($qrColor) === strtoupper(CardTemplatePlaceholder::DEFAULT_QR_COLOR)
-            && strtoupper($qrBackgroundColor) === strtoupper(CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR);
+        $qrBinary = $this->buildColoredQrPng(
+            sourcePath: $qrFullPath,
+            size: $qrRasterSize,
+            foregroundHex: $qrColor,
+            backgroundHex: $qrBackgroundColor,
+        );
 
-        if ($usesDefaultColors) {
-            $qrImage = $manager->read($qrFullPath);
-        } else {
-            $qrBinary = $this->buildColoredQrPng(
-                sourcePath: $qrFullPath,
-                size: $qrRasterSize,
-                foregroundHex: $qrColor,
-                backgroundHex: $qrBackgroundColor,
-            );
-
-            $qrImage = $manager->read($qrBinary);
-        }
+        $qrImage = $manager->read($qrBinary);
 
         if (
             $qrImage->width() !== $visibleQrSize
@@ -675,9 +684,6 @@ class CardGenerationService
         );
     }
 
-    /**
-     * Build a sharp, recolored QR PNG from the existing secure QR image.
-     */
     /**
      * Build a sharp, recolored QR PNG from the existing secure QR image.
      *
@@ -825,7 +831,7 @@ class CardGenerationService
         }
 
         ob_start();
-        imagepng($target, null, 9);
+        imagepng($target, null, 6);
         $png = ob_get_clean();
 
         imagedestroy($source);
