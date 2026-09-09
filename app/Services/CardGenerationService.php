@@ -341,18 +341,11 @@ class CardGenerationService
     ): void {
         $text = trim($text);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Ignore accidental decorative fragments
-        |--------------------------------------------------------------------------
-        | Prevent isolated bullets or punctuation from appearing as black dots
-        | when a placeholder contains no meaningful value.
-        */
         if ($text === '' || preg_match('/^[\p{P}\p{S}\s]+$/u', $text)) {
             return;
         }
 
-        [$x, $y, $boxWidth, $boxHeight] = $this->resolveSafePlaceholderBox(
+        [$x, $y, $boxWidth, $boxHeight] = $this->resolveDesignerPlaceholderBox(
             placeholder: $placeholder,
             imageWidth: $imageWidth,
             imageHeight: $imageHeight,
@@ -362,44 +355,87 @@ class CardGenerationService
             minimumHeight: 10,
         );
 
-        $fontSize = max(8, (int) ($placeholder->font_size ?: 24));
-        $fontColor = $this->normalizeHexColor($placeholder->font_color ?: '#000000');
+        /*
+        |--------------------------------------------------------------------------
+        | Designer is the source of truth
+        |--------------------------------------------------------------------------
+        | font_size is used exactly as stored by the card designer.
+        | We do not apply an additional canvas scale because that creates a second,
+        | independent layout system and makes generated cards differ from preview.
+        */
+        $fontSize = max(
+            8,
+            (int) ($placeholder->font_size ?: CardTemplatePlaceholder::DEFAULT_FONT_SIZE)
+        );
+
+        $fontColor = $this->normalizeHexColor(
+            $placeholder->font_color ?: CardTemplatePlaceholder::DEFAULT_FONT_COLOR
+        );
+
         $fontWeight = $placeholder->font_weight ?: 'normal';
-        $textAlign = in_array($placeholder->text_align, ['left', 'center', 'right'], true)
-            ? $placeholder->text_align
-            : 'center';
+
+        $textAlign = in_array(
+            $placeholder->text_align,
+            ['left', 'center', 'right'],
+            true
+        ) ? $placeholder->text_align : 'center';
 
         $fontFile = $this->resolveFontFile(
             fontFamily: $placeholder->font_family ?: $this->defaultFontFamily(),
             fontWeight: $fontWeight
         );
 
-        /*
-        |--------------------------------------------------------------------------
-        | Auto-fit text
-        |--------------------------------------------------------------------------
-        | Reduce the font only when needed so long names, venues, categories,
-        | and contact details remain within their placeholder boxes.
-        */
-        [$fontSize, $lines] = $this->fitTextToBox(
-            text: $text,
-            boxWidth: $boxWidth,
-            boxHeight: $boxHeight,
-            initialFontSize: $fontSize,
-            fontFile: $fontFile,
+        $placeholderKey = $this->normalizePlaceholderKey(
+            (string) ($placeholder->placeholder_key ?? '')
         );
 
-        $lineHeight = max(10, (int) round($fontSize * 1.22));
+        /*
+        |--------------------------------------------------------------------------
+        | Match designer behaviour for single-line fields
+        |--------------------------------------------------------------------------
+        | Name, card type, serial, table, category and guest-count placeholders
+        | remain on one line. Only shrink if the actual value is wider than the
+        | exact designer box.
+        */
+        if ($this->isSingleLineTextPlaceholder($placeholderKey)) {
+            $fontSize = $this->fitSingleLineFontSize(
+                text: $text,
+                boxWidth: $boxWidth,
+                initialFontSize: $fontSize,
+                fontFile: $fontFile,
+            );
+
+            $lines = [$text];
+        } else {
+            [$fontSize, $lines] = $this->fitTextToBox(
+                text: $text,
+                boxWidth: $boxWidth,
+                boxHeight: $boxHeight,
+                initialFontSize: $fontSize,
+                fontFile: $fontFile,
+            );
+        }
+
+        $lineHeight = max(
+            10,
+            (int) round($fontSize * 1.22)
+        );
+
+        $textBlockHeight = max(
+            $lineHeight,
+            count($lines) * $lineHeight
+        );
 
         /*
         |--------------------------------------------------------------------------
-        | Preserve the designer Y position
+        | Same vertical alignment as designer
         |--------------------------------------------------------------------------
-        | The saved y_percent represents the top edge of the placeholder. Do not
-        | vertically recenter text inside the box because that moves the rendered
-        | text away from the exact position chosen in the card designer.
+        | The preview centers the text inside the draggable placeholder rectangle.
         */
-        $startY = $y;
+        $startY = $y + max(
+            0,
+            (int) round(($boxHeight - $textBlockHeight) / 2)
+        );
 
         foreach ($lines as $index => $line) {
             $lineY = $startY + ($index * $lineHeight);
@@ -418,7 +454,12 @@ class CardGenerationService
                 $line,
                 (int) $drawX,
                 (int) $lineY,
-                function ($font) use ($fontFile, $fontSize, $fontColor, $textAlign): void {
+                function ($font) use (
+                    $fontFile,
+                    $fontSize,
+                    $fontColor,
+                    $textAlign
+                ): void {
                     if ($fontFile && file_exists($fontFile)) {
                         $font->filename($fontFile);
                     }
@@ -440,7 +481,7 @@ class CardGenerationService
         int $imageWidth,
         int $imageHeight
     ): void {
-        [$x, $y, $boxWidth, $boxHeight] = $this->resolveSafePlaceholderBox(
+        [$x, $y, $boxWidth, $boxHeight] = $this->resolveDesignerPlaceholderBox(
             placeholder: $placeholder,
             imageWidth: $imageWidth,
             imageHeight: $imageHeight,
@@ -452,11 +493,11 @@ class CardGenerationService
 
         /*
         |--------------------------------------------------------------------------
-        | Preserve the designer QR box exactly
+        | Designer QR box is the source of truth
         |--------------------------------------------------------------------------
-        | The QR placeholder's saved width/height define its visible size. Do not
-        | add automatic padding or shrink the QR because that makes the generated
-        | card differ from the designer preview.
+        | The visible QR occupies the largest square that fits inside the exact
+        | saved placeholder box. qr_size is only a quality/source preference; it
+        | must not independently change the visible designer geometry.
         */
         $qrSize = max(
             1,
@@ -502,14 +543,6 @@ class CardGenerationService
             $qrBackgroundColor = CardTemplatePlaceholder::DEFAULT_QR_BACKGROUND_COLOR;
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Colored QR rendering
-        |--------------------------------------------------------------------------
-        | Rebuild the existing secure QR as a crisp two-color PNG using nearest
-        | neighbour sampling. This prevents blurred modules and applies the
-        | placeholder's selected QR and background colors.
-        */
         $qrBinary = $this->buildColoredQrPng(
             sourcePath: $qrFullPath,
             size: $qrSize,
@@ -519,29 +552,23 @@ class CardGenerationService
 
         $qrImage = $manager->read($qrBinary);
 
-        $backgroundSize = $qrSize;
-
         /*
         |--------------------------------------------------------------------------
-        | Preserve the placeholder's top-left position
+        | Center exact square inside designer rectangle
         |--------------------------------------------------------------------------
-        | Use the saved x/y coordinates directly. This prevents the QR from being
-        | recentered to a different location during generation.
         */
-        $backgroundX = $x;
-        $backgroundY = $y;
-        $placeX = $x;
-        $placeY = $y;
+        $placeX = $x + (int) round(($boxWidth - $qrSize) / 2);
+        $placeY = $y + (int) round(($boxHeight - $qrSize) / 2);
 
         if (method_exists($image, 'drawRectangle')) {
             $image->drawRectangle(
-                $backgroundX,
-                $backgroundY,
+                $placeX,
+                $placeY,
                 function ($rectangle) use (
-                    $backgroundSize,
+                    $qrSize,
                     $qrBackgroundColor
                 ): void {
-                    $rectangle->size($backgroundSize, $backgroundSize);
+                    $rectangle->size($qrSize, $qrSize);
                     $rectangle->background($qrBackgroundColor);
                 }
             );
@@ -819,11 +846,11 @@ class CardGenerationService
     }
 
     /**
-     * Resolve a placeholder box while enforcing a safe card margin.
+     * Convert the exact designer percentages into image pixels.
      *
      * @return array{0:int,1:int,2:int,3:int}
      */
-    protected function resolveSafePlaceholderBox(
+    protected function resolveDesignerPlaceholderBox(
         CardTemplatePlaceholder $placeholder,
         int $imageWidth,
         int $imageHeight,
@@ -993,25 +1020,81 @@ class CardGenerationService
         return mb_strlen($text) * $averageCharWidth;
     }
 
-    protected function resolveFontFile(string $fontFamily, string $fontWeight = 'normal'): ?string
-    {
+    protected function resolveFontFile(
+        string $fontFamily,
+        string $fontWeight = 'normal'
+    ): ?string {
         if (! method_exists(CardTemplatePlaceholder::class, 'fontFiles')) {
             return null;
         }
 
         $fontFiles = CardTemplatePlaceholder::fontFiles();
-
-        if (! array_key_exists($fontFamily, $fontFiles)) {
-            $fontFamily = $this->defaultFontFamily();
-        }
-
         $weight = $fontWeight === 'bold' ? 'bold' : 'regular';
 
-        return $fontFiles[$fontFamily][$weight]
-            ?? $fontFiles[$fontFamily]['regular']
-            ?? $fontFiles[$this->defaultFontFamily()][$weight]
-            ?? $fontFiles[$this->defaultFontFamily()]['regular']
-            ?? null;
+        $candidates = [
+            $fontFiles[$fontFamily][$weight] ?? null,
+            $fontFiles[$fontFamily]['regular'] ?? null,
+        ];
+
+        $defaultFamily = $this->defaultFontFamily();
+
+        $candidates[] = $fontFiles[$defaultFamily][$weight] ?? null;
+        $candidates[] = $fontFiles[$defaultFamily]['regular'] ?? null;
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '' && file_exists($candidate)) {
+                return $candidate;
+            }
+        }
+
+        Log::warning('No usable card-generation font file was found.', [
+            'requested_font_family' => $fontFamily,
+            'requested_font_weight' => $fontWeight,
+        ]);
+
+        return null;
+    }
+
+    protected function isSingleLineTextPlaceholder(string $placeholderKey): bool
+    {
+        return in_array($placeholderKey, [
+            'name',
+            'guest_name',
+            'invitee_name',
+            'card_type',
+            'serial_number',
+            'serial',
+            'guest_count',
+            'allowed_guests',
+            'guests',
+            'allowed_people',
+            'table_number',
+            'table',
+            'category',
+        ], true);
+    }
+
+    protected function fitSingleLineFontSize(
+        string $text,
+        int $boxWidth,
+        int $initialFontSize,
+        ?string $fontFile = null,
+    ): int {
+        $fontSize = max(8, $initialFontSize);
+        $availableWidth = max(1, $boxWidth);
+
+        while (
+            $fontSize > 8
+            && $this->estimateTextWidth(
+                $text,
+                $fontSize,
+                $fontFile
+            ) > $availableWidth
+        ) {
+            $fontSize--;
+        }
+
+        return $fontSize;
     }
 
     protected function defaultFontFamily(): string
