@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PublicEventsApiController;
 use App\Http\Controllers\SmsDeliveryCallbackController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use Illuminate\Support\Facades\Route;
@@ -71,3 +72,17 @@ Route::prefix('sms')
             SmsDeliveryCallbackController::class
         )->name('delivery-callback');
     });
+
+/*
+|--------------------------------------------------------------------------
+| Public Events Feed
+|--------------------------------------------------------------------------
+|
+| Read-only event data used by the main eLive website.
+| Only events explicitly marked public are returned.
+|
+*/
+
+Route::get('/public/events', PublicEventsApiController::class)
+    ->middleware('throttle:120,1')
+    ->name('api.public.events');
