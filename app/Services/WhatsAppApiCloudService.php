@@ -5,9 +5,11 @@ namespace App\Services;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
+use App\Models\ContributionRecipient;
 use Carbon\Carbon;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -273,6 +275,42 @@ class WhatsAppApiCloudService
         );
     }
 
+    public function sendContributionRecipient(ContributionRecipient $recipient): array
+    {
+        $recipient->loadMissing('campaign.event');
+        $campaign = $recipient->campaign;
+
+        if (! $campaign) {
+            throw new RuntimeException('The contribution recipient is not attached to a campaign.');
+        }
+
+        if (blank($recipient->generated_card_path)
+            || ! Storage::disk('public')->exists($recipient->generated_card_path)) {
+            throw new RuntimeException('Generate this committee member’s contribution card before sending it.');
+        }
+
+        $imageUrl = Storage::disk('public')->url($recipient->generated_card_path);
+
+        if (! str_starts_with($imageUrl, 'http://') && ! str_starts_with($imageUrl, 'https://')) {
+            $imageUrl = url($imageUrl);
+        }
+
+        return $this->sendTemplate(
+            phone: $recipient->phone,
+            templateName: $campaign->whatsapp_template_name ?: 'contribution_card_sw',
+            languageCode: $campaign->whatsapp_language_code ?: MessageTemplate::LANGUAGE_SWAHILI,
+            components: [
+                $this->imageHeaderComponent($imageUrl),
+                [
+                    'type' => 'body',
+                    'parameters' => [$this->textParameter($recipient->name)],
+                ],
+            ],
+            messageType: MessageTemplate::TYPE_CONTRIBUTION,
+            contributionRecipient: $recipient,
+        );
+    }
+
     public function sendText(
         string $phone,
         string $message,
@@ -301,6 +339,7 @@ class WhatsAppApiCloudService
             messageType: 'text',
             templateName: null,
             messageBody: trim($message),
+            contributionRecipient: null,
         );
     }
 
@@ -311,6 +350,7 @@ class WhatsAppApiCloudService
         array $components = [],
         ?Invitee $invitee = null,
         string $messageType = 'template',
+        ?ContributionRecipient $contributionRecipient = null,
     ): array {
         $templateName = trim($templateName);
         $languageCode = $this->normalizeLanguage(
@@ -348,6 +388,7 @@ class WhatsAppApiCloudService
             messageType: $messageType,
             templateName: $templateName,
             messageBody: null,
+            contributionRecipient: $contributionRecipient,
         );
     }
 
@@ -357,6 +398,7 @@ class WhatsAppApiCloudService
         string $messageType,
         ?string $templateName,
         ?string $messageBody,
+        ?ContributionRecipient $contributionRecipient,
     ): array {
         $this->validateConfiguration();
 
@@ -377,6 +419,7 @@ class WhatsAppApiCloudService
             templateName: $templateName,
             messageBody: $messageBody,
             requestPayload: $payload,
+            contributionRecipient: $contributionRecipient,
         );
 
         try {
@@ -460,10 +503,15 @@ class WhatsAppApiCloudService
                 providerMessageId: $providerMessageId,
             );
 
+            $this->updateContributionRecipientAfterSubmission(
+                recipient: $contributionRecipient,
+                providerMessageId: $providerMessageId,
+            );
+
             AuditLogService::record(
                 action: 'whatsapp_message.submitted',
-                subject: $invitee,
-                eventId: $invitee?->event_id,
+                subject: $invitee ?? $contributionRecipient,
+                eventId: $invitee?->event_id ?? $contributionRecipient?->event_id,
                 description: 'A WhatsApp message was accepted for processing by Meta.',
                 metadata: [
                     'recipient' => $recipient,
@@ -486,11 +534,17 @@ class WhatsAppApiCloudService
                 errorMessage: $exception->getMessage(),
             );
 
+            $this->updateContributionRecipientAfterFailure(
+                recipient: $contributionRecipient,
+                errorMessage: $exception->getMessage(),
+            );
+
             Log::error(
                 'WhatsApp Cloud API request failed.',
                 [
                     'invitee_id' => $invitee?->id,
                     'event_id' => $invitee?->event_id,
+                    'contribution_recipient_id' => $contributionRecipient?->id,
                     'recipient' => $recipient,
                     'message_type' => $messageType,
                     'template_name' => $templateName,
@@ -893,6 +947,7 @@ class WhatsAppApiCloudService
         ?string $templateName,
         ?string $messageBody,
         array $requestPayload,
+        ?ContributionRecipient $contributionRecipient,
     ): ?int {
         if (! Schema::hasTable('message_logs')) {
             return null;
@@ -905,8 +960,9 @@ class WhatsAppApiCloudService
         $now = now();
 
         $row = [
-            'event_id' => $invitee?->event_id,
+            'event_id' => $invitee?->event_id ?? $contributionRecipient?->event_id,
             'invitee_id' => $invitee?->id,
+            'contribution_recipient_id' => $contributionRecipient?->id,
             'channel' => 'whatsapp',
             'type' => $messageType,
             'message_type' => $messageType,
@@ -1116,5 +1172,39 @@ class WhatsAppApiCloudService
                 )
             )
             ->saveQuietly();
+    }
+
+    protected function updateContributionRecipientAfterSubmission(
+        ?ContributionRecipient $recipient,
+        string $providerMessageId,
+    ): void {
+        if (! $recipient) {
+            return;
+        }
+
+        $recipient->forceFill([
+            'send_status' => ContributionRecipient::STATUS_SENT,
+            'whatsapp_status' => 'submitted',
+            'provider_message_id' => $providerMessageId,
+            'sent_at' => now(),
+            'failed_at' => null,
+            'last_error' => null,
+        ])->saveQuietly();
+    }
+
+    protected function updateContributionRecipientAfterFailure(
+        ?ContributionRecipient $recipient,
+        string $errorMessage,
+    ): void {
+        if (! $recipient) {
+            return;
+        }
+
+        $recipient->forceFill([
+            'send_status' => ContributionRecipient::STATUS_FAILED,
+            'whatsapp_status' => ContributionRecipient::STATUS_FAILED,
+            'failed_at' => now(),
+            'last_error' => Str::limit($errorMessage, 1000),
+        ])->saveQuietly();
     }
 }

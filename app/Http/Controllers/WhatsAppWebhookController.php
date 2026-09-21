@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Invitee;
+use App\Models\ContributionRecipient;
 use App\Services\AuditLogService;
 use App\Services\RsvpService;
 use App\Services\WhatsAppApiCloudService;
@@ -1125,6 +1126,39 @@ class WhatsAppWebhookController extends Controller
                 ],
             );
         }
+
+        $contributionRecipient =
+            ! empty($matchedLog->contribution_recipient_id)
+                ? ContributionRecipient::find($matchedLog->contribution_recipient_id)
+                : null;
+
+        if ($contributionRecipient) {
+            $updates = [
+                'whatsapp_status' => $normalizedStatus,
+                'provider_message_id' => $messageId,
+                'last_error' => $error,
+            ];
+
+            if (in_array($normalizedStatus, ['sent', 'delivered', 'read'], true)) {
+                $updates['send_status'] = ContributionRecipient::STATUS_SENT;
+                $updates['sent_at'] = $contributionRecipient->sent_at ?: $timestamp;
+            }
+
+            if (in_array($normalizedStatus, ['delivered', 'read'], true)) {
+                $updates['delivered_at'] = $timestamp;
+            }
+
+            if ($normalizedStatus === 'read') {
+                $updates['read_at'] = $timestamp;
+            }
+
+            if ($normalizedStatus === 'failed') {
+                $updates['send_status'] = ContributionRecipient::STATUS_FAILED;
+                $updates['failed_at'] = $timestamp;
+            }
+
+            $contributionRecipient->forceFill($updates)->saveQuietly();
+        }
     }
 
     protected function normalizePhone(
@@ -1415,6 +1449,7 @@ class WhatsAppWebhookController extends Controller
                 $insertable
             );
         }
+
     }
 
     protected function recentWhatsappMessageCandidates(
@@ -1456,6 +1491,7 @@ class WhatsAppWebhookController extends Controller
                     [
                         'id',
                         'invitee_id',
+                        'contribution_recipient_id',
                         'phone',
                         'status',
                         'provider_message_id',

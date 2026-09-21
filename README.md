@@ -7,6 +7,18 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Committee contribution cards
+
+Administrators can open **Communication → Contribution Cards** to:
+
+1. Create a campaign for an event and upload a blank JPG, PNG, or WEBP card.
+2. Configure the member-name position and typography.
+3. Import an Excel/CSV file whose required headings are `name` and `phone`.
+4. Generate personalized cards in the queue and preview them per recipient.
+5. Send generated cards through the approved Meta template `contribution_card_sw`.
+
+The Meta template must contain an image header and one body parameter (`{{1}}`) for the committee member's name. Run the queue worker in production and ensure the existing `WHATSAPP_*` Cloud API variables and a public `APP_URL` are configured.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

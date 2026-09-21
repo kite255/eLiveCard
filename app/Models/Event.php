@@ -249,6 +249,16 @@ class Event extends Model
         return $this->hasMany(CardTemplate::class);
     }
 
+    public function contributionCampaigns(): HasMany
+    {
+        return $this->hasMany(ContributionCampaign::class);
+    }
+
+    public function contributionRecipients(): HasMany
+    {
+        return $this->hasMany(ContributionRecipient::class);
+    }
+
     public function activeCardTemplates(): HasMany
     {
         return $this->hasMany(CardTemplate::class)

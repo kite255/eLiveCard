@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\EventResource\Widgets;
 
 use App\Filament\Resources\EventResource;
+use App\Filament\Resources\ContributionCampaignResource;
 use App\Models\Event;
 use Filament\Widgets\Widget;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -45,6 +46,7 @@ class EventQuickActions extends Widget
         $cardTypesCount = $this->relationshipCount($event, 'cardTypes');
         $cardTemplatesCount = $this->relationshipCount($event, 'cardTemplates');
         $messageTemplatesCount = $this->relationshipCount($event, 'messageTemplates');
+        $contributionCampaignsCount = $this->relationshipCount($event, 'contributionCampaigns');
 
         $actions = [
             [
@@ -93,6 +95,20 @@ class EventQuickActions extends Widget
                 'hint' => number_format($generatedCardsCount).' cards ready',
                 'badge' => $generatedCardsCount,
                 'priority' => 'secondary',
+                'visible' => $this->canManageEvent($event),
+            ],
+            [
+                'key' => 'contribution-cards',
+                'title' => 'Committee Contribution Cards',
+                'description' => 'Upload a contribution-card design, import names and phone numbers, generate personalised cards, and send them by WhatsApp.',
+                'icon' => 'heroicon-o-banknotes',
+                'accent' => 'orange',
+                'url' => ContributionCampaignResource::getUrl('index', [
+                    'tableFilters' => ['event_id' => ['value' => $event->id]],
+                ]),
+                'hint' => number_format($contributionCampaignsCount).' campaigns',
+                'badge' => $contributionCampaignsCount,
+                'priority' => 'primary',
                 'visible' => $this->canManageEvent($event),
             ],
             [

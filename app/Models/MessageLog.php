@@ -10,6 +10,7 @@ class MessageLog extends Model
     protected $fillable = [
         'event_id',
         'invitee_id',
+        'contribution_recipient_id',
         'channel',
         'type',
         'phone',
@@ -65,6 +66,11 @@ class MessageLog extends Model
     public function invitee(): BelongsTo
     {
         return $this->belongsTo(Invitee::class);
+    }
+
+    public function contributionRecipient(): BelongsTo
+    {
+        return $this->belongsTo(ContributionRecipient::class);
     }
 
     public function markAsSent(?string $providerMessageId = null): void
