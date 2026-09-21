@@ -7,16 +7,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        /*
-        |--------------------------------------------------------------------------
-        | PostgreSQL search support
-        |--------------------------------------------------------------------------
-        |
-        | pg_trgm allows the public RSVP report to efficiently search inside
-        | names, categories, and phone numbers with %term% matching.
-        |
-        */
-        DB::statement('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+        // Trigram extensions and GIN indexes are PostgreSQL-only.
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        DB::statement(
+            'CREATE EXTENSION IF NOT EXISTS pg_trgm'
+        );
 
         DB::statement(
             'CREATE INDEX IF NOT EXISTS invitees_event_rsvp_status_index
@@ -26,24 +24,34 @@ return new class extends Migration
         DB::statement(
             "CREATE INDEX IF NOT EXISTS invitees_name_trgm_index
              ON invitees
-             USING GIN (LOWER(COALESCE(name, '')) gin_trgm_ops)"
+             USING GIN (
+                LOWER(COALESCE(name, '')) gin_trgm_ops
+             )"
         );
 
         DB::statement(
             "CREATE INDEX IF NOT EXISTS invitees_category_trgm_index
              ON invitees
-             USING GIN (LOWER(COALESCE(category, '')) gin_trgm_ops)"
+             USING GIN (
+                LOWER(COALESCE(category, '')) gin_trgm_ops
+             )"
         );
 
         DB::statement(
             "CREATE INDEX IF NOT EXISTS invitees_phone_trgm_index
              ON invitees
-             USING GIN (LOWER(COALESCE(phone, '')) gin_trgm_ops)"
+             USING GIN (
+                LOWER(COALESCE(phone, '')) gin_trgm_ops
+             )"
         );
     }
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         DB::statement(
             'DROP INDEX IF EXISTS invitees_event_rsvp_status_index'
         );
@@ -60,8 +68,6 @@ return new class extends Migration
             'DROP INDEX IF EXISTS invitees_phone_trgm_index'
         );
 
-        /*
-         * Do not remove pg_trgm because other application indexes may use it.
-         */
+        // Keep pg_trgm because other indexes may depend on it.
     }
 };

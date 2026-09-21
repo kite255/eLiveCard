@@ -1,51 +1,76 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
     public function up(): void
     {
-        /*
-         * Remove duplicate names inside the same event before enforcing uniqueness.
-         * Keeps the first record and deletes later duplicates.
-         */
-        DB::statement("
-            DELETE FROM invitees a
-            USING invitees b
-            WHERE a.id > b.id
-            AND a.event_id = b.event_id
-            AND LOWER(a.name) = LOWER(b.name)
-        ");
-
-        /*
-         * PostgreSQL-safe check before adding unique constraint.
-         */
-        $constraintExists = DB::table('pg_constraint')
-            ->where('conname', 'invitees_event_name_unique')
-            ->exists();
-
-        if (! $constraintExists) {
-            DB::statement('
-                ALTER TABLE invitees
-                ADD CONSTRAINT invitees_event_name_unique
-                UNIQUE (event_id, name)
-            ');
+        // The earlier migration may already have created this index.
+        if (Schema::hasIndex(
+            'invitees',
+            'invitees_event_name_unique'
+        )) {
+            return;
         }
+
+        $driver = DB::getDriverName();
+
+        // Remove duplicates before enforcing uniqueness.
+        if ($driver === 'pgsql') {
+            DB::statement('
+                DELETE FROM invitees AS duplicate
+                USING invitees AS original
+                WHERE duplicate.id > original.id
+                AND duplicate.event_id = original.event_id
+                AND LOWER(duplicate.name) = LOWER(original.name)
+            ');
+        } elseif ($driver === 'mysql' || $driver === 'mariadb') {
+            DB::statement('
+                DELETE duplicate
+                FROM invitees AS duplicate
+                INNER JOIN invitees AS original
+                    ON duplicate.event_id = original.event_id
+                    AND LOWER(duplicate.name) = LOWER(original.name)
+                    AND duplicate.id > original.id
+            ');
+        } elseif ($driver === 'sqlite') {
+            DB::statement('
+                DELETE FROM invitees
+                WHERE id NOT IN (
+                    SELECT MIN(id)
+                    FROM invitees
+                    GROUP BY event_id, LOWER(name)
+                )
+            ');
+        } else {
+            throw new RuntimeException(
+                "Unsupported database driver: {$driver}"
+            );
+        }
+
+        Schema::table('invitees', function (Blueprint $table): void {
+            $table->unique(
+                ['event_id', 'name'],
+                'invitees_event_name_unique'
+            );
+        });
     }
 
     public function down(): void
     {
-        $constraintExists = DB::table('pg_constraint')
-            ->where('conname', 'invitees_event_name_unique')
-            ->exists();
-
-        if ($constraintExists) {
-            DB::statement('
-                ALTER TABLE invitees
-                DROP CONSTRAINT invitees_event_name_unique
-            ');
+        if (! Schema::hasIndex(
+            'invitees',
+            'invitees_event_name_unique'
+        )) {
+            return;
         }
+
+        Schema::table('invitees', function (Blueprint $table): void {
+            $table->dropUnique('invitees_event_name_unique');
+        });
     }
 };
