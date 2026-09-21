@@ -362,6 +362,43 @@ class WhatsAppWebhookController extends Controller
             ?? null;
 
         /*
+         * Contribution-card templates do not have RSVP buttons. Associate a
+         * free-text reply with the most recent contribution message sent to
+         * this phone number before attempting the invitee RSVP workflow.
+         */
+        if (! $shortCode) {
+            $contributionRecipient =
+                $this->findContributionRecipientForIncomingMessage(
+                    $fromPhone
+                );
+
+            if ($contributionRecipient) {
+                if ($this->incomingMessageAlreadyProcessed($messageId)) {
+                    Log::info('Duplicate contribution-card reply ignored.', [
+                        'message_id' => $messageId,
+                        'contribution_recipient_id' => $contributionRecipient->id,
+                    ]);
+
+                    return;
+                }
+
+                $comment = $replyTitle ?? $replyPayload;
+
+                if (filled($comment)) {
+                    $this->handleContributionRecipientReply(
+                        recipient: $contributionRecipient,
+                        messageId: $messageId,
+                        fromPhone: $fromPhone,
+                        messageType: $messageType,
+                        comment: trim((string) $comment),
+                    );
+                }
+
+                return;
+            }
+        }
+
+        /*
          * Prefer short_code for RSVP button replies.
          * Phone lookup remains as fallback for older templates.
          */
@@ -807,6 +844,152 @@ class WhatsAppWebhookController extends Controller
             $value,
             '_'
         );
+    }
+
+    protected function findContributionRecipientForIncomingMessage(
+        string $phone
+    ): ?ContributionRecipient {
+        $normalizedPhone = $this->normalizePhone($phone);
+
+        if ($normalizedPhone === '') {
+            return null;
+        }
+
+        if (Schema::hasTable('message_logs')) {
+            $columns = Schema::getColumnListing('message_logs');
+
+            if (
+                in_array('phone', $columns, true)
+                && in_array('contribution_recipient_id', $columns, true)
+            ) {
+                $query = DB::table('message_logs')
+                    ->whereRaw(
+                        "REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', '') = ?",
+                        [$normalizedPhone]
+                    )
+                    ->whereNotNull('provider_message_id');
+
+                if (in_array('status', $columns, true)) {
+                    $query->whereNotIn('status', ['received', 'replied']);
+                }
+
+                $latestOutgoing = $query->latest('id')->first();
+
+                if ($latestOutgoing) {
+                    if (empty($latestOutgoing->contribution_recipient_id)) {
+                        return null;
+                    }
+
+                    return ContributionRecipient::find(
+                        $latestOutgoing->contribution_recipient_id
+                    );
+                }
+            }
+        }
+
+        return ContributionRecipient::query()
+            ->whereNotNull('provider_message_id')
+            ->where(function ($query) use ($normalizedPhone): void {
+                $query
+                    ->where('phone', $normalizedPhone)
+                    ->orWhere('phone', '+'.$normalizedPhone)
+                    ->orWhereRaw(
+                        "REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', '') = ?",
+                        [$normalizedPhone]
+                    );
+            })
+            ->latest('sent_at')
+            ->latest('id')
+            ->first();
+    }
+
+    protected function handleContributionRecipientReply(
+        ContributionRecipient $recipient,
+        string $messageId,
+        string $fromPhone,
+        string $messageType,
+        string $comment,
+    ): void {
+        $recipient->forceFill([
+            'last_reply_message' => $comment,
+            'last_reply_at' => now(),
+        ])->saveQuietly();
+
+        $this->recordContributionIncomingMessage(
+            recipient: $recipient,
+            messageId: $messageId,
+            fromPhone: $fromPhone,
+            messageType: $messageType,
+            comment: $comment,
+        );
+
+        AuditLogService::record(
+            action: 'contribution_card.reply_received',
+            subject: $recipient,
+            eventId: $recipient->event_id,
+            description: 'A WhatsApp reply was received from a contribution-card recipient.',
+            metadata: [
+                'message_id' => $messageId,
+                'from' => $fromPhone,
+                'message_type' => $messageType,
+                'comment' => $comment,
+            ],
+        );
+    }
+
+    protected function recordContributionIncomingMessage(
+        ContributionRecipient $recipient,
+        string $messageId,
+        string $fromPhone,
+        string $messageType,
+        string $comment,
+    ): void {
+        if (! Schema::hasTable('message_logs')) {
+            return;
+        }
+
+        $columns = Schema::getColumnListing('message_logs');
+        $now = now();
+
+        $row = [
+            'event_id' => $recipient->event_id,
+            'invitee_id' => null,
+            'contribution_recipient_id' => $recipient->id,
+            'channel' => 'whatsapp',
+            'type' => 'contribution_reply',
+            'message_type' => 'contribution_reply',
+            'recipient' => $fromPhone,
+            'phone' => $fromPhone,
+            'from' => $fromPhone,
+            'message' => $comment,
+            'body' => $comment,
+            'status' => 'replied',
+            'provider' => 'WhatsApp Cloud API',
+            'provider_name' => 'WhatsApp Cloud API',
+            'provider_status' => 'received',
+            'provider_message_id' => $messageId,
+            'message_id' => $messageId,
+            'wamid' => $messageId,
+            'last_reply_message' => $comment,
+            'meta' => json_encode([
+                'message_type' => $messageType,
+                'comment' => $comment,
+            ], JSON_UNESCAPED_SLASHES),
+            'provider_response' => json_encode([
+                'message_type' => $messageType,
+                'comment' => $comment,
+            ], JSON_UNESCAPED_SLASHES),
+            'received_at' => $now,
+            'replied_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ];
+
+        $insertable = Arr::only($row, $columns);
+
+        if ($insertable !== []) {
+            DB::table('message_logs')->insert($insertable);
+        }
     }
 
     protected function findInviteeByShortCode(
