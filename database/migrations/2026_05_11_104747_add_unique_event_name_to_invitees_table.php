@@ -11,13 +11,27 @@ return new class extends Migration
     {
         // Remove duplicate invitee names inside the same event before adding unique constraint.
         // Keep the first record and delete later duplicates.
-        DB::statement("
-            DELETE FROM invitees a
-            USING invitees b
-            WHERE a.id > b.id
-            AND a.event_id = b.event_id
-            AND LOWER(a.name) = LOWER(b.name)
-        ");
+        $seen = [];
+        $duplicateIds = [];
+
+        DB::table('invitees')
+            ->select(['id', 'event_id', 'name'])
+            ->orderBy('id')
+            ->each(function (object $invitee) use (&$seen, &$duplicateIds): void {
+                $key = $invitee->event_id.'|'.mb_strtolower(trim((string) $invitee->name));
+
+                if (isset($seen[$key])) {
+                    $duplicateIds[] = $invitee->id;
+
+                    return;
+                }
+
+                $seen[$key] = true;
+            });
+
+        if ($duplicateIds !== []) {
+            DB::table('invitees')->whereIn('id', $duplicateIds)->delete();
+        }
 
         Schema::table('invitees', function (Blueprint $table) {
             $table->unique(['event_id', 'name'], 'invitees_event_name_unique');
