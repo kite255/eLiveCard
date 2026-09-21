@@ -4,13 +4,14 @@ namespace App\Jobs;
 
 use App\Models\ContributionRecipient;
 use App\Services\WhatsAppApiCloudService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Str;
 use Throwable;
 
-class SendContributionCardJob implements ShouldQueue
+class SendContributionCardJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -18,6 +19,13 @@ class SendContributionCardJob implements ShouldQueue
 
     public int $tries = 3;
     public int $timeout = 90;
+
+    public int $uniqueFor = 300;
+
+    public function uniqueId(): string
+    {
+        return (string) $this->recipientId;
+    }
 
     public function __construct(public int $recipientId)
     {
