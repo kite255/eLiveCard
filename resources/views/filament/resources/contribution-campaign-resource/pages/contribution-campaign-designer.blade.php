@@ -28,18 +28,19 @@
     <div
         class="contribution-designer"
         x-data="contributionCardDesigner({
-            x: @entangle('nameXPercent').live,
-            y: @entangle('nameYPercent').live,
-            width: @entangle('nameWidthPercent').live,
-            fontSize: @entangle('nameFontSize').live,
-            color: @entangle('nameFontColor').live,
-            family: @entangle('nameFontFamily').live,
-            weight: @entangle('nameFontWeight').live,
-            align: @entangle('nameTextAlign').live,
-            previewName: @entangle('previewName').live,
+            x: @js($nameXPercent),
+            y: @js($nameYPercent),
+            width: @js($nameWidthPercent),
+            fontSize: @js($nameFontSize),
+            color: @js($nameFontColor),
+            family: @js($nameFontFamily),
+            weight: @js($nameFontWeight),
+            align: @js($nameTextAlign),
+            previewName: @js($previewName),
             fontFamilies: @js($fontFamilies),
         })"
         x-init="init()"
+        x-on:keydown.window="handleArrowKey($event)"
     >
         <section class="designer-intro">
             <div>
@@ -101,7 +102,9 @@
                             <div
                                 class="name-placeholder"
                                 x-bind:style="placeholderStyle(true)"
+                                x-bind:class="{ 'is-dragging': dragging }"
                                 x-on:pointerdown.stop="startDrag($event)"
+                                tabindex="0"
                             >
                                 <span x-text="previewName || 'Committee Member Name'"></span>
                                 <button
@@ -196,15 +199,38 @@
                         </div>
 
                         <div class="position-pad">
-                            <span>Fine position</span>
-                            <div>
-                                <button type="button" x-on:click="nudge(0, -0.25)">↑</button>
+                            <span>Move placeholder</span>
+                            <div class="direction-grid">
+                                <button
+                                    type="button"
+                                    class="direction-up"
+                                    aria-label="Move placeholder up"
+                                    title="Move up"
+                                    x-on:click="nudge(0, -0.25)"
+                                >↑</button>
+                                <button
+                                    type="button"
+                                    class="direction-left"
+                                    aria-label="Move placeholder left"
+                                    title="Move left"
+                                    x-on:click="nudge(-0.25, 0)"
+                                >←</button>
+                                <button
+                                    type="button"
+                                    class="direction-down"
+                                    aria-label="Move placeholder down"
+                                    title="Move down"
+                                    x-on:click="nudge(0, 0.25)"
+                                >↓</button>
+                                <button
+                                    type="button"
+                                    class="direction-right"
+                                    aria-label="Move placeholder right"
+                                    title="Move right"
+                                    x-on:click="nudge(0.25, 0)"
+                                >→</button>
                             </div>
-                            <div>
-                                <button type="button" x-on:click="nudge(-0.25, 0)">←</button>
-                                <button type="button" x-on:click="nudge(0, 0.25)">↓</button>
-                                <button type="button" x-on:click="nudge(0.25, 0)">→</button>
-                            </div>
+                            <small>Use these buttons or the keyboard arrow keys. Each step moves 0.25%.</small>
                         </div>
                     </x-filament::section>
 
@@ -338,15 +364,25 @@
             min-height: 1.35em;
             line-height: 1.18;
             white-space: nowrap;
-            overflow: hidden;
+            box-sizing: border-box;
         }
 
         .name-placeholder {
-            cursor: move;
+            cursor: grab;
+            overflow: visible;
+            touch-action: none;
             border: 2px dashed #0ea5e9;
             border-radius: .35rem;
             background: rgb(14 165 233 / 10%);
             box-shadow: 0 0 0 2px rgb(255 255 255 / 65%);
+        }
+
+        .name-placeholder.is-dragging {
+            cursor: grabbing;
+        }
+
+        .preview-name {
+            overflow: hidden;
         }
 
         .name-placeholder span,
@@ -446,11 +482,33 @@
             text-transform: uppercase;
         }
 
-        .position-pad div {
-            display: flex;
+        .direction-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 2.5rem);
+            grid-template-rows: repeat(2, 2.35rem);
             justify-content: center;
             gap: .4rem;
-            margin-bottom: .4rem;
+            margin-bottom: .55rem;
+        }
+
+        .direction-up {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .direction-left {
+            grid-column: 1;
+            grid-row: 2;
+        }
+
+        .direction-down {
+            grid-column: 2;
+            grid-row: 2;
+        }
+
+        .direction-right {
+            grid-column: 3;
+            grid-row: 2;
         }
 
         .position-pad button {
@@ -460,6 +518,25 @@
             border-radius: .55rem;
             background: white;
             font-weight: 800;
+            cursor: pointer;
+        }
+
+        .position-pad button:hover,
+        .position-pad button:focus-visible {
+            border-color: #0284c7;
+            color: #0284c7;
+            outline: none;
+            box-shadow: 0 0 0 2px rgb(14 165 233 / 20%);
+        }
+
+        .position-pad button:active {
+            transform: translateY(1px);
+        }
+
+        .position-pad small {
+            display: block;
+            color: rgb(100 116 139);
+            font-size: .75rem;
         }
 
         .dark .position-pad button {
@@ -535,6 +612,8 @@
                 boundDragMove: null,
                 boundResizeMove: null,
                 boundStopInteraction: null,
+                activePointerId: null,
+                interactionTarget: null,
 
                 init() {
                     this.boundDragMove = (event) => this.handleDragMove(event);
@@ -635,7 +714,7 @@
                         fontFamily: this.cssFamily(),
                         fontWeight: this.weight,
                         fontSize: Math.max(
-                            8,
+                            1,
                             Number(this.fontSize || 42) * scale
                         ) + 'px',
                         justifyContent: this.align === 'left'
@@ -646,7 +725,7 @@
                                     : 'center'
                             ),
                         textAlign: this.align,
-                        padding: interactive ? '0.16em 0.24em' : '0',
+                        padding: '0',
                     };
                 },
 
@@ -656,6 +735,13 @@
                     }
 
                     event.preventDefault();
+                    this.stopInteraction();
+                    this.activePointerId = event.pointerId;
+                    this.interactionTarget = event.currentTarget;
+
+                    if (event.currentTarget.setPointerCapture) {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                    }
 
                     const canvas =
                         this.$refs.designCanvas.getBoundingClientRect();
@@ -688,7 +774,14 @@
                 },
 
                 handleDragMove(event) {
-                    if (!this.dragging || !this.$refs.designCanvas) {
+                    if (
+                        !this.dragging
+                        || !this.$refs.designCanvas
+                        || (
+                            this.activePointerId !== null
+                            && event.pointerId !== this.activePointerId
+                        )
+                    ) {
                         return;
                     }
 
@@ -719,6 +812,13 @@
                     }
 
                     event.preventDefault();
+                    this.stopInteraction();
+                    this.activePointerId = event.pointerId;
+                    this.interactionTarget = event.currentTarget;
+
+                    if (event.currentTarget.setPointerCapture) {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                    }
 
                     const canvas =
                         this.$refs.designCanvas.getBoundingClientRect();
@@ -746,7 +846,13 @@
                 },
 
                 handleResizeMove(event) {
-                    if (!this.resizing) {
+                    if (
+                        !this.resizing
+                        || (
+                            this.activePointerId !== null
+                            && event.pointerId !== this.activePointerId
+                        )
+                    ) {
                         return;
                     }
 
@@ -765,8 +871,19 @@
                 },
 
                 stopInteraction() {
+                    if (
+                        this.interactionTarget
+                        && this.activePointerId !== null
+                        && this.interactionTarget.hasPointerCapture
+                        && this.interactionTarget.hasPointerCapture(this.activePointerId)
+                    ) {
+                        this.interactionTarget.releasePointerCapture(this.activePointerId);
+                    }
+
                     this.dragging = null;
                     this.resizing = null;
+                    this.activePointerId = null;
+                    this.interactionTarget = null;
 
                     if (this.boundDragMove) {
                         window.removeEventListener(
@@ -792,6 +909,33 @@
                             this.boundStopInteraction
                         );
                     }
+                },
+
+                handleArrowKey(event) {
+                    const target = event.target;
+                    const isEditing = target
+                        && (
+                            ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
+                            || target.isContentEditable
+                        );
+
+                    if (isEditing || event.altKey || event.ctrlKey || event.metaKey) {
+                        return;
+                    }
+
+                    const movement = {
+                        ArrowUp: [0, -0.25],
+                        ArrowDown: [0, 0.25],
+                        ArrowLeft: [-0.25, 0],
+                        ArrowRight: [0.25, 0],
+                    }[event.key];
+
+                    if (!movement) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    this.nudge(movement[0], movement[1]);
                 },
 
                 nudge(deltaX, deltaY) {
