@@ -26,10 +26,12 @@ class ContributionRecipient extends Model
         'whatsapp_status',
         'provider_message_id',
         'last_error',
+        'last_reply_message',
         'generated_at',
         'sent_at',
         'delivered_at',
         'read_at',
+        'last_reply_at',
         'failed_at',
     ];
 
@@ -40,6 +42,7 @@ class ContributionRecipient extends Model
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'read_at' => 'datetime',
+        'last_reply_at' => 'datetime',
         'failed_at' => 'datetime',
     ];
 
