@@ -532,18 +532,27 @@
                 dragging: null,
                 resizing: null,
                 resizeObserver: null,
+                boundDragMove: null,
+                boundResizeMove: null,
+                boundStopInteraction: null,
 
                 init() {
-                    this.resizeObserver = new ResizeObserver(() => {
-                        this.updateCanvasSizes();
-                    });
+                    this.boundDragMove = (event) => this.handleDragMove(event);
+                    this.boundResizeMove = (event) => this.handleResizeMove(event);
+                    this.boundStopInteraction = () => this.stopInteraction();
+
+                    if (typeof ResizeObserver !== 'undefined') {
+                        this.resizeObserver = new ResizeObserver(() => {
+                            this.updateCanvasSizes();
+                        });
+                    }
 
                     this.$nextTick(() => {
-                        if (this.$refs.designCanvas) {
+                        if (this.resizeObserver && this.$refs.designCanvas) {
                             this.resizeObserver.observe(this.$refs.designCanvas);
                         }
 
-                        if (this.$refs.previewCanvas) {
+                        if (this.resizeObserver && this.$refs.previewCanvas) {
                             this.resizeObserver.observe(this.$refs.previewCanvas);
                         }
 
@@ -551,8 +560,19 @@
                     });
                 },
 
+                destroy() {
+                    this.stopInteraction();
+
+                    if (this.resizeObserver) {
+                        this.resizeObserver.disconnect();
+                    }
+                },
+
                 imageLoaded(event) {
-                    this.sourceWidth = Math.max(1, event.target.naturalWidth || 1080);
+                    this.sourceWidth = Math.max(
+                        1,
+                        event.target.naturalWidth || 1080
+                    );
                     this.updateCanvasSizes();
                 },
 
@@ -572,8 +592,10 @@
 
                 clamp(value, minimum, maximum) {
                     return Math.round(
-                        Math.max(minimum, Math.min(maximum, Number(value || 0)))
-                        * 10000
+                        Math.max(
+                            minimum,
+                            Math.min(maximum, Number(value || 0))
+                        ) * 10000
                     ) / 10000;
                 },
 
@@ -582,7 +604,11 @@
                 },
 
                 normalizedX() {
-                    return this.clamp(this.x, 0, 100 - this.normalizedWidth());
+                    return this.clamp(
+                        this.x,
+                        0,
+                        100 - this.normalizedWidth()
+                    );
                 },
 
                 normalizedY() {
@@ -590,7 +616,9 @@
                 },
 
                 cssFamily() {
-                    return this.fontFamilies[this.family] || this.family || 'sans-serif';
+                    return this.fontFamilies[this.family]
+                        || this.family
+                        || 'sans-serif';
                 },
 
                 placeholderStyle(interactive) {
@@ -606,32 +634,94 @@
                         color: this.color,
                         fontFamily: this.cssFamily(),
                         fontWeight: this.weight,
-                        fontSize: Math.max(8, this.fontSize * scale) + 'px',
+                        fontSize: Math.max(
+                            8,
+                            Number(this.fontSize || 42) * scale
+                        ) + 'px',
                         justifyContent: this.align === 'left'
                             ? 'flex-start'
-                            : (this.align === 'right' ? 'flex-end' : 'center'),
+                            : (
+                                this.align === 'right'
+                                    ? 'flex-end'
+                                    : 'center'
+                            ),
                         textAlign: this.align,
                         padding: interactive ? '0.16em 0.24em' : '0',
                     };
                 },
 
                 startDrag(event) {
-                    const canvas = this.$refs.designCanvas.getBoundingClientRect();
-                    const element = event.currentTarget.getBoundingClientRect();
+                    if (!this.$refs.designCanvas) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    const canvas =
+                        this.$refs.designCanvas.getBoundingClientRect();
+                    const element =
+                        event.currentTarget.getBoundingClientRect();
 
                     this.dragging = {
-                        offsetX: ((event.clientX - element.left) / canvas.width) * 100,
-                        offsetY: ((event.clientY - element.top) / canvas.height) * 100,
+                        offsetX:
+                            ((event.clientX - element.left) / canvas.width)
+                            * 100,
+                        offsetY:
+                            ((event.clientY - element.top) / canvas.height)
+                            * 100,
                     };
 
-                    window.addEventListener('pointermove', this.onDragMove);
-                    window.addEventListener('pointerup', this.stopInteraction);
+                    window.addEventListener(
+                        'pointermove',
+                        this.boundDragMove
+                    );
+                    window.addEventListener(
+                        'pointerup',
+                        this.boundStopInteraction,
+                        { once: true }
+                    );
+                    window.addEventListener(
+                        'pointercancel',
+                        this.boundStopInteraction,
+                        { once: true }
+                    );
                 },
 
-                onDragMove: null,
+                handleDragMove(event) {
+                    if (!this.dragging || !this.$refs.designCanvas) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    const canvas =
+                        this.$refs.designCanvas.getBoundingClientRect();
+                    const pointerX =
+                        ((event.clientX - canvas.left) / canvas.width) * 100;
+                    const pointerY =
+                        ((event.clientY - canvas.top) / canvas.height) * 100;
+
+                    this.x = this.clamp(
+                        pointerX - this.dragging.offsetX,
+                        0,
+                        100 - this.normalizedWidth()
+                    );
+                    this.y = this.clamp(
+                        pointerY - this.dragging.offsetY,
+                        0,
+                        99
+                    );
+                },
 
                 startResize(event) {
-                    const canvas = this.$refs.designCanvas.getBoundingClientRect();
+                    if (!this.$refs.designCanvas) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    const canvas =
+                        this.$refs.designCanvas.getBoundingClientRect();
 
                     this.resizing = {
                         left: this.normalizedX(),
@@ -639,12 +729,70 @@
                         canvasWidth: canvas.width,
                     };
 
-                    window.addEventListener('pointermove', this.onResizeMove);
-                    window.addEventListener('pointerup', this.stopInteraction);
+                    window.addEventListener(
+                        'pointermove',
+                        this.boundResizeMove
+                    );
+                    window.addEventListener(
+                        'pointerup',
+                        this.boundStopInteraction,
+                        { once: true }
+                    );
+                    window.addEventListener(
+                        'pointercancel',
+                        this.boundStopInteraction,
+                        { once: true }
+                    );
                 },
 
-                onResizeMove: null,
-                stopInteraction: null,
+                handleResizeMove(event) {
+                    if (!this.resizing) {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    const pointerPercent = (
+                        (event.clientX - this.resizing.canvasLeft)
+                        / this.resizing.canvasWidth
+                    ) * 100;
+
+                    this.width = this.clamp(
+                        pointerPercent - this.resizing.left,
+                        5,
+                        100 - this.resizing.left
+                    );
+                },
+
+                stopInteraction() {
+                    this.dragging = null;
+                    this.resizing = null;
+
+                    if (this.boundDragMove) {
+                        window.removeEventListener(
+                            'pointermove',
+                            this.boundDragMove
+                        );
+                    }
+
+                    if (this.boundResizeMove) {
+                        window.removeEventListener(
+                            'pointermove',
+                            this.boundResizeMove
+                        );
+                    }
+
+                    if (this.boundStopInteraction) {
+                        window.removeEventListener(
+                            'pointerup',
+                            this.boundStopInteraction
+                        );
+                        window.removeEventListener(
+                            'pointercancel',
+                            this.boundStopInteraction
+                        );
+                    }
+                },
 
                 nudge(deltaX, deltaY) {
                     this.x = this.clamp(
@@ -652,7 +800,11 @@
                         0,
                         100 - this.normalizedWidth()
                     );
-                    this.y = this.clamp(this.normalizedY() + deltaY, 0, 99);
+                    this.y = this.clamp(
+                        this.normalizedY() + deltaY,
+                        0,
+                        99
+                    );
                 },
 
                 async saveDesign() {
@@ -662,73 +814,37 @@
 
                     await this.$wire.set('nameXPercent', this.x);
                     await this.$wire.set('nameYPercent', this.y);
-                    await this.$wire.set('nameWidthPercent', this.width);
-                    await this.$wire.set('nameFontSize', Number(this.fontSize));
-                    await this.$wire.set('nameFontColor', this.color);
-                    await this.$wire.set('nameFontFamily', this.family);
-                    await this.$wire.set('nameFontWeight', this.weight);
-                    await this.$wire.set('nameTextAlign', this.align);
-                    await this.$wire.set('previewName', this.previewName);
+                    await this.$wire.set(
+                        'nameWidthPercent',
+                        this.width
+                    );
+                    await this.$wire.set(
+                        'nameFontSize',
+                        Number(this.fontSize)
+                    );
+                    await this.$wire.set(
+                        'nameFontColor',
+                        this.color
+                    );
+                    await this.$wire.set(
+                        'nameFontFamily',
+                        this.family
+                    );
+                    await this.$wire.set(
+                        'nameFontWeight',
+                        this.weight
+                    );
+                    await this.$wire.set(
+                        'nameTextAlign',
+                        this.align
+                    );
+                    await this.$wire.set(
+                        'previewName',
+                        this.previewName
+                    );
                     await this.$wire.saveDesign();
                 },
             };
         }
-
-        document.addEventListener('alpine:init', () => {
-            const originalFactory = contributionCardDesigner;
-
-            window.contributionCardDesigner = (config) => {
-                const designer = originalFactory(config);
-
-                designer.onDragMove = function (event) {
-                    if (!designer.dragging || !designer.$refs.designCanvas) {
-                        return;
-                    }
-
-                    const canvas = designer.$refs.designCanvas.getBoundingClientRect();
-                    const pointerX = ((event.clientX - canvas.left) / canvas.width) * 100;
-                    const pointerY = ((event.clientY - canvas.top) / canvas.height) * 100;
-
-                    designer.x = designer.clamp(
-                        pointerX - designer.dragging.offsetX,
-                        0,
-                        100 - designer.normalizedWidth()
-                    );
-                    designer.y = designer.clamp(
-                        pointerY - designer.dragging.offsetY,
-                        0,
-                        99
-                    );
-                };
-
-                designer.onResizeMove = function (event) {
-                    if (!designer.resizing) {
-                        return;
-                    }
-
-                    const pointerPercent = (
-                        (event.clientX - designer.resizing.canvasLeft)
-                        / designer.resizing.canvasWidth
-                    ) * 100;
-
-                    designer.width = designer.clamp(
-                        pointerPercent - designer.resizing.left,
-                        5,
-                        100 - designer.resizing.left
-                    );
-                };
-
-                designer.stopInteraction = function () {
-                    designer.dragging = null;
-                    designer.resizing = null;
-
-                    window.removeEventListener('pointermove', designer.onDragMove);
-                    window.removeEventListener('pointermove', designer.onResizeMove);
-                    window.removeEventListener('pointerup', designer.stopInteraction);
-                };
-
-                return designer;
-            };
-        });
     </script>
 </x-filament-panels::page>
