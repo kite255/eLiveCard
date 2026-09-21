@@ -200,6 +200,7 @@ class ContributionCampaignResource extends Resource
             'index' => Pages\ListContributionCampaigns::route('/'),
             'create' => Pages\CreateContributionCampaign::route('/create'),
             'edit' => Pages\EditContributionCampaign::route('/{record}/edit'),
+            'designer' => Pages\ContributionCampaignDesigner::route('/{record}/designer'),
         ];
     }
 }

@@ -12,6 +12,15 @@ class EditContributionCampaign extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [Actions\DeleteAction::make()];
+        return [
+            Actions\Action::make('designer')
+                ->label('Open Designer')
+                ->icon('heroicon-o-cursor-arrow-rays')
+                ->color('primary')
+                ->url(ContributionCampaignResource::getUrl('designer', [
+                    'record' => $this->record,
+                ])),
+            Actions\DeleteAction::make(),
+        ];
     }
 }
