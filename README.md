@@ -17,7 +17,16 @@ Administrators can open **Communication → Contribution Cards** to:
 4. Generate personalized cards in the queue and preview them per recipient.
 5. Send generated cards through the approved Meta template `contribution_card_sw`.
 
-The Meta template must contain an image header and one body parameter (`{{1}}`) for the committee member's name. Run the queue worker in production and ensure the existing `WHATSAPP_*` Cloud API variables and a public `APP_URL` are configured.
+The Meta template must contain an image header and one body parameter (`{{1}}`) for the committee member's name. Ensure the existing `WHATSAPP_*` Cloud API variables and a public `APP_URL` are configured.
+
+Run image rendering and delivery as separate production workers:
+
+```bash
+php artisan queue:work database --queue=card-generation --sleep=3 --tries=3 --timeout=120
+php artisan queue:work database --queue=communications,default --sleep=3 --tries=3 --timeout=120
+```
+
+Both services must deploy the same application commit, share the same database, and use shared public storage (or the same object-storage disk). The communications worker also listens to `default` so existing legacy jobs continue to run.
 
 ## About Laravel
 
