@@ -71,7 +71,12 @@ class ContributionCardService
         });
 
         $safeName = Str::slug($recipient->name) ?: 'committee-member';
-        $path = "events/{$campaign->event_id}/contribution-cards/{$campaign->id}/{$recipient->id}-{$safeName}.jpg";
+        $previousPath = filled($recipient->generated_card_path)
+            ? (string) $recipient->generated_card_path
+            : null;
+        $version = now()->format('YmdHisv');
+        $path = "events/{$campaign->event_id}/contribution-cards/{$campaign->id}/{$recipient->id}-{$safeName}-{$version}.jpg";
+
         Storage::disk('public')->makeDirectory(dirname($path));
         Storage::disk('public')->put($path, (string) $image->toJpeg(quality: 100, progressive: false));
 
@@ -82,6 +87,10 @@ class ContributionCardService
             'generated_at' => now(),
             'last_error' => null,
         ])->saveQuietly();
+
+        if ($previousPath && $previousPath !== $path) {
+            Storage::disk('public')->delete($previousPath);
+        }
 
         return $recipient->refresh();
     }
