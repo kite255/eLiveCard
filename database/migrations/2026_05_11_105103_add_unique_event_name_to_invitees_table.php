@@ -7,6 +7,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         /*
          * Remove duplicate names inside the same event before enforcing uniqueness.
          * Keeps the first record and deletes later duplicates.
@@ -37,6 +41,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
         $constraintExists = DB::table('pg_constraint')
             ->where('conname', 'invitees_event_name_unique')
             ->exists();
