@@ -65,10 +65,35 @@ class RecipientsRelationManager extends RelationManager
             ->columns([
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable()->weight('bold'),
                 Tables\Columns\TextColumn::make('phone')->searchable()->copyable(),
-                Tables\Columns\TextColumn::make('generation_status')->label('Card')->badge()->color(fn (string $state): string => $this->statusColor($state)),
-                Tables\Columns\TextColumn::make('send_status')->label('WhatsApp')->badge()->color(fn (string $state): string => $this->statusColor($state)),
-                Tables\Columns\TextColumn::make('sent_at')->label('Sent At')->dateTime('d M Y, H:i')->placeholder('—'),
-                Tables\Columns\TextColumn::make('last_error')->label('Last Error')->limit(45)->tooltip(fn (ContributionRecipient $record): ?string => $record->last_error)->toggleable(),
+                Tables\Columns\TextColumn::make('generation_status')
+                    ->label('Card')->badge()
+                    ->color(fn (string $state): string => $this->statusColor($state)),
+                Tables\Columns\TextColumn::make('whatsapp_status')
+                    ->label('Delivery')
+                    ->formatStateUsing(fn (?string $state): string => ucfirst(str_replace('_', ' ', $state ?: 'not sent')))
+                    ->badge()
+                    ->color(fn (?string $state): string => $this->statusColor((string) $state)),
+                Tables\Columns\TextColumn::make('sent_at')
+                    ->label('Sent At')->dateTime('d M Y, H:i')->placeholder('—'),
+                Tables\Columns\TextColumn::make('delivered_at')
+                    ->label('Delivered At')->dateTime('d M Y, H:i')->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('read_at')
+                    ->label('Read At')->dateTime('d M Y, H:i')->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('last_reply_message')
+                    ->label('Receiver Comment')
+                    ->limit(55)
+                    ->wrap()
+                    ->placeholder('—')
+                    ->tooltip(fn (ContributionRecipient $record): ?string => $record->last_reply_message),
+                Tables\Columns\TextColumn::make('last_reply_at')
+                    ->label('Reply At')->dateTime('d M Y, H:i')->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('last_error')
+                    ->label('Last Error')->limit(45)
+                    ->tooltip(fn (ContributionRecipient $record): ?string => $record->last_error)
+                    ->toggleable(),
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
@@ -199,7 +224,12 @@ class RecipientsRelationManager extends RelationManager
     private function statusColor(string $status): string
     {
         return match ($status) {
-            ContributionRecipient::STATUS_GENERATED, ContributionRecipient::STATUS_SENT => 'success',
+            ContributionRecipient::STATUS_GENERATED,
+            ContributionRecipient::STATUS_SENT,
+            'submitted',
+            'delivered',
+            'read',
+            'replied' => 'success',
             ContributionRecipient::STATUS_PROCESSING => 'warning',
             ContributionRecipient::STATUS_FAILED => 'danger',
             default => 'gray',
