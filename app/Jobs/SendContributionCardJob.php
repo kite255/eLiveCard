@@ -14,10 +14,15 @@ class SendContributionCardJob implements ShouldQueue
 {
     use Queueable;
 
+    public const QUEUE = 'communications';
+
     public int $tries = 3;
     public int $timeout = 90;
 
-    public function __construct(public int $recipientId) {}
+    public function __construct(public int $recipientId)
+    {
+        $this->onQueue(self::QUEUE);
+    }
 
     public function middleware(): array
     {
