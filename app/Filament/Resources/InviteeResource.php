@@ -5,12 +5,12 @@ namespace App\Filament\Resources;
 use App\Exports\InviteesExport;
 use App\Exports\AttendanceExport;
 use App\Jobs\GenerateInviteeCardJob;
+use App\Jobs\SendInvitationSmsJob;
 use App\Filament\Resources\InviteeResource\Pages;
 use App\Models\Invitee;
 use App\Models\GeneratedCard;
 use App\Models\Event;
 use App\Services\ReminderSmsService;
-use App\Services\SmsService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -20,6 +20,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 
 class InviteeResource extends Resource
@@ -545,6 +546,39 @@ class InviteeResource extends Resource
                     ])
                     ->sortable(),
 
+                Tables\Columns\TextColumn::make('whatsapp_status')
+                    ->label('WhatsApp')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => ucfirst(str_replace('_', ' ', $state ?: 'not sent')))
+                    ->color(fn (?string $state): string => match ($state) {
+                        'sent', 'delivered', 'read' => 'success',
+                        'queued', 'sending', 'submitted' => 'warning',
+                        'failed' => 'danger',
+                        default => 'gray',
+                    })
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('last_reply_message')
+                    ->label('Receiver Comment')
+                    ->limit(55)
+                    ->wrap()
+                    ->placeholder('-')
+                    ->tooltip(fn (?string $state): ?string => $state),
+
+                Tables\Columns\TextColumn::make('whatsapp_delivered_at')
+                    ->label('WhatsApp Delivered')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('whatsapp_read_at')
+                    ->label('WhatsApp Read')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('invitation_sms_status')
                     ->label('Invitation SMS')
                     ->badge()
@@ -914,6 +948,30 @@ class InviteeResource extends Resource
                         ->openUrlInNewTab()
                         ->visible(fn (Invitee $record): bool => filled($record->generated_card_url)),
 
+                    Tables\Actions\Action::make('download_card')
+                        ->label('Download Card')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('info')
+                        ->visible(fn (Invitee $record): bool => $record->latestGeneratedCard?->fileExists() ?? false)
+                        ->action(function (Invitee $record) {
+                            $record->loadMissing('latestGeneratedCard.invitee');
+                            $card = $record->latestGeneratedCard;
+
+                            if (! $card || ! $card->fileExists()) {
+                                Notification::make()
+                                    ->title('Generated card file not found')
+                                    ->danger()
+                                    ->send();
+
+                                return null;
+                            }
+
+                            return Storage::disk('public')->download(
+                                $card->file_path,
+                                $card->download_name,
+                            );
+                        }),
+
                     Tables\Actions\Action::make('retry_card')
                         ->label('Retry Failed Card')
                         ->icon('heroicon-o-arrow-path')
@@ -948,23 +1006,18 @@ class InviteeResource extends Resource
                         ->requiresConfirmation()
                         ->modalHeading('Send Invitation SMS')
                         ->modalDescription(fn (Invitee $record): string => 'Send invitation SMS with RSVP link to ' . $record->name . '?')
-                        ->modalSubmitActionLabel('Send SMS')
+                        ->modalSubmitActionLabel('Queue SMS')
                         ->action(function (Invitee $record): void {
-                            try {
-                                app(SmsService::class)->sendInvitation($record);
+                            SendInvitationSmsJob::dispatch(
+                                eventId: $record->event_id,
+                                inviteeId: $record->id,
+                            );
 
-                                Notification::make()
-                                    ->title('Invitation SMS sent')
-                                    ->body('Invitation SMS with RSVP link was sent to ' . $record->name . '.')
-                                    ->success()
-                                    ->send();
-                            } catch (\Throwable $e) {
-                                Notification::make()
-                                    ->title('SMS sending failed')
-                                    ->body($e->getMessage())
-                                    ->danger()
-                                    ->send();
-                            }
+                            Notification::make()
+                                ->title('Invitation SMS queued')
+                                ->body('Invitation SMS with RSVP link was queued for ' . $record->name . '.')
+                                ->success()
+                                ->send();
                         }),
 
                     Tables\Actions\Action::make('send_rsvp_reminder_sms')
@@ -1235,24 +1288,22 @@ class InviteeResource extends Resource
                         ->requiresConfirmation()
                         ->modalHeading('Send SMS Invitations')
                         ->modalDescription('Send SMS invitations with RSVP links to all selected invitees?')
-                        ->modalSubmitActionLabel('Send SMS')
+                        ->modalSubmitActionLabel('Queue SMS')
                         ->action(function (Collection $records): void {
-                            $sent = 0;
-                            $failed = 0;
+                            $queued = 0;
 
                             foreach ($records as $record) {
-                                try {
-                                    app(SmsService::class)->sendInvitation($record);
-                                    $sent++;
-                                } catch (\Throwable) {
-                                    $failed++;
-                                }
+                                SendInvitationSmsJob::dispatch(
+                                    eventId: $record->event_id,
+                                    inviteeId: $record->id,
+                                );
+                                $queued++;
                             }
 
                             Notification::make()
-                                ->title($failed === 0 ? 'SMS invitations sent' : 'SMS sending completed with errors')
-                                ->body($sent . ' sent, ' . $failed . ' failed. Check SMS Logs or SMS Error column for details.')
-                                ->color($failed === 0 ? 'success' : 'warning')
+                                ->title('SMS invitations queued')
+                                ->body($queued . ' invitation SMS job(s) queued for background delivery.')
+                                ->success()
                                 ->send();
                         }),
 
