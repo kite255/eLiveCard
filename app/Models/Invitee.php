@@ -131,6 +131,13 @@ class Invitee extends Model
         'sms_message_id',
         'sms_error',
 
+        'whatsapp_status',
+        'whatsapp_message_id',
+        'whatsapp_sent_at',
+        'whatsapp_delivered_at',
+        'whatsapp_read_at',
+        'whatsapp_failed_at',
+
         'invitation_sms_status',
         'invitation_sms_sent_at',
         'reminder_sms_status',
@@ -144,6 +151,7 @@ class Invitee extends Model
         'last_whatsapp_sent_at',
         'last_message_channel',
         'last_message_status',
+        'last_message_body',
         'last_reply_message',
         'last_reply_at',
 
@@ -162,6 +170,10 @@ class Invitee extends Model
         'rsvp_confirmed_at' => 'datetime',
         'checked_in_at' => 'datetime',
         'sms_sent_at' => 'datetime',
+        'whatsapp_sent_at' => 'datetime',
+        'whatsapp_delivered_at' => 'datetime',
+        'whatsapp_read_at' => 'datetime',
+        'whatsapp_failed_at' => 'datetime',
         'invitation_sms_sent_at' => 'datetime',
         'reminder_sms_sent_at' => 'datetime',
         'final_sms_sent_at' => 'datetime',
