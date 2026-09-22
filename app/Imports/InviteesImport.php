@@ -9,11 +9,11 @@ use App\Models\Invitee;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
+use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 
-class InviteesImport implements ToCollection, WithHeadingRow
+class InviteesImport implements SkipsEmptyRows, ToCollection, WithHeadingRow
 {
     protected int $eventId;
 
@@ -36,6 +36,7 @@ class InviteesImport implements ToCollection, WithHeadingRow
             $name = $this->cleanText($row['name'] ?? null);
             $phone = $this->cleanText($row['phone'] ?? null);
             $cardTypeName = $this->cleanText($row['card_type'] ?? null);
+            $allowedGuestsValue = $this->cleanText($row['allowed_guests'] ?? null);
 
             $email = $this->cleanText($row['email'] ?? null);
             $category = $this->cleanText($row['category'] ?? null);
@@ -93,7 +94,17 @@ class InviteesImport implements ToCollection, WithHeadingRow
                 continue;
             }
 
-            $allowedGuests = max(1, (int) ($cardType->allowed_people ?? 1));
+            if (
+                $allowedGuestsValue !== ''
+                && (! ctype_digit($allowedGuestsValue) || (int) $allowedGuestsValue < 1)
+            ) {
+                $this->errors[] = "Row {$rowNumber}: Allowed guests must be a whole number greater than zero.";
+                continue;
+            }
+
+            $allowedGuests = $allowedGuestsValue !== ''
+                ? (int) $allowedGuestsValue
+                : max(1, (int) ($cardType->allowed_people ?? 1));
 
             $plainQrToken = Str::random(64);
 
@@ -197,11 +208,6 @@ class InviteesImport implements ToCollection, WithHeadingRow
             $this->importedCount++;
         }
 
-        if (! empty($this->errors)) {
-            throw ValidationException::withMessages([
-                'import_file' => $this->errors,
-            ]);
-        }
     }
 
     private function queueCardGeneration(Invitee $invitee): void
