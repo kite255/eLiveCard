@@ -5,6 +5,8 @@ namespace App\Filament\Resources\EventResource\RelationManagers;
 use App\Exports\EventInviteesExport;
 use App\Exports\EventRsvpExport;
 use App\Jobs\GenerateInviteeCardJob;
+use App\Jobs\SendInvitationSmsJob;
+use App\Jobs\SendInvitationWhatsAppJob;
 use App\Models\CardType;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
@@ -570,6 +572,34 @@ class InviteesRelationManager extends RelationManager
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
 
+                Tables\Columns\TextColumn::make('whatsapp_delivered_at')
+                    ->label('WhatsApp Delivered')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('whatsapp_read_at')
+                    ->label('WhatsApp Read')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\TextColumn::make('last_reply_message')
+                    ->label('Receiver Comment')
+                    ->limit(55)
+                    ->wrap()
+                    ->placeholder('-')
+                    ->tooltip(fn (?string $state): ?string => $state),
+
+                Tables\Columns\TextColumn::make('last_reply_at')
+                    ->label('Reply At')
+                    ->dateTime('d M Y H:i')
+                    ->placeholder('-')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('last_message_channel')
                     ->label('Last Channel')
                     ->badge()
@@ -946,7 +976,7 @@ class InviteesRelationManager extends RelationManager
                     ->icon('heroicon-o-arrow-up-tray')
                     ->color('gray')
                     ->modalHeading('Import Invitees from Excel')
-                    ->modalDescription('Upload an Excel file with columns: name, phone, card_type, category, table_number.')
+                    ->modalDescription('Upload an Excel file with required columns name, phone, card_type. Valid rows are kept when another row has an error.')
                     ->modalSubmitActionLabel('Import Invitees')
                     ->form([
                         Forms\Components\FileUpload::make('excel_file')
@@ -961,7 +991,7 @@ class InviteesRelationManager extends RelationManager
                                 'application/octet-stream',
                             ])
                             ->maxSize(10240)
-                            ->helperText('Required columns: name, phone, card_type. Optional: email, category, table_number.'),
+                            ->helperText('Required: name, phone, card_type. Optional: allowed_guests, email, category, table_number.'),
                     ])
                     ->action(function (array $data): void {
                         $this->importInviteesFromExcel($data['excel_file']);
@@ -2317,7 +2347,7 @@ class InviteesRelationManager extends RelationManager
                                         : null,
                                 );
 
-                                if (in_array($result['status'], ['sent', 'logged'], true)) {
+                                if (in_array($result['status'], ['queued', 'sent', 'logged'], true)) {
                                     $sent++;
                                 } elseif ($result['status'] === 'skipped') {
                                     $skipped++;
@@ -2341,7 +2371,7 @@ class InviteesRelationManager extends RelationManager
 
                             $this->brandedNotification()
                                 ->title('eLive Card • Selected messages processed')
-                                ->body("Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
+                                ->body("Queued/sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
                                 ->color($failed > 0 ? 'warning' : 'success')
                                 ->persistent()
                                 ->send();
@@ -2653,7 +2683,7 @@ class InviteesRelationManager extends RelationManager
                 messageTemplateId: $template->id,
             );
 
-            if (in_array($result['status'] ?? null, ['sent', 'logged'], true)) {
+            if (in_array($result['status'] ?? null, ['queued', 'sent', 'logged'], true)) {
                 $sent++;
 
                 continue;
@@ -2672,7 +2702,7 @@ class InviteesRelationManager extends RelationManager
             }
         }
 
-        $body = "Sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.";
+        $body = "Queued/sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.";
 
         if (! empty($failedExamples)) {
             $body .= "\n\nFirst errors:\n" . implode("\n", $failedExamples);
@@ -2839,6 +2869,52 @@ class InviteesRelationManager extends RelationManager
 
         $message = $this->renderMessageTemplate($template, $invitee);
         $effectiveTemplateType = $template->type ?: $templateType;
+
+        if ($effectiveTemplateType === MessageTemplate::TYPE_INVITATION) {
+            if ($channel === MessageTemplate::CHANNEL_SMS) {
+                SendInvitationSmsJob::dispatch(
+                    eventId: $invitee->event_id,
+                    inviteeId: $invitee->id,
+                    customMessage: $message,
+                );
+
+                $this->safeUpdateInvitee($invitee, [
+                    'last_message_channel' => 'sms',
+                    'last_message_status' => 'queued',
+                    'message_status' => 'queued',
+                    'sms_status' => Invitee::SMS_STATUS_PENDING,
+                ]);
+
+                return [
+                    'status' => 'queued',
+                    'type' => 'success',
+                    'title' => 'Invitation SMS queued',
+                    'body' => 'The invitation SMS was queued for background delivery.',
+                ];
+            }
+
+            SendInvitationWhatsAppJob::dispatch(
+                inviteeId: $invitee->id,
+                languageCode: filled($template->whatsapp_language_code)
+                    ? (string) $template->whatsapp_language_code
+                    : MessageTemplate::LANGUAGE_ENGLISH,
+                messageTemplateId: $template->id,
+            );
+
+            $this->safeUpdateInvitee($invitee, [
+                'last_message_channel' => 'whatsapp',
+                'last_message_status' => 'queued',
+                'message_status' => 'queued',
+                'whatsapp_status' => 'queued',
+            ]);
+
+            return [
+                'status' => 'queued',
+                'type' => 'success',
+                'title' => 'WhatsApp invitation queued',
+                'body' => 'The WhatsApp invitation was queued for background delivery.',
+            ];
+        }
 
         if ($channel === 'sms') {
             return $this->sendSmsUsingTemplate($invitee, $effectiveTemplateType, $message);
@@ -3907,6 +3983,7 @@ class InviteesRelationManager extends RelationManager
             $rawPhone = trim((string) ($data['phone'] ?? ''));
             $phone = $this->normalizePhone($rawPhone);
             $cardTypeName = trim((string) ($data['card_type'] ?? ''));
+            $allowedGuestsValue = trim((string) ($data['allowed_guests'] ?? ''));
 
             if (blank($name) && blank($rawPhone) && blank($cardTypeName)) {
                 continue;
@@ -3968,7 +4045,18 @@ class InviteesRelationManager extends RelationManager
                 continue;
             }
 
-            $allowedGuests = max(1, (int) ($cardType->allowed_people ?? 1));
+            if (
+                $allowedGuestsValue !== ''
+                && (! ctype_digit($allowedGuestsValue) || (int) $allowedGuestsValue < 1)
+            ) {
+                $skipped++;
+                $errors[] = "Row {$rowNumber}: allowed_guests must be a whole number greater than zero.";
+                continue;
+            }
+
+            $allowedGuests = $allowedGuestsValue !== ''
+                ? (int) $allowedGuestsValue
+                : max(1, (int) ($cardType->allowed_people ?? 1));
 
             $invitee = Invitee::create($this->prepareInviteeData([
                 'name' => $name,
@@ -4020,7 +4108,7 @@ class InviteesRelationManager extends RelationManager
         $this->brandedNotification()
             ->title('eLive Card • Excel import completed')
             ->body($message)
-            ->success()
+            ->color($skipped > 0 ? 'warning' : 'success')
             ->persistent()
             ->send();
     }

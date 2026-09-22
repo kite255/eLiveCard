@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EventResource\RelationManagers;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Models\GeneratedCard;
 use App\Services\AuditLogService;
+use App\Services\InvitationCardDownloadService;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Enums\FontWeight;
@@ -13,6 +14,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
 
 class GeneratedCardsRelationManager extends RelationManager
 {
@@ -155,6 +158,22 @@ class GeneratedCardsRelationManager extends RelationManager
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')
                     ->options(GeneratedCard::statuses()),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('download_all_cards')
+                    ->label('Download All Cards')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->visible(fn (): bool => $this->canViewGeneratedCards()
+                        && $this->getOwnerRecord()->generatedCards()
+                            ->whereNotNull('file_path')
+                            ->exists())
+                    ->action(fn (): ?BinaryFileResponse => $this->downloadCardArchive(
+                        $this->getOwnerRecord()->generatedCards()
+                            ->whereNotNull('file_path')
+                            ->with('invitee')
+                            ->get(),
+                    )),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -321,6 +340,14 @@ class GeneratedCardsRelationManager extends RelationManager
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('download_selected')
+                        ->label('Download Selected')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('info')
+                        ->visible(fn (): bool => $this->canViewGeneratedCards())
+                        ->deselectRecordsAfterCompletion()
+                        ->action(fn (Collection $records): ?BinaryFileResponse => $this->downloadCardArchive($records)),
+
                     Tables\Actions\BulkAction::make('regenerate_selected')
                         ->label('Regenerate Selected')
                         ->icon('heroicon-o-arrow-path')
@@ -467,5 +494,37 @@ class GeneratedCardsRelationManager extends RelationManager
             ->emptyStateIcon('heroicon-o-identification')
             ->emptyStateHeading('No generated cards yet')
             ->emptyStateDescription('Generate cards from the Invitees tab or from an active card template first.');
+    }
+
+    private function downloadCardArchive(Collection $cards): ?BinaryFileResponse
+    {
+        try {
+            $archive = app(InvitationCardDownloadService::class)->createArchive(
+                $cards,
+                $this->getOwnerRecord()->title ?? $this->getOwnerRecord()->name ?? 'event',
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Invitation cards could not be downloaded')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return null;
+        }
+
+        if ($archive['skipped'] > 0) {
+            Notification::make()
+                ->title("{$archive['added']} card(s) included")
+                ->body("{$archive['skipped']} missing card file(s) were skipped.")
+                ->warning()
+                ->send();
+        }
+
+        return response()
+            ->download($archive['path'], $archive['name'], ['Content-Type' => 'application/zip'])
+            ->deleteFileAfterSend(true);
     }
 }
