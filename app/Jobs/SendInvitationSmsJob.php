@@ -16,6 +16,8 @@ class SendInvitationSmsJob implements ShouldQueue
 {
     use Queueable;
 
+    public const QUEUE = 'communications';
+
     public int $tries = 3;
 
     public int $timeout = 120;
@@ -25,7 +27,10 @@ class SendInvitationSmsJob implements ShouldQueue
     public function __construct(
         public int $eventId,
         public int $inviteeId,
-    ) {}
+        public ?string $customMessage = null,
+    ) {
+        $this->onQueue(self::QUEUE);
+    }
 
     public function middleware(): array
     {
@@ -196,7 +201,7 @@ class SendInvitationSmsJob implements ShouldQueue
             | Do not manually create another SmsLog here.
             */
 
-            $result = $smsService->sendInvitation($invitee);
+            $result = $smsService->sendInvitation($invitee, $this->customMessage);
 
             if (! (bool) ($result['success'] ?? false)) {
                 throw new \RuntimeException(
