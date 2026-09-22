@@ -7,6 +7,7 @@ use App\Jobs\SendContributionCardJob;
 use App\Exports\ContributionRecipientsSampleExport;
 use App\Imports\ContributionRecipientsImport;
 use App\Models\ContributionRecipient;
+use App\Services\ContributionCardDownloadService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -15,9 +16,12 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
 
 class RecipientsRelationManager extends RelationManager
 {
@@ -168,6 +172,20 @@ class RecipientsRelationManager extends RelationManager
                         });
                         Notification::make()->title("{$count} contribution card(s) queued")->success()->send();
                     }),
+                Tables\Actions\Action::make('download_all')
+                    ->label('Download All Cards')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->visible(fn (): bool => $this->getOwnerRecord()->recipients()
+                        ->whereNotNull('generated_card_path')
+                        ->exists())
+                    ->action(function (): ?BinaryFileResponse {
+                        return $this->downloadCardArchive(
+                            $this->getOwnerRecord()->recipients()
+                                ->whereNotNull('generated_card_path')
+                                ->get(),
+                        );
+                    }),
                 Tables\Actions\Action::make('send_all')
                     ->label('Send Generated Cards')->icon('heroicon-o-paper-airplane')->color('success')
                     ->requiresConfirmation()
@@ -193,6 +211,27 @@ class RecipientsRelationManager extends RelationManager
                 Tables\Actions\Action::make('preview')
                     ->icon('heroicon-o-eye')->url(fn (ContributionRecipient $record): ?string => $record->generated_card_url)
                     ->openUrlInNewTab()->visible(fn (ContributionRecipient $record): bool => filled($record->generated_card_path)),
+                Tables\Actions\Action::make('download')
+                    ->label('Download')
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->visible(fn (ContributionRecipient $record): bool => filled($record->generated_card_path))
+                    ->action(function (ContributionRecipient $record) {
+                        if (! Storage::disk('public')->exists($record->generated_card_path)) {
+                            Notification::make()
+                                ->title('Generated card file not found')
+                                ->body('Generate this card again, then retry the download.')
+                                ->danger()
+                                ->send();
+
+                            return null;
+                        }
+
+                        return Storage::disk('public')->download(
+                            $record->generated_card_path,
+                            app(ContributionCardDownloadService::class)->cardFileName($record),
+                        );
+                    }),
                 Tables\Actions\Action::make('send')
                     ->icon('heroicon-o-paper-airplane')->color('success')->requiresConfirmation()
                     ->visible(fn (ContributionRecipient $record): bool => $record->generation_status === ContributionRecipient::STATUS_GENERATED)
@@ -216,6 +255,12 @@ class RecipientsRelationManager extends RelationManager
                             $records->filter(fn (ContributionRecipient $record): bool => filled($record->generated_card_path))
                                 ->each(fn (ContributionRecipient $record) => SendContributionCardJob::dispatch($record->id));
                         })->deselectRecordsAfterCompletion(),
+                    Tables\Actions\BulkAction::make('download_selected')
+                        ->label('Download Selected Cards')
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->color('info')
+                        ->action(fn (Collection $records): ?BinaryFileResponse => $this->downloadCardArchive($records))
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
@@ -234,5 +279,37 @@ class RecipientsRelationManager extends RelationManager
             ContributionRecipient::STATUS_FAILED => 'danger',
             default => 'gray',
         };
+    }
+
+    private function downloadCardArchive(Collection $recipients): ?BinaryFileResponse
+    {
+        try {
+            $archive = app(ContributionCardDownloadService::class)->createArchive(
+                $recipients,
+                $this->getOwnerRecord()->name,
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            Notification::make()
+                ->title('Cards could not be downloaded')
+                ->body($exception->getMessage())
+                ->danger()
+                ->send();
+
+            return null;
+        }
+
+        if ($archive['skipped'] > 0) {
+            Notification::make()
+                ->title("{$archive['added']} card(s) included")
+                ->body("{$archive['skipped']} card file(s) were missing and skipped.")
+                ->warning()
+                ->send();
+        }
+
+        return response()
+            ->download($archive['path'], $archive['name'], ['Content-Type' => 'application/zip'])
+            ->deleteFileAfterSend(true);
     }
 }
