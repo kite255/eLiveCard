@@ -10,7 +10,6 @@ use Filament\Forms;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Facades\Excel;
 
 class ListInvitees extends ListRecords
@@ -46,10 +45,10 @@ class ListInvitees extends ListRecords
                             'text/csv',
                         ])
                         ->required()
-                        ->helperText('Excel headings must be exactly: name, phone, card_type'),
+                        ->helperText('Required headings: name, phone, card_type. Optional: allowed_guests, email, category, table_number.'),
                 ])
                 ->modalHeading('Import Invitees from Excel')
-                ->modalDescription('Upload an Excel file with only these columns: name, phone, card_type.')
+                ->modalDescription('Valid rows are imported even if other rows contain errors.')
                 ->modalSubmitActionLabel('Import Invitees')
                 ->action(function (array $data) {
                     $filePath = Storage::disk('local')->path($data['import_file']);
@@ -70,22 +69,28 @@ class ListInvitees extends ListRecords
                     try {
                         Excel::import($import, $filePath);
 
+                        if ($import->errors !== []) {
+                            $errors = collect($import->errors)
+                                ->take(15)
+                                ->implode("\n");
+
+                            Notification::make()
+                                ->title('Import completed with errors')
+                                ->body(
+                                    $import->importedCount . " invitee(s) imported.\n"
+                                    . $errors
+                                )
+                                ->warning()
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
                         Notification::make()
                             ->title('Invitees imported successfully')
                             ->body($import->importedCount . ' invitee(s) imported successfully.')
                             ->success()
-                            ->send();
-                    } catch (ValidationException $exception) {
-                        $errors = collect($exception->errors())
-                            ->flatten()
-                            ->take(15)
-                            ->implode("\n");
-
-                        Notification::make()
-                            ->title('Import failed')
-                            ->body($errors ?: 'Please check your Excel file and try again.')
-                            ->danger()
-                            ->persistent()
                             ->send();
                     } catch (\Throwable $exception) {
                         Notification::make()
