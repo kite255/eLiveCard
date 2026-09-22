@@ -2,6 +2,9 @@
 
 WORKDIR /var/www/html
 
+# Increase PHP memory for bulk card ZIP downloads
+RUN printf "memory_limit=512M\n" > /usr/local/etc/php/conf.d/zz-memory-limit.ini
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
