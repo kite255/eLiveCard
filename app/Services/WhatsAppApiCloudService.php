@@ -22,7 +22,8 @@ class WhatsAppApiCloudService
 {
     public function sendInvitation(
         Invitee $invitee,
-        string $languageCode = MessageTemplate::LANGUAGE_ENGLISH
+        string $languageCode = MessageTemplate::LANGUAGE_ENGLISH,
+        ?int $messageTemplateId = null,
     ): array {
         $invitee->loadMissing([
             'event',
@@ -51,11 +52,24 @@ class WhatsAppApiCloudService
 
         $languageCode = $this->normalizeLanguage($languageCode);
 
-        $messageTemplate = MessageTemplate::activeWhatsappTemplate(
-            eventId: (int) $event->id,
-            type: MessageTemplate::TYPE_INVITATION,
-            language: $languageCode,
-        );
+        $messageTemplate = $messageTemplateId
+            ? MessageTemplate::query()
+                ->whereKey($messageTemplateId)
+                ->where('channel', MessageTemplate::CHANNEL_WHATSAPP)
+                ->where('type', MessageTemplate::TYPE_INVITATION)
+                ->where('status', MessageTemplate::STATUS_ACTIVE)
+                ->where('whatsapp_language_code', $languageCode)
+                ->where(function ($query) use ($event): void {
+                    $query
+                        ->where('event_id', $event->id)
+                        ->orWhereNull('event_id');
+                })
+                ->first()
+            : MessageTemplate::activeWhatsappTemplate(
+                eventId: (int) $event->id,
+                type: MessageTemplate::TYPE_INVITATION,
+                language: $languageCode,
+            );
 
         if (! $messageTemplate) {
             throw new RuntimeException(
