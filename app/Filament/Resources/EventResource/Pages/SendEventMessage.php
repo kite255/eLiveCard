@@ -5,6 +5,8 @@ namespace App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Jobs\SendInvitationSmsJob;
+use App\Jobs\SendInvitationWhatsAppJob;
+use App\Models\MessageTemplate;
 use App\Services\SmsService;
 use App\Support\EliveMessagePlaceholders;
 use Filament\Actions\Action;
@@ -13,10 +15,7 @@ use Filament\Resources\Pages\Concerns\InteractsWithRecord;
 use Filament\Resources\Pages\Page;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 use Throwable;
 
 class SendEventMessage extends Page
@@ -90,8 +89,8 @@ class SendEventMessage extends Page
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Send WhatsApp Invitations')
-                ->modalDescription('This will send real WhatsApp invitations using WhatsApp Cloud API.')
-                ->modalSubmitActionLabel('Send WhatsApp')
+                ->modalDescription('This will queue real WhatsApp invitations for background delivery using WhatsApp Cloud API.')
+                ->modalSubmitActionLabel('Queue WhatsApp')
                 ->disabled(fn (): bool => $this->unsentEligibleWhatsappInviteesCount === 0)
                 ->action(fn () => $this->sendWhatsappInvitations()),
 
@@ -204,18 +203,63 @@ class SendEventMessage extends Page
 
     public function sendWhatsappInvitations(): void
     {
-        $accessToken = config('services.whatsapp.access_token') ?: env('WHATSAPP_ACCESS_TOKEN');
-        $phoneNumberId = config('services.whatsapp.phone_number_id') ?: env('WHATSAPP_PHONE_NUMBER_ID');
-
-        if (blank($accessToken) || blank($phoneNumberId)) {
+        if (! (bool) config('services.whatsapp.enabled', false)) {
             Notification::make()
                 ->title('WhatsApp not configured')
-                ->body('Set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID in production environment.')
+                ->body('Set WHATSAPP_ENABLED=true and configure the WhatsApp Cloud API credentials.')
                 ->danger()
                 ->send();
 
             return;
         }
+
+        if (
+            config('services.whatsapp.driver') !== 'meta_cloud_api'
+            || blank(config('services.whatsapp.access_token'))
+            || blank(config('services.whatsapp.phone_number_id'))
+        ) {
+            Notification::make()
+                ->title('WhatsApp configuration incomplete')
+                ->body('Set WHATSAPP_DRIVER=meta_cloud_api, WHATSAPP_ACCESS_TOKEN, and WHATSAPP_PHONE_NUMBER_ID.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $template = MessageTemplate::query()
+            ->where('channel', MessageTemplate::CHANNEL_WHATSAPP)
+            ->where('type', MessageTemplate::TYPE_INVITATION)
+            ->where('status', MessageTemplate::STATUS_ACTIVE)
+            ->whereNotNull('whatsapp_template_name')
+            ->where('whatsapp_template_name', '!=', '')
+            ->whereNotNull('whatsapp_language_code')
+            ->where('whatsapp_language_code', '!=', '')
+            ->where(function (Builder $query): void {
+                $query
+                    ->where('event_id', $this->record->id)
+                    ->orWhereNull('event_id');
+            })
+            ->orderByRaw(
+                'CASE WHEN event_id = ? THEN 0 ELSE 1 END',
+                [$this->record->id]
+            )
+            ->latest('updated_at')
+            ->first();
+
+        if (! $template) {
+            Notification::make()
+                ->title('WhatsApp template missing')
+                ->body('Create and activate a WhatsApp invitation template for this event before sending.')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $languageCode = filled($template->whatsapp_language_code)
+            ? (string) $template->whatsapp_language_code
+            : (string) config('services.whatsapp.template_language', MessageTemplate::LANGUAGE_ENGLISH);
 
         $invitees = $this->eligibleInviteesQuery()
             ->whereDoesntHave('messageLogs', function ($query): void {
@@ -225,11 +269,23 @@ class SendEventMessage extends Page
                     ->whereIn('type', ['invitation', 'event_invitation', 'whatsapp_invitation'])
                     ->whereIn('status', ['queued', 'pending', 'sending', 'sent', 'accepted', 'delivered', 'read']);
             })
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('whatsapp_status')
+                    ->orWhereNotIn('whatsapp_status', [
+                        'queued',
+                        'submitted',
+                        'accepted',
+                        'sent',
+                        'delivered',
+                        'read',
+                    ]);
+            })
             ->get();
 
         if ($invitees->isEmpty()) {
             Notification::make()
-                ->title('No WhatsApp messages sent')
+                ->title('No WhatsApp messages queued')
                 ->body('No eligible invitees found, or WhatsApp invitations were already sent.')
                 ->warning()
                 ->send();
@@ -237,67 +293,26 @@ class SendEventMessage extends Page
             return;
         }
 
-        $sent = 0;
-        $failed = 0;
+        DB::transaction(function () use ($invitees, $languageCode): void {
+            foreach ($invitees as $invitee) {
+                $invitee->forceFill([
+                    'last_message_channel' => 'whatsapp',
+                    'last_message_status' => 'queued',
+                    'message_status' => 'queued',
+                    'whatsapp_status' => 'queued',
+                ])->saveQuietly();
 
-        foreach ($invitees as $invitee) {
-            $phone = $this->normalizePhone($invitee->phone);
-            $message = $this->buildWhatsappMessage($invitee);
-            $logId = $this->createMessageLog($invitee, $phone, $message);
-
-            try {
-                $response = Http::withToken($accessToken)
-                    ->acceptJson()
-                    ->post("https://graph.facebook.com/v23.0/{$phoneNumberId}/messages", [
-                        'messaging_product' => 'whatsapp',
-                        'to' => $phone,
-                        'type' => 'text',
-                        'text' => [
-                            'preview_url' => true,
-                            'body' => $message,
-                        ],
-                    ]);
-
-                $json = $response->json();
-
-                if ($response->successful() && isset($json['messages'][0]['id'])) {
-                    $this->updateMessageLog($logId, [
-                        'status' => 'sent',
-                        'provider_message_id' => $json['messages'][0]['id'],
-                        'response' => $json,
-                        'sent_at' => now(),
-                    ]);
-
-                    $sent++;
-                } else {
-                    $this->updateMessageLog($logId, [
-                        'status' => 'failed',
-                        'response' => $json ?: $response->body(),
-                        'failed_at' => now(),
-                    ]);
-
-                    $failed++;
-                }
-            } catch (Throwable $exception) {
-                $this->updateMessageLog($logId, [
-                    'status' => 'failed',
-                    'response' => $exception->getMessage(),
-                    'failed_at' => now(),
-                ]);
-
-                Log::error('WhatsApp invitation failed from Message Center', [
-                    'event_id' => $this->record->id,
-                    'invitee_id' => $invitee->id,
-                    'error' => $exception->getMessage(),
-                ]);
-
-                $failed++;
+                SendInvitationWhatsAppJob::dispatch(
+                    inviteeId: $invitee->id,
+                    languageCode: $languageCode,
+                    messageTemplateId: $template->id,
+                )->afterCommit();
             }
-        }
+        });
 
         Notification::make()
-            ->title('WhatsApp sending completed')
-            ->body($sent . ' sent. ' . $failed . ' failed.')
+            ->title('WhatsApp invitations queued')
+            ->body($invitees->count() . ' WhatsApp invitation(s) queued for background delivery.')
             ->success()
             ->send();
     }
@@ -472,103 +487,6 @@ class SendEventMessage extends Page
             ->where('phone', '!=', '');
     }
 
-    protected function normalizePhone(?string $phone): string
-    {
-        $phone = preg_replace('/\D+/', '', (string) $phone);
-
-        if (Str::startsWith($phone, '00255')) {
-            return '255' . substr($phone, 5);
-        }
-
-        if (Str::startsWith($phone, '2550')) {
-            return '255' . substr($phone, 4);
-        }
-
-        if (Str::startsWith($phone, '0')) {
-            return '255' . substr($phone, 1);
-        }
-
-        if (Str::startsWith($phone, '7') || Str::startsWith($phone, '6')) {
-            return '255' . $phone;
-        }
-
-        return $phone;
-    }
-
-    protected function buildWhatsappMessage($invitee): string
-    {
-        $template = "Habari #NAME#,\n\n"
-            . "Umealikwa kwenye #EVENT_NAME#.\n\n"
-            . "Tarehe: #EVENT_DATE#\n"
-            . "Muda: #EVENT_TIME#\n"
-            . "Ukumbi: #VENUE#\n\n"
-            . "Fungua kadi yako hapa:\n#PRIVATE_INVITATION_URL#\n\n"
-            . "Tafadhali thibitisha mahudhurio yako kupitia link hiyo.\n\n"
-            . "eLive Card";
-
-        return EliveMessagePlaceholders::render($template, $invitee);
-    }
-
-    protected function createMessageLog($invitee, string $phone, string $message): ?int
-    {
-        if (! Schema::hasTable('message_logs')) {
-            return null;
-        }
-
-        $data = $this->filterColumns('message_logs', [
-            'event_id' => $this->record->id,
-            'invitee_id' => $invitee->id,
-            'channel' => 'whatsapp',
-            'type' => 'invitation',
-            'phone' => $phone,
-            'recipient' => $phone,
-            'to' => $phone,
-            'message' => $message,
-            'body' => $message,
-            'status' => 'sending',
-            'payload' => json_encode(['message' => $message]),
-            'provider_request' => json_encode(['message' => $message]),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        if ($data === []) {
-            return null;
-        }
-
-        return DB::table('message_logs')->insertGetId($data);
-    }
-
-    protected function updateMessageLog(?int $logId, array $data): void
-    {
-        if (! $logId || ! Schema::hasTable('message_logs')) {
-            return;
-        }
-
-        foreach (['response', 'provider_response', 'meta'] as $key) {
-            if (isset($data[$key]) && is_array($data[$key])) {
-                $data[$key] = json_encode($data[$key]);
-            }
-        }
-
-        if (isset($data['response']) && ! isset($data['provider_response'])) {
-            $data['provider_response'] = $data['response'];
-        }
-
-        $data['updated_at'] = now();
-
-        DB::table('message_logs')
-            ->where('id', $logId)
-            ->update($this->filterColumns('message_logs', $data));
-    }
-
-    protected function filterColumns(string $table, array $data): array
-    {
-        return collect($data)
-            ->filter(fn ($value, $column) => Schema::hasColumn($table, $column))
-            ->all();
-    }
-
     public function getInviteesCountProperty(): int
     {
         return $this->record->invitees()->count();
@@ -610,6 +528,18 @@ class SendEventMessage extends Page
                     ->whereIn('channel', ['whatsapp', 'WhatsApp'])
                     ->whereIn('type', ['invitation', 'event_invitation', 'whatsapp_invitation'])
                     ->whereIn('status', ['queued', 'pending', 'sending', 'sent', 'accepted', 'delivered', 'read']);
+            })
+            ->where(function (Builder $query): void {
+                $query
+                    ->whereNull('whatsapp_status')
+                    ->orWhereNotIn('whatsapp_status', [
+                        'queued',
+                        'submitted',
+                        'accepted',
+                        'sent',
+                        'delivered',
+                        'read',
+                    ]);
             })
             ->count();
     }
