@@ -5,6 +5,8 @@ namespace Tests\Unit;
 use App\Jobs\GenerateContributionCardJob;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Jobs\SendContributionCardJob;
+use App\Jobs\SendInvitationSmsJob;
+use App\Jobs\SendInvitationWhatsAppJob;
 use PHPUnit\Framework\TestCase;
 
 class QueueAssignmentTest extends TestCase
@@ -27,6 +29,19 @@ class QueueAssignmentTest extends TestCase
         $this->assertSame(
             'communications',
             (new SendContributionCardJob(1))->queue
+        );
+    }
+
+    public function test_invitation_delivery_jobs_use_the_communications_queue(): void
+    {
+        $this->assertSame(
+            'communications',
+            (new SendInvitationSmsJob(eventId: 1, inviteeId: 1))->queue
+        );
+
+        $this->assertSame(
+            'communications',
+            (new SendInvitationWhatsAppJob(inviteeId: 1))->queue
         );
     }
 }
