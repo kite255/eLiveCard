@@ -18,6 +18,10 @@ class CreateContributionCampaign extends CreateRecord
 
     protected function getRedirectUrl(): string
     {
+        if (! $this->record->include_member_name) {
+            return ContributionCampaignResource::getUrl('edit', ['record' => $this->record]);
+        }
+
         return ContributionCampaignResource::getUrl('designer', [
             'record' => $this->record,
         ]);
