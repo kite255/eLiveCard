@@ -22,6 +22,10 @@
             }
         }
 
+        $templateExists = filled($campaign->template_image)
+            && \Illuminate\Support\Facades\Storage::disk('public')->exists(
+                preg_replace('#^(public/|storage/)#', '', ltrim((string) $campaign->template_image, '/'))
+            );
         $fontFamilies = $this->fontFamilyOptions();
     @endphp
 
@@ -73,13 +77,13 @@
             </div>
         </section>
 
-        @if (! $imageUrl)
+        @if (! $imageUrl || ! $templateExists)
             <x-filament::section>
                 <div class="empty-template">
                     <x-heroicon-o-photo />
                     <div>
-                        <strong>No contribution-card template uploaded</strong>
-                        <p>Open Campaign Settings, upload the blank card, save it, and return to the designer.</p>
+                        <strong>Contribution-card template unavailable</strong>
+                        <p>The uploaded template file cannot be located in public storage. Verify the staging storage volume or upload the template again in Campaign Settings.</p>
                     </div>
                 </div>
             </x-filament::section>
@@ -92,11 +96,13 @@
                     </x-slot>
 
                     <div class="canvas-shell">
-                        <div class="card-stage" x-ref="designCanvas">
+                        <div x-show="imageLoadFailed" class="empty-template">Template image could not load. Check the public storage link and image URL before placing names.</div>
+                        <div class="card-stage" x-ref="designCanvas" x-show="!imageLoadFailed">
                             <img
                                 src="{{ $imageUrl }}"
                                 alt="Contribution card template"
                                 x-on:load="imageLoaded($event)"
+                                x-on:error="imageLoadFailed = true"
                             >
 
                             <div
@@ -246,6 +252,7 @@
                                     src="{{ $imageUrl }}"
                                     alt="Contribution card preview"
                                     x-on:load="previewImageLoaded($event)"
+                                    x-on:error="imageLoadFailed = true"
                                 >
 
                                 <div
@@ -603,6 +610,7 @@
                 align: config.align || 'center',
                 previewName: config.previewName || 'Committee Member Name',
                 fontFamilies: config.fontFamilies || {},
+                imageLoadFailed: false,
                 sourceWidth: 1080,
                 designWidth: 760,
                 previewWidth: 420,
