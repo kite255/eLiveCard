@@ -38,6 +38,7 @@ class ContributionCardService
             throw new RuntimeException('The contribution card template dimensions are not supported.');
         }
 
+        if ($campaign->include_member_name) {
         $fontFamily = (string) $campaign->name_font_family;
         $fontWeight = $campaign->name_font_weight === 'bold' ? 'bold' : 'regular';
         $fontFile = CardTemplatePlaceholder::fontFiles()[$fontFamily][$fontWeight]
@@ -69,6 +70,8 @@ class ContributionCardService
             $font->align($align);
             $font->valign('top');
         });
+
+        }
 
         $safeName = Str::slug($recipient->name) ?: 'committee-member';
         $previousPath = filled($recipient->generated_card_path)
