@@ -58,21 +58,26 @@ class ContributionRecipientsImportTest extends TestCase
         $this->assertDatabaseCount('contribution_recipients', 0);
     }
 
-    public function test_duplicate_phone_numbers_are_not_imported_twice_for_the_same_event(): void
+    public function test_duplicate_phone_numbers_are_imported_as_separate_members(): void
     {
         $event = $this->event();
         $import = new ContributionRecipientsImport($this->campaign($event)->id);
 
-        $this->expectException(ValidationException::class);
+        $import->collection(new Collection([
+            new Collection(['name' => 'First Member', 'phone' => '0754123456']),
+            new Collection(['name' => 'Second Member', 'phone' => '+255754123456']),
+        ]));
 
-        try {
-            $import->collection(new Collection([
-                new Collection(['name' => 'First Member', 'phone' => '0754123456']),
-                new Collection(['name' => 'Second Member', 'phone' => '+255754123456']),
-            ]));
-        } finally {
-            $this->assertDatabaseCount('contribution_recipients', 1);
-        }
+        $this->assertDatabaseCount('contribution_recipients', 2);
+        $this->assertSame(2, $import->importedCount);
+        $this->assertSame(
+            ['First Member', 'Second Member'],
+            ContributionRecipient::query()->orderBy('id')->pluck('name')->all()
+        );
+        $this->assertSame(
+            ['255754123456', '255754123456'],
+            ContributionRecipient::query()->orderBy('id')->pluck('phone')->all()
+        );
     }
 
     private function event(): Event
