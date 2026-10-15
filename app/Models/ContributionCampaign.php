@@ -22,6 +22,7 @@ class ContributionCampaign extends Model
         'deadline',
         'name',
         'template_image',
+        'include_member_name',
         'name_x_percent',
         'name_y_percent',
         'name_width_percent',
@@ -37,6 +38,7 @@ class ContributionCampaign extends Model
 
     protected $casts = [
         'event_id' => 'integer',
+        'include_member_name' => 'boolean',
         'created_by' => 'integer',
         'deadline' => 'date',
         'name_x_percent' => 'float',
