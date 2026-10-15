@@ -107,8 +107,8 @@ class ContributionCampaignResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            Forms\Components\Section::make('Contribution Campaign')
-                ->description('Set up a wedding, church, family or other contribution campaign.')
+            Forms\Components\Section::make('Campaign Information')
+                ->description('Basic details about your contribution campaign.')
                 ->schema([
                     Forms\Components\Select::make('campaign_type')
                         ->label('Campaign Type')
@@ -129,37 +129,44 @@ class ContributionCampaignResource extends Resource
                         ->options(ContributionCampaign::statuses())
                         ->default(ContributionCampaign::STATUS_DRAFT)
                         ->required()->native(false),
-                    Forms\Components\FileUpload::make('template_image')
-                        ->label('Contribution Card Template')
-                        ->image()->disk('public')->visibility('public')
-                        ->directory(fn (Forms\Get $get): string => $get('event_id') ? 'events/'.$get('event_id').'/contribution-templates' : 'contribution-campaigns/templates')
-                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
-                        ->rules([new AllowedCardTemplateDimensions()])
-                        ->maxSize(5120)->required()
-                        ->imagePreviewHeight('360')->columnSpanFull()
-                        ->helperText('JPG, PNG or WEBP, maximum 5 MB. Name placement is optional.'),
-                    Forms\Components\Toggle::make('include_member_name')
-                        ->label('Add member name to the card')
-                        ->helperText('Turn off to send the original card image without adding a name.')
-                        ->default(true)->live()->columnSpanFull(),
                 ])->columns(2),
 
-            Forms\Components\Section::make('Member Name Placement')
-                ->visible(fn (Forms\Get $get): bool => (bool) $get('include_member_name'))
-                ->description('Fine-tune these settings here, or use the visual designer after creating the campaign.')
-                ->schema([
-                    Forms\Components\TextInput::make('name_x_percent')->label('Left')->numeric()->minValue(0)->maxValue(99)->default(10)->suffix('%')->required(),
-                    Forms\Components\TextInput::make('name_y_percent')->label('Top')->numeric()->minValue(0)->maxValue(99)->default(70)->suffix('%')->required(),
-                    Forms\Components\TextInput::make('name_width_percent')->label('Text Width')->numeric()->minValue(1)->maxValue(100)->default(80)->suffix('%')->required(),
-                    Forms\Components\TextInput::make('name_font_size')->label('Font Size')->numeric()->minValue(8)->maxValue(300)->default(42)->suffix('px')->required(),
-                    Forms\Components\ColorPicker::make('name_font_color')->label('Font Color')->default('#111827')->required(),
-                    Forms\Components\Select::make('name_font_family')->options(CardTemplatePlaceholder::fontFamilyOptions())->default(CardTemplatePlaceholder::FONT_MONTSERRAT)->required()->native(false),
-                    Forms\Components\Select::make('name_font_weight')->options(CardTemplatePlaceholder::fontWeightOptions())->default('bold')->required()->native(false),
-                    Forms\Components\Select::make('name_text_align')->options(CardTemplatePlaceholder::textAlignOptions())->default('center')->required()->native(false),
-                ])->columns(4)->collapsible(),
+            Forms\Components\Grid::make(2)->schema([
+                Forms\Components\Section::make('Contribution Card Template')
+                    ->description('Upload a design for your contribution cards.')
+                    ->schema([
+                        Forms\Components\FileUpload::make('template_image')
+                            ->label('Card Template')
+                            ->image()->disk('public')->visibility('public')
+                            ->directory(fn (Forms\Get $get): string => $get('event_id') ? 'events/'.$get('event_id').'/contribution-templates' : 'contribution-campaigns/templates')
+                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                            ->rules([new AllowedCardTemplateDimensions()])
+                            ->maxSize(5120)->required()
+                            ->imagePreviewHeight('250')
+                            ->helperText('JPG, PNG or WEBP. Maximum 5 MB.'),
+                        Forms\Components\Toggle::make('include_member_name')
+                            ->label('Add member name to the card')
+                            ->helperText('Turn off to use the original card image.')
+                            ->default(true)->live(),
+                    ]),
+
+                Forms\Components\Section::make('Member Name Placement')
+                    ->visible(fn (Forms\Get $get): bool => (bool) $get('include_member_name'))
+                    ->description('Adjust how the member name appears on the card.')
+                    ->schema([
+                        Forms\Components\TextInput::make('name_x_percent')->label('Left')->numeric()->minValue(0)->maxValue(99)->default(10)->suffix('%')->required(),
+                        Forms\Components\TextInput::make('name_y_percent')->label('Top')->numeric()->minValue(0)->maxValue(99)->default(70)->suffix('%')->required(),
+                        Forms\Components\TextInput::make('name_width_percent')->label('Text Width')->numeric()->minValue(1)->maxValue(100)->default(80)->suffix('%')->required(),
+                        Forms\Components\TextInput::make('name_font_size')->label('Font Size')->numeric()->minValue(8)->maxValue(300)->default(42)->suffix('px')->required(),
+                        Forms\Components\ColorPicker::make('name_font_color')->label('Font Color')->default('#111827')->required(),
+                        Forms\Components\Select::make('name_font_family')->options(CardTemplatePlaceholder::fontFamilyOptions())->default(CardTemplatePlaceholder::FONT_MONTSERRAT)->required()->native(false),
+                        Forms\Components\Select::make('name_font_weight')->options(CardTemplatePlaceholder::fontWeightOptions())->default('bold')->required()->native(false),
+                        Forms\Components\Select::make('name_text_align')->options(CardTemplatePlaceholder::textAlignOptions())->default('center')->required()->native(false),
+                    ])->columns(2),
+            ]),
 
             Forms\Components\Section::make('WhatsApp Delivery')
-                ->description('Choose the approved WhatsApp template for this campaign. Both choices use the generated card as an image header.')
+                ->description('Select the approved WhatsApp template to deliver the card.')
                 ->schema([
                     Forms\Components\Select::make('whatsapp_template_name')
                         ->label('WhatsApp Template')
@@ -175,7 +182,7 @@ class ContributionCampaignResource extends Resource
                     Forms\Components\Select::make('whatsapp_language_code')
                         ->options(fn (Forms\Get $get): array => $get('whatsapp_template_name') === 'contribution_plain' ? ['en' => 'English'] : ['sw' => 'Swahili'])
                         ->default('sw')->required()->native(false)
-                        ->helperText('Use the language of the selected approved Meta template.'),
+                        ->helperText('Must match the approved Meta template language.'),
                 ])->columns(2)->collapsible(),
         ]);
     }
