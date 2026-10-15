@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+cd /var/www/html
+
+mkdir -p \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    bootstrap/cache
+
+# Fix writable runtime directories after persistent storage has mounted.
+# Preserve existing uploaded cards and templates and avoid deleting files.
+chown -R www-data:www-data storage/framework storage/logs bootstrap/cache
+chmod -R u+rwX,g+rwX storage/framework storage/logs bootstrap/cache
+
+exec apache2-foreground

@@ -55,6 +55,9 @@ RUN if [ -f package.json ]; then \
 
 RUN mkdir -p \
     storage/logs \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
     storage/app/public \
     storage/app/livewire-tmp \
     storage/app/imports \
@@ -62,6 +65,9 @@ RUN mkdir -p \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
+COPY docker/elive-entrypoint /usr/local/bin/elive-entrypoint
+RUN chmod +x /usr/local/bin/elive-entrypoint
+
 EXPOSE 80
 
-CMD ["apache2-foreground"]
+CMD ["/usr/local/bin/elive-entrypoint"]
