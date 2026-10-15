@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::table('contribution_campaigns', function (Blueprint $table): void {
             $table->foreignId('event_id')->nullable()->change();
-            $table->foreignId('created_by')->nullable()->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->string('campaign_type', 32)->default('wedding');
             $table->text('description')->nullable();
             $table->date('deadline')->nullable();
