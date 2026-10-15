@@ -137,10 +137,15 @@ class ContributionCampaignResource extends Resource
                         ->rules([new AllowedCardTemplateDimensions()])
                         ->maxSize(5120)->required()
                         ->imagePreviewHeight('360')->columnSpanFull()
-                        ->helperText('JPG, PNG or WEBP, maximum 5 MB. Preview the upload and position the member name in the visual designer after saving.'),
+                        ->helperText('JPG, PNG or WEBP, maximum 5 MB. Name placement is optional.'),
+                    Forms\Components\Toggle::make('include_member_name')
+                        ->label('Add member name to the card')
+                        ->helperText('Turn off to send the original card image without adding a name.')
+                        ->default(true)->live()->columnSpanFull(),
                 ])->columns(2),
 
             Forms\Components\Section::make('Member Name Placement')
+                ->visible(fn (Forms\Get $get): bool => (bool) $get('include_member_name'))
                 ->description('Fine-tune these settings here, or use the visual designer after creating the campaign.')
                 ->schema([
                     Forms\Components\TextInput::make('name_x_percent')->label('Left')->numeric()->minValue(0)->maxValue(99)->default(10)->suffix('%')->required(),
