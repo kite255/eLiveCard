@@ -309,17 +309,22 @@ class WhatsAppApiCloudService
             $imageUrl = url($imageUrl);
         }
 
+        $templateName = $campaign->whatsapp_template_name ?: 'contribution_card_sw';
+        $components = [$this->imageHeaderComponent($imageUrl)];
+
+        // contribution_plain has a static body: Meta rejects unexpected body parameters.
+        if ($templateName !== 'contribution_plain') {
+            $components[] = [
+                'type' => 'body',
+                'parameters' => [$this->textParameter($recipient->name)],
+            ];
+        }
+
         return $this->sendTemplate(
             phone: $recipient->phone,
-            templateName: $campaign->whatsapp_template_name ?: 'contribution_card_sw',
+            templateName: $templateName,
             languageCode: $campaign->whatsapp_language_code ?: MessageTemplate::LANGUAGE_SWAHILI,
-            components: [
-                $this->imageHeaderComponent($imageUrl),
-                [
-                    'type' => 'body',
-                    'parameters' => [$this->textParameter($recipient->name)],
-                ],
-            ],
+            components: $components,
             messageType: MessageTemplate::TYPE_CONTRIBUTION,
             contributionRecipient: $recipient,
         );
