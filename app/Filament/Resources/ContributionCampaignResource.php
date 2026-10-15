@@ -161,17 +161,14 @@ class ContributionCampaignResource extends Resource
             Forms\Components\Section::make('WhatsApp Delivery')
                 ->description('Choose the approved WhatsApp template for this campaign. Both choices use the generated card as an image header.')
                 ->schema([
-                    Forms\Components\Select::make('whatsapp_template_name')
+                    Forms\Components\Radio::make('whatsapp_template_name')
                         ->label('WhatsApp Template')
                         ->options(ContributionCampaign::whatsappTemplateOptions())
                         ->default('contribution_card_sw')
-                        ->searchable()
-                        ->preload()
-                        ->native(false)
-                        ->live()
                         ->required()
+                        ->live()
                         ->afterStateUpdated(fn (Forms\Set $set, ?string $state) => $set('whatsapp_language_code', $state === 'contribution_plain' ? 'en' : 'sw'))
-                        ->helperText('Contribution Card includes a member-name parameter; Contribution Plain uses a static message body.'),
+                        ->helperText('Select one of the approved Meta templates. The language is updated automatically.'),
                     Forms\Components\Select::make('whatsapp_language_code')
                         ->options(fn (Forms\Get $get): array => $get('whatsapp_template_name') === 'contribution_plain' ? ['en' => 'English'] : ['sw' => 'Swahili'])
                         ->default('sw')->required()->native(false)
