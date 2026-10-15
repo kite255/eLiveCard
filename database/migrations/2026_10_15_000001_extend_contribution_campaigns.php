@@ -16,10 +16,23 @@ return new class extends Migration
             $table->date('deadline')->nullable();
         });
 
-        // Older event-linked campaigns are assigned to their event owner.
+        // Backfill in PHP for MySQL/PostgreSQL portability.
         \Illuminate\Support\Facades\DB::table('contribution_campaigns')
-            ->join('events', 'contribution_campaigns.event_id', '=', 'events.id')
-            ->update(['contribution_campaigns.created_by' => \Illuminate\Support\Facades\DB::raw('events.user_id')]);
+            ->whereNotNull('event_id')
+            ->orderBy('id')
+            ->chunkById(200, function ($campaigns): void {
+                foreach ($campaigns as $campaign) {
+                    $ownerId = \Illuminate\Support\Facades\DB::table('events')
+                        ->where('id', $campaign->event_id)
+                        ->value('user_id');
+
+                    if ($ownerId) {
+                        \Illuminate\Support\Facades\DB::table('contribution_campaigns')
+                            ->where('id', $campaign->id)
+                            ->update(['created_by' => $ownerId]);
+                    }
+                }
+            });
 
         Schema::table('contribution_recipients', function (Blueprint $table): void {
             $table->foreignId('event_id')->nullable()->change();
