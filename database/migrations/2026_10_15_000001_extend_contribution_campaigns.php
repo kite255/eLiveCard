@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::table('contribution_campaigns', function (Blueprint $table): void {
             $table->foreignId('event_id')->nullable()->change();
-            $table->foreignId('created_by')->nullable()->constrained('users')->restrictOnDelete();
+            $table->foreignId('created_by')->nullable()->nullable()->constrained('users')->nullOnDelete();
             $table->string('campaign_type', 32)->default('wedding');
             $table->text('description')->nullable();
             $table->date('deadline')->nullable();
@@ -28,9 +28,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (Schema::table('contribution_recipients', fn (Blueprint $table) => $table->foreignId('event_id')->nullable()->change()) === null) {
-            // Standalone rows must be migrated to an event before restoring a non-null foreign key.
-        }
+        // Nullable event_id is intentionally retained: reversing it would fail for
+        // standalone campaigns and their recipients.
         Schema::table('contribution_campaigns', function (Blueprint $table): void {
             $table->dropConstrainedForeignId('created_by');
             $table->dropColumn(['campaign_type', 'description', 'deadline']);
