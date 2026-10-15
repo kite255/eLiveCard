@@ -38,6 +38,7 @@ class ContributionCardService
             throw new RuntimeException('The contribution card template dimensions are not supported.');
         }
 
+        if ($campaign->include_member_name) {
         $fontFamily = (string) $campaign->name_font_family;
         $fontWeight = $campaign->name_font_weight === 'bold' ? 'bold' : 'regular';
         $fontFile = CardTemplatePlaceholder::fontFiles()[$fontFamily][$fontWeight]
@@ -70,12 +71,15 @@ class ContributionCardService
             $font->valign('top');
         });
 
+        }
+
         $safeName = Str::slug($recipient->name) ?: 'committee-member';
         $previousPath = filled($recipient->generated_card_path)
             ? (string) $recipient->generated_card_path
             : null;
         $version = now()->format('YmdHisv');
-        $path = "events/{$campaign->event_id}/contribution-cards/{$campaign->id}/{$recipient->id}-{$safeName}-{$version}.jpg";
+        $prefix = $campaign->event_id ? "events/{$campaign->event_id}" : "contribution-campaigns";
+        $path = "{$prefix}/contribution-cards/{$campaign->id}/{$recipient->id}-{$safeName}-{$version}.jpg";
 
         Storage::disk('public')->makeDirectory(dirname($path));
         Storage::disk('public')->put($path, (string) $image->toJpeg(quality: 100, progressive: false));

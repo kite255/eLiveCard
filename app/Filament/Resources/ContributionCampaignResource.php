@@ -38,12 +38,15 @@ class ContributionCampaignResource extends Resource
             return $query;
         }
 
-        return $query->whereHas('event', function (Builder $events) use ($user): void {
-            $events->where('user_id', $user->id)
-                ->orWhereHas('assignedUsers', function (Builder $assigned) use ($user): void {
-                    $assigned->where('users.id', $user->id)
-                        ->where('event_user.role', 'event_admin')
-                        ->where('event_user.is_active', true);
+        return $query->where(function (Builder $campaigns) use ($user): void {
+            $campaigns->where('created_by', $user->id)
+                ->orWhereHas('event', function (Builder $events) use ($user): void {
+                    $events->where('user_id', $user->id)
+                        ->orWhereHas('assignedUsers', function (Builder $assigned) use ($user): void {
+                            $assigned->where('users.id', $user->id)
+                                ->where('event_user.role', 'event_admin')
+                                ->where('event_user.is_active', true);
+                        });
                 });
         });
     }
@@ -78,7 +81,7 @@ class ContributionCampaignResource extends Resource
         $user = auth()->user();
         return $user && $campaign
             && ($user->canSendMessages() ?? false)
-            && $campaign->event?->canBeManagedBy($user);
+            && ($user->isSuperAdmin() || $campaign->created_by === $user->id || $campaign->event?->canBeManagedBy($user));
     }
 
     private static function eventOptions(): array
@@ -105,16 +108,23 @@ class ContributionCampaignResource extends Resource
     {
         return $form->schema([
             Forms\Components\Section::make('Contribution Campaign')
-                ->description('Upload the blank contribution card and connect it to an event.')
+                ->description('Set up a wedding, church, family or other contribution campaign.')
                 ->schema([
+                    Forms\Components\Select::make('campaign_type')
+                        ->label('Campaign Type')
+                        ->options(ContributionCampaign::types())
+                        ->default('wedding')->required()->native(false),
                     Forms\Components\Select::make('event_id')
-                        ->label('Event')
+                        ->label('Associated Event (Optional)')
+                        ->helperText('Leave blank for a standalone contribution campaign.')
                         ->options(fn (): array => static::eventOptions())
-                        ->searchable()->preload()->required(),
+                        ->searchable()->preload(),
                     Forms\Components\TextInput::make('name')
                         ->label('Campaign Name')
                         ->placeholder('Example: Wedding Committee Contributions')
                         ->required()->maxLength(255),
+                    Forms\Components\DatePicker::make('deadline')->label('Contribution Deadline')->native(false),
+                    Forms\Components\Textarea::make('description')->label('Purpose / Description')->rows(2)->maxLength(2000)->columnSpanFull(),
                     Forms\Components\Select::make('status')
                         ->options(ContributionCampaign::statuses())
                         ->default(ContributionCampaign::STATUS_DRAFT)
@@ -122,16 +132,21 @@ class ContributionCampaignResource extends Resource
                     Forms\Components\FileUpload::make('template_image')
                         ->label('Contribution Card Template')
                         ->image()->disk('public')->visibility('public')
-                        ->directory(fn (Forms\Get $get): string => 'events/'.($get('event_id') ?: 'unassigned').'/contribution-templates')
+                        ->directory(fn (Forms\Get $get): string => $get('event_id') ? 'events/'.$get('event_id').'/contribution-templates' : 'contribution-campaigns/templates')
                         ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                         ->rules([new AllowedCardTemplateDimensions()])
                         ->maxSize(5120)->required()
                         ->imagePreviewHeight('360')->columnSpanFull()
-                        ->helperText('Upload a blank JPG, PNG, or WEBP card. The member name will be added automatically.'),
-                ])->columns(3),
+                        ->helperText('JPG, PNG or WEBP, maximum 5 MB. Name placement is optional.'),
+                    Forms\Components\Toggle::make('include_member_name')
+                        ->label('Add member name to the card')
+                        ->helperText('Turn off to send the original card image without adding a name.')
+                        ->default(true)->live()->columnSpanFull(),
+                ])->columns(2),
 
             Forms\Components\Section::make('Member Name Placement')
-                ->description('Position and style the committee member name on the uploaded card.')
+                ->visible(fn (Forms\Get $get): bool => (bool) $get('include_member_name'))
+                ->description('Fine-tune these settings here, or use the visual designer after creating the campaign.')
                 ->schema([
                     Forms\Components\TextInput::make('name_x_percent')->label('Left')->numeric()->minValue(0)->maxValue(99)->default(10)->suffix('%')->required(),
                     Forms\Components\TextInput::make('name_y_percent')->label('Top')->numeric()->minValue(0)->maxValue(99)->default(70)->suffix('%')->required(),
@@ -144,14 +159,19 @@ class ContributionCampaignResource extends Resource
                 ])->columns(4)->collapsible(),
 
             Forms\Components\Section::make('WhatsApp Delivery')
-                ->description('Use the approved Meta contribution-card template with an image header and member-name body parameter.')
+                ->description('Choose the approved WhatsApp template for this campaign. Both choices use the generated card as an image header.')
                 ->schema([
-                    Forms\Components\TextInput::make('whatsapp_template_name')
-                        ->default('contribution_card_sw')->required()->maxLength(255)
-                        ->helperText('Default: contribution_card_sw'),
+                    Forms\Components\Select::make('whatsapp_template_name')
+                        ->label('WhatsApp Template')
+                        ->options(ContributionCampaign::whatsappTemplateOptions())
+                        ->default('contribution_card_sw')
+                        ->required()->native(false)->live()
+                        ->afterStateUpdated(fn (Forms\Set $set, ?string $state) => $set('whatsapp_language_code', $state === 'contribution_plain' ? 'en' : 'sw'))
+                        ->helperText('Contribution Card includes a member-name parameter; Contribution Plain uses a static message body.'),
                     Forms\Components\Select::make('whatsapp_language_code')
-                        ->options(['sw' => 'Swahili', 'en' => 'English'])
-                        ->default('sw')->required()->native(false),
+                        ->options(fn (Forms\Get $get): array => $get('whatsapp_template_name') === 'contribution_plain' ? ['en' => 'English'] : ['sw' => 'Swahili'])
+                        ->default('sw')->required()->native(false)
+                        ->helperText('Use the language of the selected approved Meta template.'),
                 ])->columns(2)->collapsible(),
         ]);
     }
@@ -163,10 +183,10 @@ class ContributionCampaignResource extends Resource
             ->columns([
                 Tables\Columns\ImageColumn::make('template_image')->label('Template')->disk('public')->height(70),
                 Tables\Columns\TextColumn::make('name')->searchable()->sortable()->weight('bold'),
-                Tables\Columns\TextColumn::make('event.title')->label('Event')->searchable()->sortable(),
+                Tables\Columns\TextColumn::make('event.title')->label('Event')->placeholder('Standalone')->searchable()->sortable(),
                 Tables\Columns\TextColumn::make('recipients_count')->label('Members')->badge(),
                 Tables\Columns\TextColumn::make('status')->badge()->color(fn (string $state): string => match ($state) {
-                    'active' => 'success', 'draft' => 'warning', default => 'gray',
+                    'active' => 'success', 'paused' => 'warning', 'completed' => 'info', 'draft' => 'gray', default => 'gray',
                 }),
             ])
             ->filters([

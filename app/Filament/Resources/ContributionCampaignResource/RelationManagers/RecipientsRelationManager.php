@@ -35,7 +35,7 @@ class RecipientsRelationManager extends RelationManager
         $user = auth()->user();
         return $user
             && ($user->canSendMessages() ?? false)
-            && $ownerRecord->event?->canBeManagedBy($user);
+            && ($ownerRecord->created_by === $user->id || $ownerRecord->event?->canBeManagedBy($user));
     }
 
     public function form(Form $form): Form
