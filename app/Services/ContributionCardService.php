@@ -75,7 +75,8 @@ class ContributionCardService
             ? (string) $recipient->generated_card_path
             : null;
         $version = now()->format('YmdHisv');
-        $path = "events/{$campaign->event_id}/contribution-cards/{$campaign->id}/{$recipient->id}-{$safeName}-{$version}.jpg";
+        $prefix = $campaign->event_id ? "events/{$campaign->event_id}" : "contribution-campaigns";
+        $path = "{$prefix}/contribution-cards/{$campaign->id}/{$recipient->id}-{$safeName}-{$version}.jpg";
 
         Storage::disk('public')->makeDirectory(dirname($path));
         Storage::disk('public')->put($path, (string) $image->toJpeg(quality: 100, progressive: false));
