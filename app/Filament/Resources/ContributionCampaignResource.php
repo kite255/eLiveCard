@@ -165,7 +165,11 @@ class ContributionCampaignResource extends Resource
                         ->label('WhatsApp Template')
                         ->options(ContributionCampaign::whatsappTemplateOptions())
                         ->default('contribution_card_sw')
-                        ->required()->native(false)->live()
+                        ->searchable()
+                        ->preload()
+                        ->native(false)
+                        ->live()
+                        ->required()
                         ->afterStateUpdated(fn (Forms\Set $set, ?string $state) => $set('whatsapp_language_code', $state === 'contribution_plain' ? 'en' : 'sw'))
                         ->helperText('Contribution Card includes a member-name parameter; Contribution Plain uses a static message body.'),
                     Forms\Components\Select::make('whatsapp_language_code')
