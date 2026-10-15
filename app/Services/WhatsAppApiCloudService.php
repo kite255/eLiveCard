@@ -431,6 +431,21 @@ class WhatsAppApiCloudService
             );
         }
 
+        // Log only the template structure, not phone numbers, image URLs, or tokens.
+        if ($contributionRecipient) {
+            Log::info('Contribution WhatsApp template payload structure', [
+                'contribution_recipient_id' => $contributionRecipient->id,
+                'template_name' => $templateName,
+                'language' => data_get($payload, 'template.language.code'),
+                'components' => collect(data_get($payload, 'template.components', []))
+                    ->map(fn (array $component): array => [
+                        'type' => $component['type'] ?? null,
+                        'parameter_count' => count($component['parameters'] ?? []),
+                        'parameter_types' => array_column($component['parameters'] ?? [], 'type'),
+                    ])->all(),
+            ]);
+        }
+
         $pendingLogId = $this->createMessageLog(
             invitee: $invitee,
             recipient: $recipient,
