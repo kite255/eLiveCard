@@ -87,7 +87,8 @@ class ContributionCardService
         $recipient->forceFill([
             'generated_card_path' => $path,
             'generation_status' => ContributionRecipient::STATUS_GENERATED,
-            'send_status' => ContributionRecipient::STATUS_PENDING,
+            // Regenerating a card does not undo a previous WhatsApp delivery.
+            'send_status' => $recipient->send_status,
             'generated_at' => now(),
             'last_error' => null,
         ])->saveQuietly();
