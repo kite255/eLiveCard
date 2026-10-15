@@ -41,12 +41,12 @@ class ContributionCampaignResource extends Resource
         return $query->where(function (Builder $campaigns) use ($user): void {
             $campaigns->where('created_by', $user->id)
                 ->orWhereHas('event', function (Builder $events) use ($user): void {
-            $events->where('user_id', $user->id)
-                ->orWhereHas('assignedUsers', function (Builder $assigned) use ($user): void {
-                    $assigned->where('users.id', $user->id)
-                        ->where('event_user.role', 'event_admin')
-                        ->where('event_user.is_active', true);
-                });
+                    $events->where('user_id', $user->id)
+                        ->orWhereHas('assignedUsers', function (Builder $assigned) use ($user): void {
+                            $assigned->where('users.id', $user->id)
+                                ->where('event_user.role', 'event_admin')
+                                ->where('event_user.is_active', true);
+                        });
                 });
         });
     }
@@ -81,7 +81,7 @@ class ContributionCampaignResource extends Resource
         $user = auth()->user();
         return $user && $campaign
             && ($user->canSendMessages() ?? false)
-            && ($campaign->created_by === $user->id || $campaign->event?->canBeManagedBy($user));
+            && ($user->isSuperAdmin() || $campaign->created_by === $user->id || $campaign->event?->canBeManagedBy($user));
     }
 
     private static function eventOptions(): array
@@ -138,7 +138,7 @@ class ContributionCampaignResource extends Resource
                         ->maxSize(5120)->required()
                         ->imagePreviewHeight('360')->columnSpanFull()
                         ->helperText('JPG, PNG or WEBP, maximum 5 MB. Preview the upload and position the member name in the visual designer after saving.'),
-                 ])->columns(2),
+                ])->columns(2),
 
             Forms\Components\Section::make('Member Name Placement')
                 ->description('Fine-tune these settings here, or use the visual designer after creating the campaign.')
