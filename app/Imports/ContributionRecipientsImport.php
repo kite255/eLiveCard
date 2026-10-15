@@ -15,8 +15,6 @@ class ContributionRecipientsImport implements ToCollection, WithHeadingRow
 
     public int $importedCount = 0;
 
-    protected array $phonesInFile = [];
-
     public function __construct(protected int $campaignId) {}
 
     public function collection(Collection $rows): void
@@ -44,18 +42,6 @@ class ContributionRecipientsImport implements ToCollection, WithHeadingRow
 
             if (! $normalizedPhone) {
                 $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' is invalid. Use a valid Tanzania phone number.";
-                continue;
-            }
-
-            if (in_array($normalizedPhone, $this->phonesInFile, true)) {
-                $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' is duplicated in this Excel file.";
-                continue;
-            }
-
-            $this->phonesInFile[] = $normalizedPhone;
-
-            if ($campaign->recipients()->where('phone', $normalizedPhone)->exists()) {
-                $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' already exists in this campaign.";
                 continue;
             }
 
