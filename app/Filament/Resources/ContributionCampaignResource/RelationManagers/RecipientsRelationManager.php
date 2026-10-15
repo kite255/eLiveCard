@@ -193,7 +193,8 @@ class RecipientsRelationManager extends RelationManager
                         $count = 0;
                         $this->getOwnerRecord()->recipients()
                             ->where('generation_status', ContributionRecipient::STATUS_GENERATED)
-                            ->where('send_status', '!=', ContributionRecipient::STATUS_SENT)
+                            ->whereNotIn('whatsapp_status', ['submitted', 'sent', 'delivered', 'read', 'replied'])
+                            ->whereNotIn('send_status', ['sent', 'submitted', 'delivered', 'read'])
                             ->eachById(function (ContributionRecipient $recipient) use (&$count): void {
                                 SendContributionCardJob::dispatch($recipient->id);
                                 $count++;
