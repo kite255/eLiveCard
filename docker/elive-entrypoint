@@ -8,11 +8,26 @@ mkdir -p \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs \
+    storage/app/public \
     bootstrap/cache
 
 # Fix writable runtime directories after persistent storage has mounted.
 # Preserve existing uploaded cards and templates and avoid deleting files.
 chown -R www-data:www-data storage/framework storage/logs bootstrap/cache
 chmod -R u+rwX,g+rwX storage/framework storage/logs bootstrap/cache
+
+# Ensure Laravel's public storage link points to the mounted persistent storage.
+if [ -L public/storage ] && [ "$(readlink public/storage)" != "/var/www/html/storage/app/public" ] && [ "$(readlink public/storage)" != "../storage/app/public" ]; then
+    rm public/storage
+fi
+
+if [ ! -e public/storage ] && [ ! -L public/storage ]; then
+    php artisan storage:link
+fi
+
+# Never replace a real directory at public/storage automatically.
+if [ -d public/storage ] && [ ! -L public/storage ]; then
+    echo "WARNING: public/storage is a directory; storage symlink was not changed." >&2
+fi
 
 exec apache2-foreground
