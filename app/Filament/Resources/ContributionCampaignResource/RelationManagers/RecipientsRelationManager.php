@@ -46,23 +46,10 @@ class RecipientsRelationManager extends RelationManager
             Forms\Components\TextInput::make('phone')
                 ->label('Phone Number')->tel()->required()->maxLength(32)
                 ->helperText('Tanzania formats such as 0712345678 or 255712345678 are accepted.')
-                ->rule(function (?ContributionRecipient $record): \Closure {
-                    return function (string $attribute, mixed $value, \Closure $fail) use ($record): void {
-                        $phone = ContributionRecipientsImport::normalizePhone((string) $value);
-
-                        if (! $phone) {
+                ->rule(function (): \Closure {
+                    return function (string $attribute, mixed $value, \Closure $fail): void {
+                        if (! ContributionRecipientsImport::normalizePhone((string) $value)) {
                             $fail('Enter a valid Tanzania phone number.');
-                            return;
-                        }
-
-                        $existing = ContributionRecipient::query()
-                            ->where('contribution_campaign_id', $this->getOwnerRecord()->id)
-                            ->where('phone', $phone)
-                            ->when($record?->exists, fn ($query) => $query->whereKeyNot($record->getKey()))
-                            ->exists();
-
-                        if ($existing) {
-                            $fail('This phone number is already registered in this contribution campaign. Edit the existing member instead.');
                         }
                     };
                 })
