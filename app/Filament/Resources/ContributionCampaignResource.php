@@ -154,14 +154,19 @@ class ContributionCampaignResource extends Resource
                 ])->columns(4)->collapsible(),
 
             Forms\Components\Section::make('WhatsApp Delivery')
-                ->description('Use an approved Meta WhatsApp image-header template. Sending is configured after members are imported.')
+                ->description('Choose the approved WhatsApp template for this campaign. Both choices use the generated card as an image header.')
                 ->schema([
-                    Forms\Components\TextInput::make('whatsapp_template_name')
-                        ->default('contribution_card_sw')->required()->maxLength(255)
-                        ->helperText('Default: contribution_card_sw'),
+                    Forms\Components\Select::make('whatsapp_template_name')
+                        ->label('WhatsApp Template')
+                        ->options(ContributionCampaign::whatsappTemplateOptions())
+                        ->default('contribution_card_sw')
+                        ->required()->native(false)->live()
+                        ->afterStateUpdated(fn (Forms\Set $set, ?string $state) => $set('whatsapp_language_code', $state === 'contribution_plain' ? 'en' : 'sw'))
+                        ->helperText('Contribution Card includes a member-name parameter; Contribution Plain uses a static message body.'),
                     Forms\Components\Select::make('whatsapp_language_code')
-                        ->options(['sw' => 'Swahili', 'en' => 'English'])
-                        ->default('sw')->required()->native(false),
+                        ->options(fn (Forms\Get $get): array => $get('whatsapp_template_name') === 'contribution_plain' ? ['en' => 'English'] : ['sw' => 'Swahili'])
+                        ->default('sw')->required()->native(false)
+                        ->helperText('Use the language of the selected approved Meta template.'),
                 ])->columns(2)->collapsible(),
         ]);
     }

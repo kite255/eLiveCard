@@ -56,6 +56,14 @@ class ContributionCampaign extends Model
         ];
     }
 
+    public static function whatsappTemplateOptions(): array
+    {
+        return [
+            'contribution_card_sw' => 'Contribution Card (Swahili) – personalized member name',
+            'contribution_plain' => 'Contribution Plain (English) – image and fixed text',
+        ];
+    }
+
     public static function types(): array
     {
         return ['wedding' => 'Wedding', 'church' => 'Church', 'family' => 'Family', 'community' => 'Community', 'other' => 'Other'];
