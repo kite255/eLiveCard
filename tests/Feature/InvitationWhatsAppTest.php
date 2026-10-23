@@ -20,6 +20,83 @@ class InvitationWhatsAppTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_swahili_invitation_sends_invitee_short_code_as_location_button_suffix(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('cards/swahili.jpg', 'image');
+
+        config()->set([
+            'services.whatsapp.enabled' => true,
+            'services.whatsapp.driver' => 'meta_cloud_api',
+            'services.whatsapp.access_token' => 'test-token',
+            'services.whatsapp.phone_number_id' => '123456',
+            'services.whatsapp.api_version' => 'v25.0',
+            'services.whatsapp.base_url' => 'https://graph.facebook.com',
+        ]);
+
+        Http::fake([
+            '*' => Http::response(['messages' => [['id' => 'wamid.swa.test']]], 200),
+        ]);
+
+        $event = Event::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'title' => 'Harusi ya John & Maria',
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+            'google_maps_link' => 'https://maps.app.goo.gl/BhYJDwZGfkGPLkqy8',
+        ]);
+        $cardType = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Family',
+            'allowed_people' => 4,
+            'is_active' => true,
+        ]);
+        $cardTemplate = CardTemplate::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Main Invitation',
+            'template_image' => 'templates/invitation.jpg',
+            'status' => CardTemplate::STATUS_ACTIVE,
+        ]);
+        MessageTemplate::query()->create([
+            'event_id' => $event->id,
+            'channel' => MessageTemplate::CHANNEL_WHATSAPP,
+            'type' => MessageTemplate::TYPE_INVITATION,
+            'name' => 'Swahili Invitation',
+            'content' => 'Habari {{1}}, unaalikwa kwenye {{2}}.',
+            'whatsapp_template_name' => 'event_invitation',
+            'whatsapp_language_code' => MessageTemplate::LANGUAGE_SWAHILI,
+            'status' => MessageTemplate::STATUS_ACTIVE,
+        ]);
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $cardType->id,
+            'name' => 'Test Invitee',
+            'phone' => '255754123456',
+            'short_code' => 'N2WRUB',
+        ]);
+        GeneratedCard::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'card_template_id' => $cardTemplate->id,
+            'file_path' => 'cards/swahili.jpg',
+            'status' => GeneratedCard::STATUS_GENERATED,
+            'generated_at' => now(),
+        ]);
+
+        app(WhatsAppApiCloudService::class)->sendSwahiliInvitation($invitee);
+
+        Http::assertSent(fn (Request $request): bool =>
+            data_get($request->data(), 'template.name') === 'event_invitation'
+            && data_get($request->data(), 'template.language.code') === 'sw'
+            && data_get($request->data(), 'template.components.0.type') === 'header'
+            && count(data_get($request->data(), 'template.components.1.parameters', [])) === 5
+            && data_get($request->data(), 'template.components.2.type') === 'button'
+            && data_get($request->data(), 'template.components.2.sub_type') === 'url'
+            && data_get($request->data(), 'template.components.2.index') === '2'
+            && data_get($request->data(), 'template.components.2.parameters.0.text') === 'N2WRUB'
+        );
+    }
+
     public function test_it_sends_an_invitation_card_template_and_tracks_delivery_and_reply(): void
     {
         Storage::fake('public');
