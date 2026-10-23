@@ -910,6 +910,28 @@ Tunathamini muda wako na ushiriki wako.
 
 eLive Card",
             ],
+            'whatsapp_invitation_meta_sw' => [
+                'label' => 'WhatsApp Invitation Swahili (event_invitation)',
+                'channel' => MessageTemplate::CHANNEL_WHATSAPP,
+                'type' => MessageTemplate::TYPE_INVITATION,
+                'name' => 'WhatsApp Invitation Swahili - Meta',
+                'content' => "Habari #NAME#,
+
+Unaalikwa kuhudhuria kwenye #EVENT_NAME#.
+
+Aina ya kadi yako ni #CARD_TYPE#.
+Mahali: #VENUE#
+Muda: #EVENT_TIME#
+
+Tafadhali thibitisha kama utahudhuria kwa kubonyeza moja ya vitufe vilivyo hapa chini.",
+                'whatsapp_template_name' => 'event_invitation',
+                'whatsapp_language_code' => 'sw',
+                'whatsapp_buttons' => [
+                    'Nitahudhuria' => 'rsvp_attending',
+                    'Sitahudhuria' => 'rsvp_not_attending',
+                    'RAMANI' => '#LOCATION_LINK#',
+                ],
+            ],
             'whatsapp_invitation_en' => [
                 'label' => 'WhatsApp Invitation English',
                 'channel' => MessageTemplate::CHANNEL_WHATSAPP,
