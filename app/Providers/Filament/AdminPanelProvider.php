@@ -188,7 +188,7 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-            ])
+            ], isPersistent: true)
 
             /*
             |--------------------------------------------------------------------------
