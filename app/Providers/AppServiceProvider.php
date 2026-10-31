@@ -23,17 +23,20 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // Opt-in diagnostics only. Set ELIVE_SESSION_DIAGNOSTICS=true in the
-        // application container, then restart/redeploy it to enable logging.
-        // getenv() works with Laravel's cached configuration.
-        if (getenv('ELIVE_SESSION_DIAGNOSTICS') !== 'true') {
-            return;
-        }
+        // Record HTTP 419 failures automatically, even when detailed session
+        // diagnostics are disabled. All other requests remain opt-in.
+        // No raw session IDs, cookies, CSRF tokens, or request bodies are logged.
+        $diagnosticsEnabled = getenv('ELIVE_SESSION_DIAGNOSTICS') === 'true';
 
-        Event::listen(RequestHandled::class, function (RequestHandled $event): void {
+        Event::listen(RequestHandled::class, function (RequestHandled $event) use ($diagnosticsEnabled): void {
             $request = $event->request;
+            $status = $event->response->getStatusCode();
 
             if (! $request->is('admin', 'admin/*', 'livewire/update')) {
+                return;
+            }
+
+            if (! $diagnosticsEnabled && $status !== 419) {
                 return;
             }
 
@@ -53,7 +56,7 @@ class AppServiceProvider extends ServiceProvider
                         ->exists();
                 }
 
-                Log::info('elive.session_diagnostic', [
+                Log::log($status === 419 ? 'warning' : 'info', 'elive.session_diagnostic', [
                     'path' => $request->path(),
                     'method' => $request->method(),
                     'status' => $event->response->getStatusCode(),
