@@ -1153,29 +1153,9 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-bell')
                         ->color('warning')
                         ->modalHeading('Send Reminder')
-                        ->modalDescription('Choose reminder type, channel, and recipients.')
+                        ->modalDescription('Choose the SMS reminder type and recipients.')
                         ->modalSubmitActionLabel('Send Reminder')
                         ->form([
-                            Forms\Components\Radio::make('manual_action')
-                                ->label('Manual Action')
-                                ->options([
-                                    'send_now' => 'Send thank-you messages now',
-                                    'disable_only' => 'Switch to manual without sending',
-                                ])
-                                ->default('send_now')
-                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual')
-                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual')
-                                ->live(),
-
-                            Forms\Components\Select::make('channel')
-                                ->label('Channel')
-                                ->options([
-                                    'sms' => 'SMS',
-                                    'whatsapp' => 'WhatsApp',
-                                ])
-                                ->default('sms')
-                                ->required(),
-
                             Forms\Components\Select::make('template_type')
                                 ->label('Reminder Option')
                                 ->options([
@@ -1199,7 +1179,7 @@ class InviteesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
                             $this->sendEventMessagesFromToolbar(
-                                channel: $data['channel'],
+                                channel: 'sms',
                                 templateType: $data['template_type'],
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Reminder messages processed',
@@ -1212,18 +1192,9 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-heart')
                         ->color('gray')
                         ->modalHeading('Send Thank You Message')
-                        ->modalDescription('Send a thank-you message now. Configure automatic delivery in Event Settings.')
+                        ->modalDescription('Send a thank-you SMS now. Configure automatic delivery in Event Settings.')
                         ->modalSubmitActionLabel('Send Thank You')
                         ->form([
-                            Forms\Components\Select::make('channel')
-                                ->label('Channel')
-                                ->options([
-                                    'sms' => 'SMS',
-                                    'whatsapp' => 'WhatsApp',
-                                ])
-                                ->default('sms')
-                                ->required(),
-
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
                                 ->options([
@@ -1236,12 +1207,12 @@ class InviteesRelationManager extends RelationManager
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Template Source')
-                                ->content('Uses the active thank_you template for the selected channel. This action sends immediately.'),
+                                ->content('Uses the active SMS thank_you template. This action sends immediately.'),
                         ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
                             $this->sendEventMessagesFromToolbar(
-                                channel: $data['channel'],
+                                channel: 'sms',
                                 templateType: 'thank_you',
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Thank you messages processed',
