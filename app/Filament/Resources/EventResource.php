@@ -475,6 +475,19 @@ class EventResource extends Resource
                             ->required()
                             ->columnSpanFull(),
 
+                        Forms\Components\Select::make('manual_thank_you_scope')
+                            ->label('Default Manual Recipients')
+                            ->options([
+                                'all_active' => 'All Invitees (active cards) — default',
+                                'attending' => 'Confirmed Attending',
+                                'checked_in' => 'Checked-in Guests',
+                            ])
+                            ->default('all_active')
+                            ->helperText('This preselects recipients when you click Thank You in Invitees. Manual messages are never sent automatically.')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') !== 'automatic')
+                            ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') !== 'automatic')
+                            ->columnSpanFull(),
+
                         Forms\Components\Select::make('auto_thank_you_scope')
                             ->label('Automatic Recipients')
                             ->options([
@@ -496,7 +509,7 @@ class EventResource extends Resource
 
                         Forms\Components\Placeholder::make('thank_you_notice')
                             ->label('Sending rules')
-                            ->content('Automatic mode requires an active SMS thank_you template and a running Laravel scheduler. Each eligible guest receives at most one automatic attempt. WhatsApp thank-you messages are manual.')
+                            ->content('Automatic mode requires an active SMS thank_you template and a running Laravel scheduler. Each eligible guest receives at most one automatic attempt. Thank-you messages use SMS only.')
                             ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
                             ->columnSpanFull(),
                     ])
