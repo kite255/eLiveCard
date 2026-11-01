@@ -545,6 +545,13 @@ class WhatsAppWebhookController extends Controller
                 true
             )
         ) {
+            // Store ordinary incoming replies on the invitee as well as in
+            // Message Logs. Never interpret free text as an RSVP change.
+            $invitee->forceFill([
+                'last_reply_message' => $replyTitle ?? $replyPayload,
+                'last_reply_at' => now(),
+            ])->saveQuietly();
+
             $this->recordIncomingMessage(
                 invitee: $invitee,
                 messageId: $messageId,
