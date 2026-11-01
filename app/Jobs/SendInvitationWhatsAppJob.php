@@ -62,7 +62,7 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
         }
 
         // The bulk sender claims the template/invitee combination before dispatch.
-        $tracking = $this->messageTemplateId
+        $tracking = $this->messageTemplateId && Schema::hasTable('whatsapp_template_sends')
             ? DB::table('whatsapp_template_sends')
                 ->where('event_id', $invitee->event_id)
                 ->where('invitee_id', $invitee->id)
