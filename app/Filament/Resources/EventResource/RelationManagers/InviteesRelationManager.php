@@ -1098,26 +1098,10 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
                         ->modalHeading('Send WhatsApp Message')
-                        ->modalDescription('Uses the WhatsApp template selected in Event Settings. Choose recipients.')
-                        ->modalSubmitActionLabel('Send WhatsApp')
-                        ->form([
-                            Forms\Components\Select::make('recipient_scope')
-                                ->label('Send To')
-                                ->options([
-                                    'not_sent' => 'Invitees Not Yet Sent',
-                                    'all_active' => 'All Active Invitees',
-                                    'pending_rsvp' => 'Pending RSVP Invitees',
-                                    'attending' => 'Attending Invitees',
-                                ])
-                                ->default('not_sent')
-                                ->required(),
-
-                            Forms\Components\Placeholder::make('note')
-                                ->label('Note')
-                                ->content('Uses the saved WhatsApp template from Event Settings and records responses in Message Logs.'),
-                        ])
+                                                ->modalSubmitActionLabel('Send WhatsApp')
+                        ->modalDescription('Send the saved event WhatsApp template to eligible invitees who have not yet been sent a WhatsApp message. Confirm to continue.')
                         ->requiresConfirmation()
-                        ->action(function (array $data): void {
+                        ->action(function (): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
@@ -1134,7 +1118,7 @@ class InviteesRelationManager extends RelationManager
                             $this->sendEventMessagesFromToolbar(
                                 channel: 'whatsapp',
                                 templateType: $selectedTemplate->type,
-                                recipientScope: $data['recipient_scope'],
+                                recipientScope: 'not_sent',
                                 actionTitle: 'WhatsApp messages processed',
                                 messageTemplateId: $selectedTemplate->id,
                             );
