@@ -4311,7 +4311,7 @@ class InviteesRelationManager extends RelationManager
 
     protected function prepareGeneratedCardForQueue(Invitee $invitee): GeneratedCard
     {
-        $templateId = app(\\App\\Services\\CardGenerationService::class)
+        $templateId = app(\App\Services\CardGenerationService::class)
             ->resolveTemplateForEvent($this->getOwnerRecord())->id;
 
         /*
