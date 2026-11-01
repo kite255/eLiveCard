@@ -57,6 +57,24 @@ class AutomaticThankYouSmsTest extends TestCase
         ]);
     }
 
+    public function test_automatic_messages_wait_until_the_configured_next_day_time(): void
+    {
+        $event = $this->makeEvent('automatic');
+        $event->update([
+            'event_date' => now('Africa/Dar_es_Salaam')->toDateString(),
+            'auto_thank_you_time' => '09:00',
+        ]);
+        $this->makeTemplate($event);
+        $this->makeInvitee($event);
+
+        $sms = $this->mock(ReminderSmsService::class);
+        $sms->shouldNotReceive('sendCustomSms');
+
+        $this->artisan('sms:send-automatic-thank-you')->assertExitCode(0);
+
+        $this->assertDatabaseCount('automatic_thank_you_sends', 0);
+    }
+
     private function makeEvent(string $mode): Event
     {
         return Event::query()->create([
