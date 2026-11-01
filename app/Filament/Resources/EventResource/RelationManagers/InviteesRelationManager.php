@@ -513,14 +513,31 @@ class InviteesRelationManager extends RelationManager
                         return 'SMS: '.$sms;
                     })
                     ->description(function (Invitee $record): string {
+                        $trackedStatus = null;
+                        $eventTemplateId = $this->getOwnerRecord()->default_whatsapp_template_id;
+
+                        if ($eventTemplateId && Schema::hasTable('whatsapp_template_sends')) {
+                            $trackedStatus = DB::table('whatsapp_template_sends')
+                                ->where('invitee_id', $record->id)
+                                ->where('message_template_id', $eventTemplateId)
+                                ->value('status');
+                        }
+
                         $whatsapp = match ($record->whatsapp_status) {
-                            'sending' => 'Sending',
-                            'submitted' => 'Submitted',
-                            'sent' => 'Sent',
                             'delivered' => 'Delivered',
                             'read' => 'Read',
-                            'failed' => 'Failed',
-                            default => 'Not Sent',
+                            default => match ($trackedStatus) {
+                                'pending' => 'Pending',
+                                'failed' => 'Failed',
+                                'submitted' => 'Submitted',
+                                default => match ($record->whatsapp_status) {
+                                    'queued', 'sending' => 'Pending',
+                                    'submitted' => 'Submitted',
+                                    'sent' => 'Sent',
+                                    'failed' => 'Failed',
+                                    default => 'Not Sent',
+                                },
+                            },
                         };
 
                         return 'WhatsApp: '.$whatsapp;
@@ -2699,6 +2716,29 @@ class InviteesRelationManager extends RelationManager
         $invitees = $query->get();
 
         if ($invitees->isEmpty()) {
+            if ($channel === 'whatsapp' && $messageTemplateId && Schema::hasTable('whatsapp_template_sends')) {
+                $counts = DB::table('whatsapp_template_sends')
+                    ->join('invitees', 'invitees.id', '=', 'whatsapp_template_sends.invitee_id')
+                    ->where('invitees.event_id', $this->getOwnerRecord()->id)
+                    ->where('whatsapp_template_sends.message_template_id', $messageTemplateId)
+                    ->where('invitees.card_status', Invitee::CARD_STATUS_ACTIVE)
+                    ->selectRaw('whatsapp_template_sends.status, COUNT(*) as total')
+                    ->groupBy('whatsapp_template_sends.status')
+                    ->pluck('total', 'status');
+
+                $pending = (int) ($counts['pending'] ?? 0);
+                $failed = (int) ($counts['failed'] ?? 0);
+                $submitted = (int) ($counts['submitted'] ?? 0);
+
+                $this->brandedNotification()
+                    ->title('eLive Card • No new WhatsApp invitations to send')
+                    ->body("Already tracked for this template — Pending: {$pending}; Failed: {$failed}; Submitted: {$submitted}. Pending invitations await queue processing. Use Retry Failed WhatsApp only for failed attempts.")
+                    ->warning()
+                    ->send();
+
+                return;
+            }
+
             $this->brandedNotification()
                 ->title('eLive Card • No invitees found')
                 ->body('No invitees matched the selected option.')
