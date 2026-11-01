@@ -251,7 +251,7 @@ class RecipientsRelationManager extends RelationManager
                             $records->each(fn (ContributionRecipient $record) => GenerateContributionCardJob::dispatch($record->id));
                         })->deselectRecordsAfterCompletion(),
                     Tables\Actions\BulkAction::make('send_selected')
-                        ->label('Send Selected')->icon('heroicon-o-paper-airplane')->requiresConfirmation()
+                        ->label('Send Selected via WhatsApp')->icon('heroicon-o-paper-airplane')->color('success')->requiresConfirmation()
                         ->action(function (Collection $records): void {
                             $records->filter(fn (ContributionRecipient $record): bool => filled($record->generated_card_path))
                                 ->each(fn (ContributionRecipient $record) => SendContributionCardJob::dispatch($record->id));
