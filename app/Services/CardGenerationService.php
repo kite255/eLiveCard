@@ -44,32 +44,29 @@ class CardGenerationService
             throw new \Exception('Invitee does not belong to an event.');
         }
 
-        $templateQuery = $event->cardTemplates();
-
-        $template = Schema::hasColumn('card_templates', 'status')
-            ? (clone $templateQuery)
-                ->whereIn('status', ['active', 'published'])
-                ->latest('id')
-                ->first()
-            : null;
-
-        $template ??= (clone $templateQuery)
-            ->when(
-                Schema::hasColumn('card_templates', 'status'),
-                fn ($query) => $query->where('status', 'draft')
-            )
-            ->latest('id')
-            ->first();
-
-        $template ??= $templateQuery
-            ->latest('id')
-            ->first();
-
-        if (! $template) {
-            throw new \Exception('No card template found for this invitee event. Please upload/design a template first.');
-        }
+        $template = $this->resolveTemplateForEvent($event);
 
         return $this->generate($template, $invitee);
+    }
+
+    /**
+     * A single template-selection rule shared by dispatch, job and renderer.
+     */
+    public function resolveTemplateForEvent(\App\Models\Event $event): CardTemplate
+    {
+        $query = $event->cardTemplates();
+
+        $template = Schema::hasColumn('card_templates', 'status')
+            ? (clone $query)->whereIn('status', ['active', 'published'])->latest('id')->first()
+            : null;
+
+        $template ??= (clone $query)->latest('id')->first();
+
+        if (! $template) {
+            throw new \RuntimeException('No card template found for this event. Upload a card template first.');
+        }
+
+        return $template;
     }
 
     public function generate(CardTemplate $template, Invitee $invitee): GeneratedCard
@@ -202,10 +199,14 @@ class CardGenerationService
                 dirname($path)
             );
 
-            Storage::disk('public')->put(
+            $written = Storage::disk('public')->put(
                 $path,
                 (string) $encodedCard
             );
+
+            if (! $written || ! Storage::disk('public')->exists($path)) {
+                throw new \RuntimeException('Generated card image could not be saved to public storage.');
+            }
 
             $generatedCard = GeneratedCard::updateOrCreate(
                 [

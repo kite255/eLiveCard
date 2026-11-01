@@ -4274,7 +4274,10 @@ class InviteesRelationManager extends RelationManager
     {
         $invitee->loadMissing('latestGeneratedCard');
 
-        return $invitee->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING;
+        return in_array($invitee->latestGeneratedCard?->status, [
+            GeneratedCard::STATUS_PENDING,
+            GeneratedCard::STATUS_GENERATING,
+        ], true);
     }
 
     protected function inviteeHasUsableGeneratedCard(Invitee $invitee): bool
@@ -4308,14 +4311,8 @@ class InviteesRelationManager extends RelationManager
 
     protected function prepareGeneratedCardForQueue(Invitee $invitee): GeneratedCard
     {
-        $templateId = $this->getOwnerRecord()
-            ->cardTemplates()
-            ->latest()
-            ->value('id');
-
-        if (! $templateId) {
-            throw new \Exception('No card template found for this event. Please upload a card template first.');
-        }
+        $templateId = app(\App\Services\CardGenerationService::class)
+            ->resolveTemplateForEvent($this->getOwnerRecord())->id;
 
         /*
         |--------------------------------------------------------------------------
@@ -4336,7 +4333,7 @@ class InviteesRelationManager extends RelationManager
             ],
             [
                 'event_id' => $this->getOwnerRecord()->id,
-                'status' => GeneratedCard::STATUS_GENERATING,
+                'status' => GeneratedCard::STATUS_PENDING,
                 'generated_at' => null,
                 'sent_at' => null,
             ]

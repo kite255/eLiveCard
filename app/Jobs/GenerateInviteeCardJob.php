@@ -322,9 +322,8 @@ class GenerateInviteeCardJob implements ShouldQueue
      */
     private function prepareGeneratedCard(Invitee $invitee): GeneratedCard
     {
-        $template = $invitee->event?->cardTemplates()
-            ->latest()
-            ->first();
+        $template = app(CardGenerationService::class)
+            ->resolveTemplateForEvent($invitee->event);
 
         if (! $template) {
             throw new \Exception(
