@@ -1148,10 +1148,10 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('send_reminder')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Reminder')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && ! (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
+                        ->label('Send Reminder')
                         ->icon('heroicon-o-bell')
-                        ->color('warning')
+                        ->color('primary')
                         ->modalHeading('Send Reminder')
                         ->modalDescription('Choose the SMS reminder type and recipients.')
                         ->modalSubmitActionLabel('Send Reminder')
@@ -1187,10 +1187,10 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('thank_you_message')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Thank You')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && $this->getOwnerRecord()->thank_you_mode !== 'automatic')
+                        ->label('Send Thank You')
                         ->icon('heroicon-o-heart')
-                        ->color('gray')
+                        ->color('primary')
                         ->modalHeading('Send Thank You Message')
                         ->modalDescription('Send a thank-you SMS now. Configure automatic delivery in Event Settings.')
                         ->modalSubmitActionLabel('Send Thank You')
@@ -1219,6 +1219,30 @@ class InviteesRelationManager extends RelationManager
                             );
                         }),
 
+
+                    Tables\Actions\Action::make('reminder_scheduled')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
+                        ->label('Reminder Scheduled')
+                        ->icon('heroicon-o-calendar-days')
+                        ->color('success')
+                        ->modalHeading('Automatic SMS Reminders')
+                        ->modalSubmitAction(false)
+                        ->modalContent(fn () => view('filament.components.automatic-message-status', [
+                            'mode' => 'reminder',
+                            'event' => $this->getOwnerRecord()->fresh(),
+                        ])),
+
+                    Tables\Actions\Action::make('thank_you_scheduled')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && $this->getOwnerRecord()->thank_you_mode === 'automatic')
+                        ->label('Thank You Scheduled')
+                        ->icon('heroicon-o-calendar-days')
+                        ->color('success')
+                        ->modalHeading('Automatic Thank You SMS')
+                        ->modalSubmitAction(false)
+                        ->modalContent(fn () => view('filament.components.automatic-message-status', [
+                            'mode' => 'thank_you',
+                            'event' => $this->getOwnerRecord()->fresh(),
+                        ])),
 
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('export_rsvp')
