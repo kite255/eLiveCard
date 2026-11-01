@@ -70,6 +70,7 @@ class Event extends Model
         'auto_event_day_reminder_enabled',
         'event_day_reminder_time',
 
+        'default_whatsapp_template_id',
         'thank_you_mode',
         'auto_thank_you_scope',
         'manual_thank_you_scope',
