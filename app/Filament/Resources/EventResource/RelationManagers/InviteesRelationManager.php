@@ -184,7 +184,7 @@ class InviteesRelationManager extends RelationManager
                             ->label('Full Name')
                             ->required()
                             ->maxLength(255)
-                            ->placeholder('Example: Guest Name')
+                            ->placeholder('Enter invitee full name')
                             ->dehydrateStateUsing(
                                 fn (?string $state): string =>
                                     trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
@@ -203,7 +203,7 @@ class InviteesRelationManager extends RelationManager
                             ->label('Email')
                             ->email()
                             ->maxLength(255)
-                            ->placeholder('Optional'),
+                            ->placeholder('name@example.com'),
 
                         Forms\Components\Select::make('card_type_id')
                             ->label('Card Type')
@@ -745,11 +745,11 @@ class InviteesRelationManager extends RelationManager
                     ->icon('heroicon-o-user-plus')
                     ->color('primary')
                     ->modalHeading('Add Invitee Manually')
-                    ->modalDescription('Use this form to add one invitee without uploading Excel. Serial number, QR token, short code, and RSVP token will be generated automatically.')
+                    ->modalDescription('Enter guest details. Invitation identifiers are generated automatically.')
                     ->modalSubmitActionLabel('Save Invitee')
                     ->form([
                         Forms\Components\Section::make('Invitee Information')
-                            ->description('Enter the contact and invitation details for this guest.')
+                            ->description('Contact and invitation details.')
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Full Name')
@@ -760,15 +760,15 @@ class InviteesRelationManager extends RelationManager
                                         fn (?string $state): string =>
                                             trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
                                     )
-                                    ->helperText('The name must be unique within this event. A phone number may belong to multiple invitees.'),
+                                    ->helperText('Names must currently be unique within this event.'),
 
                                 Forms\Components\TextInput::make('phone')
                                     ->label('Phone Number')
                                     ->tel()
                                     ->required()
                                     ->maxLength(30)
-                                    ->placeholder('Example: 0711111111')
-                                    ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111. The same phone number may be used by multiple invitees.'),
+                                    ->placeholder('0712 345 678')
+                                    ->helperText('Tanzania mobile number; shared phone numbers are allowed.'),
 
                                 Forms\Components\TextInput::make('email')
                                     ->label('Email')
@@ -787,7 +787,10 @@ class InviteesRelationManager extends RelationManager
                                     ->live()
                                     ->required()
                                     ->afterStateUpdated(function ($state, callable $set): void {
-                                        $cardType = CardType::find($state);
+                                        $cardType = CardType::query()
+                                            ->where('event_id', $this->getOwnerRecord()->id)
+                                            ->where('is_active', true)
+                                            ->find($state);
 
                                         if ($cardType) {
                                             $set('allowed_guests', $cardType->allowed_people ?? 1);
@@ -798,24 +801,25 @@ class InviteesRelationManager extends RelationManager
                                     ->label('Allowed Guests')
                                     ->numeric()
                                     ->minValue(1)
-                                    ->default(1)
+                                    ->placeholder('Select a card type first')
                                     ->required()
-                                    ->helperText('Defaults to the selected card type. You may override it for this invitee.'),
+                                    ->helperText('Automatically filled from card type; editable if needed.'),
 
                                 Forms\Components\TextInput::make('category')
                                     ->label('Category')
                                     ->maxLength(100)
-                                    ->placeholder('Example: Family, Friends, Committee, VIP'),
+                                    ->datalist(['Family', 'Friends', 'Committee', 'VIP', 'VVIP'])
+                                    ->placeholder('Choose a suggestion or type a category'),
 
                                 Forms\Components\TextInput::make('table_number')
                                     ->label('Table Number')
                                     ->maxLength(50)
-                                    ->placeholder('Example: A1, VIP 2, Family Table'),
+                                    ->placeholder('e.g. A1, VIP 2'),
                             ])
                             ->columns(2),
 
                         Forms\Components\Section::make('Advanced Settings')
-                            ->description('Optional. Defaults are Pending RSVP, Active card, and zero confirmed guests.')
+                            ->description('RSVP, card status and confirmed guests (optional).')
                             ->collapsed()
                             ->schema([
                                 Forms\Components\Select::make('rsvp_status')
