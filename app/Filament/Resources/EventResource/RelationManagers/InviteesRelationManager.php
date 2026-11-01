@@ -738,7 +738,8 @@ class InviteesRelationManager extends RelationManager
             ])
             ->filtersFormColumns(3)
             ->headerActions([
-                Tables\Actions\Action::make('add_manual_invitee')
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('add_manual_invitee')
                     ->label('Add Invitee')
                     ->visible(fn (): bool => $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-user-plus')
@@ -901,6 +902,46 @@ class InviteesRelationManager extends RelationManager
                         }
                     }),
 
+                Tables\Actions\Action::make('import_excel')
+                    ->label('Import Excel')
+                    ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                    ->icon('heroicon-o-arrow-up-tray')
+                    ->color('gray')
+                    ->modalHeading('Import Invitees from Excel')
+                    ->modalDescription('Upload an Excel file with required columns name, phone, card_type. Valid rows are kept when another row has an error.')
+                    ->modalSubmitActionLabel('Import Invitees')
+                    ->form([
+                        Forms\Components\FileUpload::make('excel_file')
+                            ->label('Excel File')
+                            ->required()
+                            ->storeFiles(false)
+                            ->acceptedFileTypes([
+                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                'application/vnd.ms-excel',
+                                'text/csv',
+                                'application/csv',
+                                'application/octet-stream',
+                            ])
+                            ->maxSize(10240)
+                            ->helperText('Required: name, phone, card_type. Optional: allowed_guests, email, category, table_number.'),
+                    ])
+                    ->action(function (array $data): void {
+                        $this->importInviteesFromExcel($data['excel_file']);
+                    }),
+
+                    Tables\Actions\Action::make('download_sample_excel')
+                        ->label('Download Sample Excel')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn () => route('invitees.sample-excel'))
+                        ->openUrlInNewTab(),
+                ])
+                    ->label('Add Invitee')
+                    ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                    ->icon('heroicon-o-user-plus')
+                    ->button()
+                    ->color('primary'),
+
                 Tables\Actions\Action::make('generate_missing_cards')
                     ->label('Generate Cards')
                     ->visible(fn (): bool => $this->canGenerateCardsForOwner())
@@ -970,36 +1011,35 @@ class InviteesRelationManager extends RelationManager
                             ->send();
                     }),
 
-                Tables\Actions\Action::make('import_excel')
-                    ->label('Import Excel')
-                    ->visible(fn (): bool => $this->canManageInviteesForOwner())
-                    ->icon('heroicon-o-arrow-up-tray')
-                    ->color('gray')
-                    ->modalHeading('Import Invitees from Excel')
-                    ->modalDescription('Upload an Excel file with required columns name, phone, card_type. Valid rows are kept when another row has an error.')
-                    ->modalSubmitActionLabel('Import Invitees')
-                    ->form([
-                        Forms\Components\FileUpload::make('excel_file')
-                            ->label('Excel File')
-                            ->required()
-                            ->storeFiles(false)
-                            ->acceptedFileTypes([
-                                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                                'application/vnd.ms-excel',
-                                'text/csv',
-                                'application/csv',
-                                'application/octet-stream',
-                            ])
-                            ->maxSize(10240)
-                            ->helperText('Required: name, phone, card_type. Optional: allowed_guests, email, category, table_number.'),
-                    ])
-                    ->action(function (array $data): void {
-                        $this->importInviteesFromExcel($data['excel_file']);
+                Tables\Actions\Action::make('export_invitees')
+                    ->label('Export Invitees')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->action(function () {
+                        $event = $this->getOwnerRecord();
+
+                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        AuditLogService::exported(
+                            subject: $event,
+                            eventId: $event->id,
+                            description: 'Invitees report was exported.',
+                            metadata: [
+                                'report' => 'invitees',
+                                'format' => 'xlsx',
+                            ],
+                        );
+
+                        return Excel::download(
+                            new EventInviteesExport((int) $event->id),
+                            $eventName . '-invitees-report.xlsx'
+                        );
                     }),
 
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('send_message')
-                        ->label('Send Message')
+                Tables\Actions\Action::make('send_message')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Send SMS')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->modalHeading('Send SMS Message')
@@ -1048,6 +1088,7 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('send_whatsapp')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send WhatsApp')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('primary')
@@ -1102,6 +1143,7 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('send_reminder')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Reminder')
                         ->icon('heroicon-o-bell')
                         ->color('warning')
@@ -1149,7 +1191,8 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('thank_you_message')
-                        ->label('Thank You Message')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Thank You')
                         ->icon('heroicon-o-heart')
                         ->color('gray')
                         ->modalHeading('Send Thank You Message')
@@ -1188,40 +1231,9 @@ class InviteesRelationManager extends RelationManager
                                 actionTitle: 'Thank you messages processed',
                             );
                         }),
-                ])
-                    ->label('Communications')
-                    ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                    ->icon('heroicon-o-envelope')
-                    ->button()
-                    ->color('success'),
+
 
                 Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('export_invitees')
-                    ->label('Export Invitees')
-                    ->visible(fn (): bool => $this->canViewReportsForOwner())
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
-                    ->action(function () {
-                        $event = $this->getOwnerRecord();
-
-                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
-
-                        AuditLogService::exported(
-                            subject: $event,
-                            eventId: $event->id,
-                            description: 'Invitees report was exported.',
-                            metadata: [
-                                'report' => 'invitees',
-                                'format' => 'xlsx',
-                            ],
-                        );
-
-                        return Excel::download(
-                            new EventInviteesExport((int) $event->id),
-                            $eventName . '-invitees-report.xlsx'
-                        );
-                    }),
-
                     Tables\Actions\Action::make('export_rsvp')
                     ->label('Export RSVP')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
@@ -1259,15 +1271,9 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\Action::make('download_sample_excel')
-                        ->label('Download Sample Excel')
-                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->url(fn () => route('invitees.sample-excel'))
-                        ->openUrlInNewTab(),
                 ])
-                    ->label('More')
-                    ->visible(fn (): bool => $this->canManageInviteesForOwner() || $this->canViewReportsForOwner())
+                    ->label('Reports & Tools')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner() || $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-ellipsis-horizontal')
                     ->button()
                     ->color('gray'),
