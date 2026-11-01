@@ -1096,7 +1096,7 @@ class InviteesRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send WhatsApp')
                         ->icon('heroicon-o-chat-bubble-left-right')
-                        ->color('primary')
+                        ->color('success')
                         ->modalHeading('Send WhatsApp Message')
                         ->modalDescription('Choose the exact approved Meta WhatsApp template and recipients.')
                         ->modalSubmitActionLabel('Send WhatsApp')
