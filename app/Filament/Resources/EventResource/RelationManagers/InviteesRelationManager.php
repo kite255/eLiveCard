@@ -1202,7 +1202,7 @@ class InviteesRelationManager extends RelationManager
                                     'attending' => 'Confirmed Attending',
                                     'checked_in' => 'Checked-in Guests',
                                 ])
-                                ->default('all_active')
+                                ->default(fn (): string => $this->getOwnerRecord()->manual_thank_you_scope ?: 'all_active')
                                 ->required(),
 
                             Forms\Components\Placeholder::make('note')
