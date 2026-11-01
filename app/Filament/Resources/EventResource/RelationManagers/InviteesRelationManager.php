@@ -2625,14 +2625,20 @@ class InviteesRelationManager extends RelationManager
             ->whereNotNull('short_code')
             ->where('short_code', '!=', '');
 
+        // Never send bulk WhatsApp messages to cancelled, blocked, or used cards.
+        if ($channel === 'whatsapp') {
+            $query->where('card_status', Invitee::CARD_STATUS_ACTIVE);
+        }
+
         match ($recipientScope) {
             'not_sent' => $query->where(function ($query) use ($channel): void {
                 if ($channel === 'whatsapp') {
-                    $query
-                        ->whereNull('whatsapp_status')
-                        ->orWhere('whatsapp_status', '')
-                        ->orWhere('whatsapp_status', 'not_sent')
-                        ->orWhereNull('whatsapp_sent_at');
+                    $query->where(function ($statusQuery): void {
+                        $statusQuery
+                            ->whereNull('whatsapp_status')
+                            ->orWhere('whatsapp_status', '')
+                            ->orWhere('whatsapp_status', 'not_sent');
+                    })->whereNull('whatsapp_sent_at');
 
                     return;
                 }
@@ -2694,6 +2700,12 @@ class InviteesRelationManager extends RelationManager
         $failedExamples = [];
 
         foreach ($invitees as $invitee) {
+            if ($channel === 'whatsapp' && blank($this->normalizePhone($invitee->phone))) {
+                $skipped++;
+
+                continue;
+            }
+
             if (! $invitee instanceof Invitee) {
                 $skipped++;
 
