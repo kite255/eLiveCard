@@ -460,6 +460,40 @@ class EventResource extends Resource
                     ])
                     ->collapsible(),
 
+                Forms\Components\Section::make('WhatsApp Settings')
+                    ->description('Choose the single WhatsApp template used by Send WhatsApp in Invitees.')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->schema([
+                        Forms\Components\Select::make('default_whatsapp_template_id')
+                            ->label('Default WhatsApp Template')
+                            ->options(function (?\App\Models\Event $record): array {
+                                return \App\Models\MessageTemplate::query()
+                                    ->where('channel', 'whatsapp')
+                                    ->where('status', 'active')
+                                    ->whereNotNull('whatsapp_template_name')
+                                    ->where('whatsapp_template_name', '!=', '')
+                                    ->where(function (\Illuminate\Database\Eloquent\Builder $query) use ($record): void {
+                                        $query->whereNull('event_id');
+
+                                        if ($record?->exists) {
+                                            $query->orWhere('event_id', $record->id);
+                                        }
+                                    })
+                                    ->orderBy('name')
+                                    ->get()
+                                    ->mapWithKeys(fn (\App\Models\MessageTemplate $template): array => [
+                                        $template->id => $template->name.' — '.$template->whatsapp_template_name
+                                            .' ('.strtoupper((string) ($template->whatsapp_language_code ?: 'en')).')',
+                                    ])
+                                    ->toArray();
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Choose an active Meta-approved template here. The Invitees Send WhatsApp action will use only this template.')
+                            ->columnSpanFull(),
+                    ])
+                    ->collapsible(),
+
                 Forms\Components\Section::make('Thank You Message Settings')
                     ->description('Configure post-event thank-you SMS here. Manual sending remains available in Invitees.')
                     ->icon('heroicon-o-heart')
