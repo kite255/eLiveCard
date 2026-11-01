@@ -1252,10 +1252,18 @@ class InviteesRelationManager extends RelationManager
                                 ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic' || $get('manual_action') === 'send_now')
                                 ->required(),
 
+                            Forms\Components\TimePicker::make('auto_thank_you_time')
+                                ->label('Automatic Send Time')
+                                ->seconds(false)
+                                ->default(fn (): string => $this->getOwnerRecord()->auto_thank_you_time?->format('H:i') ?: '09:00')
+                                ->helperText('Default: 9:00 AM (Tanzania time), on the day after the event. You can choose another time.')
+                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic')
+                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic'),
+
                             Forms\Components\Placeholder::make('thank_you_guidance')
                                 ->label('How it works')
                                 ->content(fn (Forms\Get $get): string => $get('delivery_mode') === 'automatic'
-                                    ? 'Saves an opt-in setting for this event. The scheduler sends each eligible guest one SMS after the event is completed. An active SMS thank_you template is required. No message is sent immediately. WhatsApp remains manual.'
+                                    ? 'Saves an opt-in setting for this event. The scheduler sends each eligible guest one SMS at the selected time on the day after the event (Tanzania time), after the event is completed. An active SMS thank_you template is required. No message is sent immediately. WhatsApp remains manual.'
                                     : ($get('manual_action') === 'disable_only'
                                         ? 'Automatic sending will be disabled; no message is sent.'
                                         : 'Immediately sends to selected recipients using the active thank_you template.')),
@@ -1290,11 +1298,12 @@ class InviteesRelationManager extends RelationManager
                                 $event->update([
                                     'thank_you_mode' => 'automatic',
                                     'auto_thank_you_scope' => $scope,
+                                    'auto_thank_you_time' => $data['auto_thank_you_time'] ?? '09:00',
                                 ]);
 
                                 $this->brandedNotification()
                                     ->title('Automatic thank-you SMS enabled')
-                                    ->body('Messages will be processed after this event is completed, provided Laravel Scheduler is running. One automatic attempt per eligible invitee.')
+                                    ->body('Messages will be processed at the selected time on the next day after the event, provided it is completed and Laravel Scheduler is running. One automatic attempt per eligible invitee.')
                                     ->success()
                                     ->send();
 
