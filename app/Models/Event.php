@@ -72,6 +72,7 @@ class Event extends Model
 
         'thank_you_mode',
         'auto_thank_you_scope',
+        'auto_thank_you_time',
 
         // Optional welcome SMS after successful check-in
         'welcome_sms_enabled',
@@ -83,6 +84,7 @@ class Event extends Model
         'start_time' => 'datetime:H:i',
         'end_time' => 'datetime:H:i',
 
+        'auto_thank_you_time' => 'datetime:H:i',
         'auto_sms_reminders_enabled' => 'boolean',
         'auto_rsvp_pending_reminder_enabled' => 'boolean',
         'rsvp_pending_reminder_time' => 'datetime:H:i',
