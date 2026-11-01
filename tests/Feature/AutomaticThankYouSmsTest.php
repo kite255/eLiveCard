@@ -39,8 +39,9 @@ class AutomaticThankYouSmsTest extends TestCase
         $sms = $this->mock(ReminderSmsService::class);
         $sms->shouldReceive('sendCustomSms')
             ->once()
-            ->withArgs(fn ($invitee, $message) => $invitee->id === $included->id
-                && str_contains($message, 'Checked In'))
+            ->withArgs(fn ($invitee, $message, $source) => $invitee->id === $included->id
+                && str_contains($message, 'Checked In')
+                && $source === \App\Models\SmsLog::SOURCE_AUTOMATIC)
             ->andReturn(true);
 
         $this->artisan('sms:send-automatic-thank-you')->assertExitCode(0);
