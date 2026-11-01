@@ -46,7 +46,7 @@ class SendAutomaticThankYouSms extends Command
                         ->where('event_id', $event->id)
                         ->whereIn('card_status', [Invitee::CARD_STATUS_ACTIVE, Invitee::CARD_STATUS_USED])
                         ->whereNotNull('phone')
-                        ->where('phone', '!= '');
+                        ->where('phone', '!=', '');
 
                     if ($scope === 'checked_in') {
                         $invitees->where('checked_in_count', '>', 0);
