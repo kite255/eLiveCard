@@ -6,6 +6,7 @@ use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
 use App\Models\SmsLog;
+use Illuminate\Support\Carbon;
 use App\Services\MessageTemplateRenderer;
 use App\Services\ReminderSmsService;
 use Illuminate\Console\Command;
@@ -26,6 +27,19 @@ class SendAutomaticThankYouSms extends Command
             ->whereDate('event_date', '<=', today())
             ->chunkById(50, function ($events) use ($sms, $renderer): void {
                 foreach ($events as $event) {
+                    // Default: 09:00 on the day after the event, in Tanzania time.
+                    // Never send before the event has been completed.
+                    $timezone = 'Africa/Dar_es_Salaam';
+                    $eventDay = Carbon::parse($event->event_date)->timezone($timezone)->startOfDay();
+                    $time = $event->auto_thank_you_time
+                        ? $event->auto_thank_you_time->format('H:i')
+                        : '09:00';
+                    $dueAt = $eventDay->addDay()->setTimeFromTimeString($time);
+
+                    if (Carbon::now($timezone)->lt($dueAt)) {
+                        continue;
+                    }
+
                     $template = MessageTemplate::query()
                         ->where('channel', 'sms')
                         ->where('type', 'thank_you')
