@@ -1098,17 +1098,9 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
                         ->modalHeading('Send WhatsApp Message')
-                        ->modalDescription('Choose the exact approved Meta WhatsApp template and recipients.')
+                        ->modalDescription('Uses the WhatsApp template selected in Event Settings. Choose recipients.')
                         ->modalSubmitActionLabel('Send WhatsApp')
                         ->form([
-                            Forms\Components\Select::make('message_template_id')
-                                ->label('WhatsApp Template')
-                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
-                                ->searchable()
-                                ->preload()
-                                ->required()
-                                ->helperText('Choose the exact approved Meta template to send, for example event_invitation_en, event_invitation_sw, or contribution_card_sw.'),
-
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
                                 ->options([
@@ -1122,16 +1114,17 @@ class InviteesRelationManager extends RelationManager
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Note')
-                                ->content('This sends using the selected WhatsApp Cloud API template and saves the response in Message Logs.'),
+                                ->content('Uses the saved WhatsApp template from Event Settings and records responses in Message Logs.'),
                         ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
-                            $selectedTemplate = $this->messageTemplateById((int) $data['message_template_id'], 'whatsapp');
+                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+                            $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
                             if (! $selectedTemplate) {
                                 $this->brandedNotification()
                                     ->title('eLive Card • WhatsApp template not found')
-                                    ->body('Please choose a valid WhatsApp template.')
+                                    ->body('Choose an active WhatsApp template in Event Settings before sending.')
                                     ->danger()
                                     ->send();
 
