@@ -10,6 +10,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
@@ -60,28 +61,41 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        $alreadySent = $invitee->messageLogs()
-            ->where('event_id', $invitee->event_id)
-            ->where('channel', 'whatsapp')
-            ->where('type', MessageTemplate::TYPE_INVITATION)
-            ->whereIn('status', [
-                'submitted',
-                'accepted',
-                'sent',
-                'delivered',
-                'read',
-            ])
-            ->exists();
+        // The bulk sender claims the template/invitee combination before dispatch.
+        $tracking = $this->messageTemplateId
+            ? DB::table('whatsapp_template_sends')
+                ->where('event_id', $invitee->event_id)
+                ->where('invitee_id', $invitee->id)
+                ->where('message_template_id', $this->messageTemplateId)
+                ->first()
+            : null;
 
-        if ($alreadySent) {
+        if ($tracking && $tracking->status !== 'pending') {
             return;
         }
 
-        $service->sendInvitation(
-            invitee: $invitee,
-            languageCode: $this->languageCode,
-            messageTemplateId: $this->messageTemplateId,
-        );
+        try {
+            $service->sendInvitation(
+                invitee: $invitee,
+                languageCode: $this->languageCode,
+                messageTemplateId: $this->messageTemplateId,
+            );
+
+            if ($tracking) {
+                DB::table('whatsapp_template_sends')->where('id', $tracking->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'submitted', 'last_error' => null, 'updated_at' => now()]);
+            }
+        } catch (Throwable $exception) {
+            if ($tracking) {
+                DB::table('whatsapp_template_sends')->where('id', $tracking->id)
+                    ->update(['status' => 'failed',
+                        'last_error' => mb_substr($exception->getMessage(), 0, 1000),
+                        'updated_at' => now()]);
+                return; // Failed-only retry is initiated explicitly by an admin.
+            }
+            throw $exception;
+        }
     }
 
     public function failed(?Throwable $exception): void
