@@ -1222,9 +1222,10 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('reminder_scheduled')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
-                        ->label('Reminder Scheduled')
+                        ->label(fn (): string => $this->getOwnerRecord()->auto_rsvp_pending_reminder_enabled || $this->getOwnerRecord()->auto_one_day_reminder_enabled || $this->getOwnerRecord()->auto_event_day_reminder_enabled ? 'Reminder Scheduled' : 'Reminder Setup Required')
                         ->icon('heroicon-o-calendar-days')
                         ->color('success')
+                        ->outlined()
                         ->modalHeading('Automatic SMS Reminders')
                         ->modalSubmitAction(false)
                         ->modalContent(fn () => view('filament.components.automatic-message-status', [
@@ -1234,9 +1235,10 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('thank_you_scheduled')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && $this->getOwnerRecord()->thank_you_mode === 'automatic')
-                        ->label('Thank You Scheduled')
+                        ->label(fn (): string => MessageTemplate::query()->where('channel', 'sms')->where('type', 'thank_you')->where('status', 'active')->where(fn (Builder $query) => $query->where('event_id', $this->getOwnerRecord()->id)->orWhereNull('event_id'))->exists() ? 'Thank You Scheduled' : 'Thank You Setup Required')
                         ->icon('heroicon-o-calendar-days')
                         ->color('success')
+                        ->outlined()
                         ->modalHeading('Automatic Thank You SMS')
                         ->modalSubmitAction(false)
                         ->modalContent(fn () => view('filament.components.automatic-message-status', [
