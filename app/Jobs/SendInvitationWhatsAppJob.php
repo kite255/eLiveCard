@@ -70,6 +70,20 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
                 ->first()
             : null;
 
+        // Keep legacy protection for invitation jobs dispatched outside the bulk toolbar.
+        if (! $tracking) {
+            $alreadySent = $invitee->messageLogs()
+                ->where('event_id', $invitee->event_id)
+                ->where('channel', 'whatsapp')
+                ->where('type', MessageTemplate::TYPE_INVITATION)
+                ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+                ->exists();
+
+            if ($alreadySent) {
+                return;
+            }
+        }
+
         if ($tracking && $tracking->status !== 'pending') {
             return;
         }
