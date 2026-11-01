@@ -2658,6 +2658,22 @@ class InviteesRelationManager extends RelationManager
                             ->whereColumn('wts.invitee_id', 'invitees.id')
                             ->where('wts.message_template_id', $messageTemplateId);
                     });
+
+                    // Historical WhatsApp messages predate template-specific tracking.
+                    // Until migrated, exclude legacy sent recipients to avoid bulk duplicates.
+                    $eligible->where(function (Builder $legacy): void {
+                        $legacy->whereExists(function ($sub): void {
+                            $sub->selectRaw('1')->from('whatsapp_template_sends as previous')
+                                ->whereColumn('previous.invitee_id', 'invitees.id');
+                        })->orWhere(function (Builder $neverSent): void {
+                            $neverSent->whereNull('whatsapp_sent_at')
+                                ->where(function (Builder $status): void {
+                                    $status->whereNull('whatsapp_status')
+                                        ->orWhere('whatsapp_status', '')
+                                        ->orWhere('whatsapp_status', 'not_sent');
+                                });
+                        });
+                    });
                 }
             });
         } else {
