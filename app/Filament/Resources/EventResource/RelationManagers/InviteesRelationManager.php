@@ -1198,11 +1198,11 @@ class InviteesRelationManager extends RelationManager
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
                                 ->options([
+                                    'all_active' => 'All Invitees (active cards)',
                                     'attending' => 'Confirmed Attending',
                                     'checked_in' => 'Checked-in Guests',
-                                    'all_active' => 'All Active Invitees',
                                 ])
-                                ->default('attending')
+                                ->default('all_active')
                                 ->required(),
 
                             Forms\Components\Placeholder::make('note')
