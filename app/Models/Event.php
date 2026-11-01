@@ -70,6 +70,9 @@ class Event extends Model
         'auto_event_day_reminder_enabled',
         'event_day_reminder_time',
 
+        'thank_you_mode',
+        'auto_thank_you_scope',
+
         // Optional welcome SMS after successful check-in
         'welcome_sms_enabled',
         'welcome_sms_message',
