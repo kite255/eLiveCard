@@ -997,9 +997,9 @@ class InviteesRelationManager extends RelationManager
                         $this->importInviteesFromExcel($data['excel_file']);
                     }),
 
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('send_message')
-                        ->label('Send Message')
+                Tables\Actions\Action::make('send_message')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Send SMS')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
                         ->modalHeading('Send SMS Message')
@@ -1048,6 +1048,7 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('send_whatsapp')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send WhatsApp')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('primary')
@@ -1102,6 +1103,7 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('send_reminder')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Reminder')
                         ->icon('heroicon-o-bell')
                         ->color('warning')
@@ -1149,7 +1151,8 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('thank_you_message')
-                        ->label('Thank You Message')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Thank You')
                         ->icon('heroicon-o-heart')
                         ->color('gray')
                         ->modalHeading('Send Thank You Message')
@@ -1188,12 +1191,7 @@ class InviteesRelationManager extends RelationManager
                                 actionTitle: 'Thank you messages processed',
                             );
                         }),
-                ])
-                    ->label('Communications')
-                    ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                    ->icon('heroicon-o-envelope')
-                    ->button()
-                    ->color('success'),
+
 
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('export_invitees')
