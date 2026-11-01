@@ -997,6 +997,38 @@ class InviteesRelationManager extends RelationManager
                         $this->importInviteesFromExcel($data['excel_file']);
                     }),
 
+                Tables\Actions\Action::make('download_sample_excel')
+                        ->label('Download Sample Excel')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                        ->icon('heroicon-o-arrow-down-tray')
+                        ->url(fn () => route('invitees.sample-excel'))
+                        ->openUrlInNewTab(),
+                Tables\Actions\Action::make('export_invitees')
+                    ->label('Export Invitees')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
+                    ->icon('heroicon-o-arrow-down-tray')
+                    ->color('info')
+                    ->action(function () {
+                        $event = $this->getOwnerRecord();
+
+                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
+
+                        AuditLogService::exported(
+                            subject: $event,
+                            eventId: $event->id,
+                            description: 'Invitees report was exported.',
+                            metadata: [
+                                'report' => 'invitees',
+                                'format' => 'xlsx',
+                            ],
+                        );
+
+                        return Excel::download(
+                            new EventInviteesExport((int) $event->id),
+                            $eventName . '-invitees-report.xlsx'
+                        );
+                    }),
+
                 Tables\Actions\Action::make('send_message')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send SMS')
@@ -1194,32 +1226,6 @@ class InviteesRelationManager extends RelationManager
 
 
                 Tables\Actions\ActionGroup::make([
-                    Tables\Actions\Action::make('export_invitees')
-                    ->label('Export Invitees')
-                    ->visible(fn (): bool => $this->canViewReportsForOwner())
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
-                    ->action(function () {
-                        $event = $this->getOwnerRecord();
-
-                        $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
-
-                        AuditLogService::exported(
-                            subject: $event,
-                            eventId: $event->id,
-                            description: 'Invitees report was exported.',
-                            metadata: [
-                                'report' => 'invitees',
-                                'format' => 'xlsx',
-                            ],
-                        );
-
-                        return Excel::download(
-                            new EventInviteesExport((int) $event->id),
-                            $eventName . '-invitees-report.xlsx'
-                        );
-                    }),
-
                     Tables\Actions\Action::make('export_rsvp')
                     ->label('Export RSVP')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
@@ -1257,15 +1263,9 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\Action::make('download_sample_excel')
-                        ->label('Download Sample Excel')
-                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
-                        ->icon('heroicon-o-arrow-down-tray')
-                        ->url(fn () => route('invitees.sample-excel'))
-                        ->openUrlInNewTab(),
                 ])
-                    ->label('More')
-                    ->visible(fn (): bool => $this->canManageInviteesForOwner() || $this->canViewReportsForOwner())
+                    ->label('Reports & Tools')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner() || $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-ellipsis-horizontal')
                     ->button()
                     ->color('gray'),
