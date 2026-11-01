@@ -1046,7 +1046,7 @@ class InviteesRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send SMS')
                         ->icon('heroicon-o-paper-airplane')
-                        ->color('success')
+                        ->color('primary')
                         ->modalHeading('Send SMS Message')
                         ->modalDescription('Choose the SMS message option and recipients.')
                         ->modalSubmitActionLabel('Send SMS')
