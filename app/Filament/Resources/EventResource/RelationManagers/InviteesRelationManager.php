@@ -1114,7 +1114,7 @@ class InviteesRelationManager extends RelationManager
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Note')
-                                ->content('Uses the event's saved WhatsApp template and records responses in Message Logs.'),
+                                ->content('Uses the saved WhatsApp template from Event Settings and records responses in Message Logs.'),
                         ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
