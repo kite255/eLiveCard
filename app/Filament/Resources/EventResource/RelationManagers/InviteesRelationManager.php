@@ -2700,13 +2700,13 @@ class InviteesRelationManager extends RelationManager
         $failedExamples = [];
 
         foreach ($invitees as $invitee) {
-            if ($channel === 'whatsapp' && blank($this->normalizePhone($invitee->phone))) {
+            if (! $invitee instanceof Invitee) {
                 $skipped++;
 
                 continue;
             }
 
-            if (! $invitee instanceof Invitee) {
+            if ($channel === 'whatsapp' && blank($this->normalizePhone($invitee->phone))) {
                 $skipped++;
 
                 continue;
