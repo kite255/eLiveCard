@@ -460,6 +460,49 @@ class EventResource extends Resource
                     ])
                     ->collapsible(),
 
+                Forms\Components\Section::make('Thank You Message Settings')
+                    ->description('Configure post-event thank-you SMS here. Manual sending remains available in Invitees.')
+                    ->icon('heroicon-o-heart')
+                    ->schema([
+                        Forms\Components\Select::make('thank_you_mode')
+                            ->label('Thank You Delivery Mode')
+                            ->options([
+                                'manual' => 'Manual — send from Invitees when ready',
+                                'automatic' => 'Automatic — SMS on the day after the event',
+                            ])
+                            ->default('manual')
+                            ->live()
+                            ->required()
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('auto_thank_you_scope')
+                            ->label('Automatic Recipients')
+                            ->options([
+                                'checked_in' => 'Checked-in Guests (recommended)',
+                                'attending' => 'Confirmed Attending Guests',
+                            ])
+                            ->default('checked_in')
+                            ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic'),
+
+                        Forms\Components\TimePicker::make('auto_thank_you_time')
+                            ->label('Automatic Send Time')
+                            ->default('09:00')
+                            ->seconds(false)
+                            ->native(false)
+                            ->helperText('Default: 9:00 AM Tanzania time, the day after the event.')
+                            ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic'),
+
+                        Forms\Components\Placeholder::make('thank_you_notice')
+                            ->label('Sending rules')
+                            ->content('Automatic mode requires an active SMS thank_you template and a running Laravel scheduler. Each eligible guest receives at most one automatic attempt. WhatsApp thank-you messages are manual.')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
+                    ->collapsible(),
+
                 Forms\Components\Section::make('Reminder SMS Settings')
                     ->description('Enable reminders and choose the sending time for this event.')
                     ->icon('heroicon-o-clock')
