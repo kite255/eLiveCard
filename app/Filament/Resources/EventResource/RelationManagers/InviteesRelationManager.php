@@ -1211,21 +1211,10 @@ class InviteesRelationManager extends RelationManager
                         ->label('Thank You')
                         ->icon('heroicon-o-heart')
                         ->color('gray')
-                        ->modalHeading('Thank You Messages')
-                        ->modalDescription('Send now manually, or enable automatic SMS after the event is completed.')
-                        ->modalSubmitActionLabel('Save / Send')
-                        ->requiresConfirmation()
+                        ->modalHeading('Send Thank You Message')
+                        ->modalDescription('Send a thank-you message now. Configure automatic delivery in Event Settings.')
+                        ->modalSubmitActionLabel('Send Thank You')
                         ->form([
-                            Forms\Components\Radio::make('delivery_mode')
-                                ->label('Delivery Mode')
-                                ->options([
-                                    'manual' => 'Manual — send when the admin chooses',
-                                    'automatic' => 'Automatic — send SMS after event completion',
-                                ])
-                                ->default(fn (): string => $this->getOwnerRecord()->thank_you_mode ?: 'manual')
-                                ->live()
-                                ->required(),
-
                             Forms\Components\Select::make('channel')
                                 ->label('Channel')
                                 ->options([
@@ -1233,100 +1222,28 @@ class InviteesRelationManager extends RelationManager
                                     'whatsapp' => 'WhatsApp',
                                 ])
                                 ->default('sms')
-                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual' && $get('manual_action') === 'send_now')
-                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual' && $get('manual_action') === 'send_now'),
-
-                            Forms\Components\Select::make('recipient_scope')
-                                ->label('Recipients')
-                                ->default(fn (): string => $this->getOwnerRecord()->auto_thank_you_scope ?: 'checked_in')
-                                ->options(fn (Forms\Get $get): array => $get('delivery_mode') === 'automatic'
-                                    ? [
-                                        'checked_in' => 'Checked-in Guests (recommended)',
-                                        'attending' => 'Confirmed Attending',
-                                    ]
-                                    : [
-                                        'attending' => 'Confirmed Attending',
-                                        'checked_in' => 'Checked-in Guests',
-                                        'all_active' => 'All Active Invitees',
-                                    ])
-                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic' || $get('manual_action') === 'send_now')
                                 ->required(),
 
-                            Forms\Components\TimePicker::make('auto_thank_you_time')
-                                ->label('Automatic Send Time')
-                                ->seconds(false)
-                                ->default(fn (): string => $this->getOwnerRecord()->auto_thank_you_time?->format('H:i') ?: '09:00')
-                                ->helperText('Default: 9:00 AM (Tanzania time), on the day after the event. You can choose another time.')
-                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic')
-                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic'),
+                            Forms\Components\Select::make('recipient_scope')
+                                ->label('Send To')
+                                ->options([
+                                    'attending' => 'Confirmed Attending',
+                                    'checked_in' => 'Checked-in Guests',
+                                    'all_active' => 'All Active Invitees',
+                                ])
+                                ->default('attending')
+                                ->required(),
 
-                            Forms\Components\Placeholder::make('thank_you_guidance')
-                                ->label('How it works')
-                                ->content(fn (Forms\Get $get): string => $get('delivery_mode') === 'automatic'
-                                    ? 'Saves an opt-in setting for this event. The scheduler sends each eligible guest one SMS at the selected time on the day after the event (Tanzania time), after the event is completed. An active SMS thank_you template is required. No message is sent immediately. WhatsApp remains manual.'
-                                    : ($get('manual_action') === 'disable_only'
-                                        ? 'Automatic sending will be disabled; no message is sent.'
-                                        : 'Immediately sends to selected recipients using the active thank_you template.')),
+                            Forms\Components\Placeholder::make('note')
+                                ->label('Template Source')
+                                ->content('Uses the active thank_you template for the selected channel. This action sends immediately.'),
                         ])
+                        ->requiresConfirmation()
                         ->action(function (array $data): void {
-                            $event = $this->getOwnerRecord();
-
-                            if (($data['delivery_mode'] ?? 'manual') === 'automatic') {
-                                $scope = $data['recipient_scope'] ?? 'checked_in';
-
-                                if (! in_array($scope, ['attending', 'checked_in'], true)) {
-                                    throw ValidationException::withMessages([
-                                        'recipient_scope' => 'Choose confirmed or checked-in recipients for automatic thank-you messages.',
-                                    ]);
-                                }
-
-                                $templateExists = MessageTemplate::query()
-                                    ->where('channel', 'sms')
-                                    ->where('type', 'thank_you')
-                                    ->where('status', MessageTemplate::STATUS_ACTIVE)
-                                    ->where(function (Builder $query) use ($event): void {
-                                        $query->where('event_id', $event->id)->orWhereNull('event_id');
-                                    })
-                                    ->exists();
-
-                                if (! $templateExists) {
-                                    throw ValidationException::withMessages([
-                                        'delivery_mode' => 'Create and activate an SMS thank_you template before enabling automatic messages.',
-                                    ]);
-                                }
-
-                                $event->update([
-                                    'thank_you_mode' => 'automatic',
-                                    'auto_thank_you_scope' => $scope,
-                                    'auto_thank_you_time' => $data['auto_thank_you_time'] ?? '09:00',
-                                ]);
-
-                                $this->brandedNotification()
-                                    ->title('Automatic thank-you SMS enabled')
-                                    ->body('Messages will be processed at the selected time on the next day after the event, provided it is completed and Laravel Scheduler is running. One automatic attempt per eligible invitee.')
-                                    ->success()
-                                    ->send();
-
-                                return;
-                            }
-
-                            // Switching to manual disables future automatic sends for this event.
-                            $event->update(['thank_you_mode' => 'manual']);
-
-                            if (($data['manual_action'] ?? 'send_now') === 'disable_only') {
-                                $this->brandedNotification()
-                                    ->title('Manual thank-you mode enabled')
-                                    ->body('Automatic thank-you sending has been disabled. No messages were sent.')
-                                    ->success()
-                                    ->send();
-
-                                return;
-                            }
-
                             $this->sendEventMessagesFromToolbar(
-                                channel: $data['channel'] ?? 'sms',
+                                channel: $data['channel'],
                                 templateType: 'thank_you',
-                                recipientScope: $data['recipient_scope'] ?? 'attending',
+                                recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Thank you messages processed',
                             );
                         }),
