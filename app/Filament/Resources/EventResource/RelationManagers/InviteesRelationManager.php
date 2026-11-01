@@ -1156,6 +1156,17 @@ class InviteesRelationManager extends RelationManager
                         ->modalDescription('Choose reminder type, channel, and recipients.')
                         ->modalSubmitActionLabel('Send Reminder')
                         ->form([
+                            Forms\Components\Radio::make('manual_action')
+                                ->label('Manual Action')
+                                ->options([
+                                    'send_now' => 'Send thank-you messages now',
+                                    'disable_only' => 'Switch to manual without sending',
+                                ])
+                                ->default('send_now')
+                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual')
+                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual')
+                                ->live(),
+
                             Forms\Components\Select::make('channel')
                                 ->label('Channel')
                                 ->options([
@@ -1207,7 +1218,7 @@ class InviteesRelationManager extends RelationManager
                             Forms\Components\Radio::make('delivery_mode')
                                 ->label('Delivery Mode')
                                 ->options([
-                                    'manual' => 'Manual — send now',
+                                    'manual' => 'Manual — send when the admin chooses',
                                     'automatic' => 'Automatic — send SMS after event completion',
                                 ])
                                 ->default(fn (): string => $this->getOwnerRecord()->thank_you_mode ?: 'manual')
@@ -1221,16 +1232,11 @@ class InviteesRelationManager extends RelationManager
                                     'whatsapp' => 'WhatsApp',
                                 ])
                                 ->default('sms')
-                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual')
-                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual'),
+                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual' && $get('manual_action') === 'send_now')
+                                ->required(fn (Forms\Get $get): bool => $get('delivery_mode') === 'manual' && $get('manual_action') === 'send_now'),
 
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Recipients')
-                                ->options([
-                                    'attending' => 'Confirmed Attending',
-                                    'checked_in' => 'Checked-in Guests',
-                                    'all_active' => 'All Active Invitees',
-                                ])
                                 ->default(fn (): string => $this->getOwnerRecord()->auto_thank_you_scope ?: 'checked_in')
                                 ->options(fn (Forms\Get $get): array => $get('delivery_mode') === 'automatic'
                                     ? [
@@ -1242,13 +1248,16 @@ class InviteesRelationManager extends RelationManager
                                         'checked_in' => 'Checked-in Guests',
                                         'all_active' => 'All Active Invitees',
                                     ])
+                                ->visible(fn (Forms\Get $get): bool => $get('delivery_mode') === 'automatic' || $get('manual_action') === 'send_now')
                                 ->required(),
 
                             Forms\Components\Placeholder::make('thank_you_guidance')
                                 ->label('How it works')
                                 ->content(fn (Forms\Get $get): string => $get('delivery_mode') === 'automatic'
                                     ? 'Saves an opt-in setting for this event. The scheduler sends each eligible guest one SMS after the event is completed. An active SMS thank_you template is required. No message is sent immediately. WhatsApp remains manual.'
-                                    : 'Immediately sends to the selected recipients using the active thank_you template for that channel.'),
+                                    : ($get('manual_action') === 'disable_only'
+                                        ? 'Automatic sending will be disabled; no message is sent.'
+                                        : 'Immediately sends to selected recipients using the active thank_you template.')),
                         ])
                         ->action(function (array $data): void {
                             $event = $this->getOwnerRecord();
@@ -1293,6 +1302,16 @@ class InviteesRelationManager extends RelationManager
 
                             // Switching to manual disables future automatic sends for this event.
                             $event->update(['thank_you_mode' => 'manual']);
+
+                            if (($data['manual_action'] ?? 'send_now') === 'disable_only') {
+                                $this->brandedNotification()
+                                    ->title('Manual thank-you mode enabled')
+                                    ->body('Automatic thank-you sending has been disabled. No messages were sent.')
+                                    ->success()
+                                    ->send();
+
+                                return;
+                            }
 
                             $this->sendEventMessagesFromToolbar(
                                 channel: $data['channel'] ?? 'sms',
