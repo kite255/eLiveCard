@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
+use App\Models\SmsLog;
 use App\Services\MessageTemplateRenderer;
 use App\Services\ReminderSmsService;
 use Illuminate\Console\Command;
@@ -73,7 +74,7 @@ class SendAutomaticThankYouSms extends Command
 
                             try {
                                 $body = $renderer->render((string) $template->content, $invitee);
-                                $ok = $sms->sendCustomSms($invitee, $body);
+                                $ok = $sms->sendCustomSms($invitee, $body, SmsLog::SOURCE_AUTOMATIC);
 
                                 DB::table('automatic_thank_you_sends')
                                     ->where('event_id', $event->id)
