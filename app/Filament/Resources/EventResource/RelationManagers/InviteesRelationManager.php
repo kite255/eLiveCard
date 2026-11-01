@@ -1124,6 +1124,35 @@ class InviteesRelationManager extends RelationManager
                             );
                         }),
 
+                    Tables\Actions\Action::make('retry_failed_whatsapp')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Retry Failed WhatsApp')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->modalHeading('Retry Failed WhatsApp Messages')
+                        ->modalDescription('Retry only failed attempts for the WhatsApp template configured in Event Settings. Accepted messages will not be resent.')
+                        ->modalSubmitActionLabel('Retry Failed')
+                        ->requiresConfirmation()
+                        ->action(function (): void {
+                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+                            $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+
+                            if (! $template) {
+                                $this->brandedNotification()->title('WhatsApp template not configured')
+                                    ->body('Configure an active WhatsApp template in Event Settings.')
+                                    ->danger()->send();
+                                return;
+                            }
+
+                            $this->sendEventMessagesFromToolbar(
+                                channel: 'whatsapp',
+                                templateType: $template->type,
+                                recipientScope: 'retry_failed',
+                                actionTitle: 'Failed WhatsApp messages retried',
+                                messageTemplateId: $template->id,
+                            );
+                        }),
+
                     Tables\Actions\Action::make('send_reminder')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && ! (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
                         ->label('Send Reminder')
@@ -2607,44 +2636,65 @@ class InviteesRelationManager extends RelationManager
             $query->where('card_status', Invitee::CARD_STATUS_ACTIVE);
         }
 
-        match ($recipientScope) {
-            'not_sent' => $query->where(function ($query) use ($channel): void {
-                if ($channel === 'whatsapp') {
-                    $query->where(function ($statusQuery): void {
-                        $statusQuery
-                            ->whereNull('whatsapp_status')
-                            ->orWhere('whatsapp_status', '')
-                            ->orWhere('whatsapp_status', 'not_sent');
-                    })->whereNull('whatsapp_sent_at');
+        if ($channel === 'whatsapp') {
+            if (! $messageTemplateId || ! Schema::hasTable('whatsapp_template_sends')) {
+                $this->brandedNotification()->title('WhatsApp delivery tracking unavailable')
+                    ->body('Choose a saved event template and run database migrations before sending.')
+                    ->danger()->send();
+                return;
+            }
 
-                    return;
+            $query->where(function (Builder $eligible) use ($messageTemplateId, $recipientScope): void {
+                if ($recipientScope === 'retry_failed') {
+                    $eligible->whereExists(function ($sub) use ($messageTemplateId): void {
+                        $sub->selectRaw('1')->from('whatsapp_template_sends as wts')
+                            ->whereColumn('wts.invitee_id', 'invitees.id')
+                            ->where('wts.message_template_id', $messageTemplateId)
+                            ->where('wts.status', 'failed');
+                    });
+                } else {
+                    $eligible->whereNotExists(function ($sub) use ($messageTemplateId): void {
+                        $sub->selectRaw('1')->from('whatsapp_template_sends as wts')
+                            ->whereColumn('wts.invitee_id', 'invitees.id')
+                            ->where('wts.message_template_id', $messageTemplateId);
+                    });
+
+                    // Historical WhatsApp messages predate template-specific tracking.
+                    // Until migrated, exclude legacy sent recipients to avoid bulk duplicates.
+                    $eligible->where(function (Builder $legacy): void {
+                        $legacy->whereExists(function ($sub): void {
+                            $sub->selectRaw('1')->from('whatsapp_template_sends as previous')
+                                ->whereColumn('previous.invitee_id', 'invitees.id');
+                        })->orWhere(function (Builder $neverSent): void {
+                            $neverSent->whereNull('whatsapp_sent_at')
+                                ->where(function (Builder $status): void {
+                                    $status->whereNull('whatsapp_status')
+                                        ->orWhere('whatsapp_status', '')
+                                        ->orWhere('whatsapp_status', 'not_sent');
+                                });
+                        });
+                    });
                 }
-
-                $query
-                    ->whereNull('message_status')
-                    ->orWhere('message_status', '')
-                    ->orWhere('message_status', 'not_sent')
-                    ->orWhere('sms_status', Invitee::SMS_STATUS_NOT_SENT);
-            }),
-
-            'all_active' => $query->where('card_status', Invitee::CARD_STATUS_ACTIVE),
-
-            'pending_rsvp' => $query->where(function ($query): void {
-                $query
-                    ->whereNull('rsvp_status')
-                    ->orWhere('rsvp_status', '')
-                    ->orWhere('rsvp_status', Invitee::RSVP_PENDING)
-                    ->orWhere('rsvp_status', Invitee::RSVP_MAYBE);
-            }),
-
-            'attending' => $query->where('rsvp_status', Invitee::RSVP_ATTENDING),
-
-            'checked_in' => $query->where('checked_in_count', '>', 0),
-
-            'failed_sms' => $query->where('sms_status', Invitee::SMS_STATUS_FAILED),
-
-            default => null,
-        };
+            });
+        } else {
+            match ($recipientScope) {
+                'not_sent' => $query->where(function ($q): void {
+                    $q->whereNull('message_status')->orWhere('message_status', '')
+                        ->orWhere('message_status', 'not_sent')
+                        ->orWhere('sms_status', Invitee::SMS_STATUS_NOT_SENT);
+                }),
+                'all_active' => $query->where('card_status', Invitee::CARD_STATUS_ACTIVE),
+                'pending_rsvp' => $query->where(function ($q): void {
+                    $q->whereNull('rsvp_status')->orWhere('rsvp_status', '')
+                        ->orWhere('rsvp_status', Invitee::RSVP_PENDING)
+                        ->orWhere('rsvp_status', Invitee::RSVP_MAYBE);
+                }),
+                'attending' => $query->where('rsvp_status', Invitee::RSVP_ATTENDING),
+                'checked_in' => $query->where('checked_in_count', '>', 0),
+                'failed_sms' => $query->where('sms_status', Invitee::SMS_STATUS_FAILED),
+                default => null,
+            };
+        }
 
         $invitees = $query->get();
 
@@ -2689,13 +2739,53 @@ class InviteesRelationManager extends RelationManager
                 continue;
             }
 
-            $result = $this->sendInviteeMessageUsingTemplate(
+            if ($channel === 'whatsapp') {
+                $claimed = $recipientScope === 'retry_failed'
+                    ? DB::table('whatsapp_template_sends')
+                        ->where('event_id', $event->id)
+                        ->where('invitee_id', $invitee->id)
+                        ->where('message_template_id', $template->id)
+                        ->where('status', 'failed')
+                        ->update(['status' => 'pending', 'attempts' => DB::raw('attempts + 1'),
+                            'last_attempt_at' => now(), 'updated_at' => now()]) === 1
+                    : DB::table('whatsapp_template_sends')->insertOrIgnore([
+                        'event_id' => $event->id, 'invitee_id' => $invitee->id,
+                        'message_template_id' => $template->id, 'status' => 'pending',
+                        'attempts' => 1, 'last_attempt_at' => now(),
+                        'created_at' => now(), 'updated_at' => now(),
+                    ]) === 1;
+
+                if (! $claimed) {
+                    $skipped++;
+                    continue;
+                }
+            }
+
+            try {
+                $result = $this->sendInviteeMessageUsingTemplate(
                 invitee: $invitee,
                 channel: $channel,
                 templateType: $template->type ?: $templateType,
                 notifySkipped: false,
                 messageTemplateId: $template->id,
-            );
+                );
+            } catch (Throwable $error) {
+                $result = ['status' => 'failed', 'body' => $error->getMessage()];
+            }
+
+            if ($channel === 'whatsapp' && ($template->type !== MessageTemplate::TYPE_INVITATION
+                || ($result['status'] ?? null) === 'failed')) {
+                DB::table('whatsapp_template_sends')
+                    ->where('event_id', $event->id)
+                    ->where('invitee_id', $invitee->id)
+                    ->where('message_template_id', $template->id)
+                    ->update([
+                        'status' => in_array($result['status'] ?? null, ['sent', 'logged'], true) ? 'submitted' : 'failed',
+                        'last_error' => ($result['status'] ?? null) === 'failed'
+                            ? mb_substr((string) ($result['body'] ?? 'Sending failed'), 0, 1000) : null,
+                        'updated_at' => now(),
+                    ]);
+            }
 
             if (in_array($result['status'] ?? null, ['queued', 'sent', 'logged'], true)) {
                 $sent++;
