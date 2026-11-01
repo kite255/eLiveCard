@@ -72,6 +72,7 @@ class Event extends Model
 
         'thank_you_mode',
         'auto_thank_you_scope',
+        'manual_thank_you_scope',
         'auto_thank_you_time',
 
         // Optional welcome SMS after successful check-in
