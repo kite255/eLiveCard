@@ -740,7 +740,7 @@ class InviteesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('add_manual_invitee')
-                    ->label('Add Invitee')
+                    ->label('Add Manually')
                     ->visible(fn (): bool => $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-user-plus')
                     ->color('primary')
@@ -748,8 +748,8 @@ class InviteesRelationManager extends RelationManager
                     ->modalDescription('Use this form to add one invitee without uploading Excel. Serial number, QR token, short code, and RSVP token will be generated automatically.')
                     ->modalSubmitActionLabel('Save Invitee')
                     ->form([
-                        Forms\Components\Section::make('Manual Invitee Details')
-                            ->description('Enter the invitee details that will appear on the generated invitation card.')
+                        Forms\Components\Section::make('Invitee Information')
+                            ->description('Enter the contact and invitation details for this guest.')
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Full Name')
@@ -800,7 +800,7 @@ class InviteesRelationManager extends RelationManager
                                     ->minValue(1)
                                     ->default(1)
                                     ->required()
-                                    ->helperText('This is filled automatically from the selected card type, but you can adjust it if needed.'),
+                                    ->helperText('Defaults to the selected card type. You may override it for this invitee.'),
 
                                 Forms\Components\TextInput::make('category')
                                     ->label('Category')
@@ -814,8 +814,9 @@ class InviteesRelationManager extends RelationManager
                             ])
                             ->columns(2),
 
-                        Forms\Components\Section::make('Default Status')
-                            ->description('These defaults are suitable for a new manual invitee.')
+                        Forms\Components\Section::make('Advanced Settings')
+                            ->description('Optional. Defaults are Pending RSVP, Active card, and zero confirmed guests.')
+                            ->collapsed()
                             ->schema([
                                 Forms\Components\Select::make('rsvp_status')
                                     ->label('RSVP Status')
@@ -1404,7 +1405,13 @@ class InviteesRelationManager extends RelationManager
                                 $data['allowed_guests'] = $cardType?->allowed_people ?? 1;
                             }
 
-                            $data['allowed_guests'] = max(1, (int) ($data['allowed_guests'] ?? 1));
+                            if (filter_var($data['allowed_guests'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            throw ValidationException::withMessages([
+                'allowed_guests' => 'Allowed guests must be a whole number of at least 1.',
+            ]);
+        }
+
+        $data['allowed_guests'] = (int) $data['allowed_guests'];
                             $data['confirmed_guests'] = max(0, (int) ($data['confirmed_guests'] ?? 0));
 
                             if ($data['confirmed_guests'] > $data['allowed_guests']) {
@@ -4280,7 +4287,9 @@ class InviteesRelationManager extends RelationManager
                 ]);
             }
 
-            $data['allowed_guests'] = $cardType->allowed_people ?? 1;
+            $data['allowed_guests'] = filled($data['allowed_guests'] ?? null)
+                ? $data['allowed_guests']
+                : ($cardType->allowed_people ?? 1);
         }
 
         $data['serial_number'] = filled($data['serial_number'] ?? null)
