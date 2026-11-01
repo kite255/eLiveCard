@@ -1124,6 +1124,35 @@ class InviteesRelationManager extends RelationManager
                             );
                         }),
 
+                    Tables\Actions\Action::make('retry_failed_whatsapp')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Retry Failed WhatsApp')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->modalHeading('Retry Failed WhatsApp Messages')
+                        ->modalDescription('Retry only failed attempts for the WhatsApp template configured in Event Settings. Accepted messages will not be resent.')
+                        ->modalSubmitActionLabel('Retry Failed')
+                        ->requiresConfirmation()
+                        ->action(function (): void {
+                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+                            $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+
+                            if (! $template) {
+                                $this->brandedNotification()->title('WhatsApp template not configured')
+                                    ->body('Configure an active WhatsApp template in Event Settings.')
+                                    ->danger()->send();
+                                return;
+                            }
+
+                            $this->sendEventMessagesFromToolbar(
+                                channel: 'whatsapp',
+                                templateType: $template->type,
+                                recipientScope: 'retry_failed',
+                                actionTitle: 'Failed WhatsApp messages retried',
+                                messageTemplateId: $template->id,
+                            );
+                        }),
+
                     Tables\Actions\Action::make('send_reminder')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && ! (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
                         ->label('Send Reminder')
