@@ -805,19 +805,11 @@ class InviteesRelationManager extends RelationManager
                                     ->required()
                                     ->helperText('Automatically filled from card type; editable if needed.'),
 
-                                Forms\Components\Select::make('category')
+                                Forms\Components\TextInput::make('category')
                                     ->label('Category')
-                                    ->options([
-                                        'Family' => 'Family',
-                                        'Friends' => 'Friends',
-                                        'Committee' => 'Committee',
-                                        'VIP' => 'VIP',
-                                        'VVIP' => 'VVIP',
-                                        'Other' => 'Other',
-                                    ])
-                                    ->searchable()
-                                    ->native(false)
-                                    ->placeholder('Select category (optional)'),
+                                    ->maxLength(100)
+                                    ->datalist(['Family', 'Friends', 'Committee', 'VIP', 'VVIP'])
+                                    ->placeholder('Choose a suggestion or type a category'),
 
                                 Forms\Components\TextInput::make('table_number')
                                     ->label('Table Number')
