@@ -43,7 +43,7 @@ class SendAutomaticThankYouSms extends Command
                     $scope = $event->auto_thank_you_scope ?: 'checked_in';
                     $invitees = Invitee::query()
                         ->where('event_id', $event->id)
-                        ->where('card_status', Invitee::CARD_STATUS_ACTIVE)
+                        ->whereIn('card_status', [Invitee::CARD_STATUS_ACTIVE, Invitee::CARD_STATUS_USED])
                         ->whereNotNull('phone')
                         ->where('phone', '!= '');
 
