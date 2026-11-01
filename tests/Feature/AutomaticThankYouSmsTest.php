@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CardType;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
@@ -83,8 +84,14 @@ class AutomaticThankYouSmsTest extends TestCase
 
     private function makeInvitee(Event $event, string $name = 'Test Guest', int $checkIns = 1): Invitee
     {
+        $cardType = CardType::query()->firstOrCreate(
+            ['event_id' => $event->id, 'name' => 'Family'],
+            ['allowed_people' => 2, 'is_active' => true],
+        );
+
         return Invitee::query()->create([
             'event_id' => $event->id,
+            'card_type_id' => $cardType->id,
             'name' => $name,
             'phone' => '255754123456',
             'checked_in_count' => $checkIns,
