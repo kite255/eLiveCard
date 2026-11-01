@@ -62,8 +62,8 @@ class MetaWhatsAppTemplateCatalog
                 ]);
                 $template->fill([
                     'name' => $name.' ('.strtoupper($language).')',
-                    'content' => (string) collect($item['components'] ?? [])
-                        ->firstWhere('type', 'BODY')['text'] ?? '',
+                    'content' => (string) (collect($item['components'] ?? [])
+                        ->firstWhere('type', 'BODY')['text'] ?? ''),
                     'status' => MessageTemplate::STATUS_ACTIVE,
                 ]);
                 $template->save();
