@@ -1214,6 +1214,7 @@ class InviteesRelationManager extends RelationManager
                         ->modalHeading('Thank You Messages')
                         ->modalDescription('Send now manually, or enable automatic SMS after the event is completed.')
                         ->modalSubmitActionLabel('Save / Send')
+                        ->requiresConfirmation()
                         ->form([
                             Forms\Components\Radio::make('delivery_mode')
                                 ->label('Delivery Mode')
