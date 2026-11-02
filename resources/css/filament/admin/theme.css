@@ -650,6 +650,36 @@
     box-shadow: var(--elive-shadow-md);
 }
 
+/* Global Filament toast notifications for action results. */
+.fi-no {
+    z-index: 70;
+}
+
+.fi-no-notification {
+    max-width: min(26rem, calc(100vw - 1.5rem));
+    border: 1px solid var(--elive-border);
+    background: var(--elive-white);
+    overflow-wrap: anywhere;
+}
+
+.fi-no-notification-title {
+    font-weight: 700;
+}
+
+@media (max-width: 640px) {
+    .fi-no {
+        width: 100%;
+        max-width: 100vw;
+        padding: 0.75rem;
+    }
+
+    .fi-no-notification {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
+
 /*
 |--------------------------------------------------------------------------
 | Responsive
