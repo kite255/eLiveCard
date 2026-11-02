@@ -242,10 +242,10 @@ class SmsService
                 'channel' => 'sms',
                 'recipient' => $phone,
                 'message_id' => $messageId,
-                'notification_title' => $isLogDriver ? 'SMS logged' : 'SMS sent',
+                'notification_title' => $isLogDriver ? 'SMS logged' : 'SMS submitted',
                 'notification_body' => $isLogDriver
                     ? 'SMS was logged only because SMS_DRIVER=log. Message ID: ' . $messageId
-                    : 'SMS sent successfully. Message ID: ' . $messageId,
+                    : 'SMS accepted by the provider; delivery is not yet confirmed. Message ID: ' . $messageId,
             ]);
         } catch (Throwable $e) {
             $this->markInviteeSmsAsFailed($invitee, $e->getMessage(), $failedCallback, $type);
