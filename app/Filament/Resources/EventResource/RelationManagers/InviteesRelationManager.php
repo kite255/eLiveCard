@@ -170,7 +170,8 @@ class InviteesRelationManager extends RelationManager
         return Notification::make()
             ->icon('heroicon-o-check-badge')
             ->iconColor('primary')
-            ->color('primary');
+            ->color('primary')
+            ->duration(6000);
     }
 
     public function form(Form $form): Form
