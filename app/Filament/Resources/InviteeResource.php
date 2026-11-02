@@ -1308,7 +1308,7 @@ class InviteeResource extends Resource
                             Notification::make()
                                 ->title('RSVP reminder SMS completed')
                                 ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->color($result['failed'] > 0 || $result['sent'] === 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
@@ -1328,7 +1328,7 @@ class InviteeResource extends Resource
                             Notification::make()
                                 ->title('One day reminder SMS completed')
                                 ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->color($result['failed'] > 0 || $result['sent'] === 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
@@ -1348,7 +1348,7 @@ class InviteeResource extends Resource
                             Notification::make()
                                 ->title('Event day SMS completed')
                                 ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->color($result['failed'] > 0 || $result['sent'] === 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
