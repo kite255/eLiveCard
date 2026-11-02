@@ -11,6 +11,7 @@ use App\Models\Invitee;
 use App\Models\GeneratedCard;
 use App\Models\Event;
 use App\Services\ReminderSmsService;
+use App\Support\ActionToast;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -933,11 +934,7 @@ class InviteeResource extends Resource
 
                             GenerateInviteeCardJob::dispatch($record->id);
 
-                            Notification::make()
-                                ->title('Card generation started')
-                                ->body('The card will be generated in the background.')
-                                ->success()
-                                ->send();
+                            ActionToast::queued('Card generation queued', 'The card will be generated in the background.');
                         }),
 
                     Tables\Actions\Action::make('view_card')
@@ -985,11 +982,7 @@ class InviteeResource extends Resource
 
                             GenerateInviteeCardJob::dispatch($record->id);
 
-                            Notification::make()
-                                ->title('Card generation restarted')
-                                ->body('The failed card has been queued again.')
-                                ->success()
-                                ->send();
+                            ActionToast::queued('Card generation queued again', 'The failed card has been queued for regeneration.');
                         }),
                 ])
                     ->label('Card')
@@ -1013,11 +1006,7 @@ class InviteeResource extends Resource
                                 inviteeId: $record->id,
                             );
 
-                            Notification::make()
-                                ->title('Invitation SMS queued')
-                                ->body('Invitation SMS with RSVP link was queued for ' . $record->name . '.')
-                                ->success()
-                                ->send();
+                            ActionToast::queued('Invitation SMS queued', 'SMS for ' . $record->name . ' is awaiting processing; delivery is not yet confirmed.');
                         }),
 
                     Tables\Actions\Action::make('send_rsvp_reminder_sms')
@@ -1249,11 +1238,9 @@ class InviteeResource extends Resource
                                 $queued++;
                             }
 
-                            Notification::make()
-                                ->title('Card generation jobs started')
-                                ->body($queued . ' card(s) queued. ' . $skipped . ' skipped because they are already generating.')
-                                ->success()
-                                ->send();
+                            $queued > 0
+                                ? ActionToast::queued('Card generation queued', $queued . ' card(s) queued; ' . $skipped . ' already generating.')
+                                : ActionToast::warning('No cards queued', $skipped . ' card(s) already generating.');
                         }),
 
                     Tables\Actions\BulkAction::make('export_selected_invitees')
@@ -1300,11 +1287,9 @@ class InviteeResource extends Resource
                                 $queued++;
                             }
 
-                            Notification::make()
-                                ->title('SMS invitations queued')
-                                ->body($queued . ' invitation SMS job(s) queued for background delivery.')
-                                ->success()
-                                ->send();
+                            $queued > 0
+                                ? ActionToast::queued('SMS invitations queued', $queued . ' SMS job(s) queued; delivery is not yet confirmed.')
+                                : ActionToast::warning('No SMS invitations queued', 'No invitees were selected.');
                         }),
 
                     Tables\Actions\BulkAction::make('send_rsvp_reminder_sms_bulk')
@@ -1323,7 +1308,7 @@ class InviteeResource extends Resource
                             Notification::make()
                                 ->title('RSVP reminder SMS completed')
                                 ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->color($result['failed'] > 0 || $result['sent'] === 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
@@ -1343,7 +1328,7 @@ class InviteeResource extends Resource
                             Notification::make()
                                 ->title('One day reminder SMS completed')
                                 ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->color($result['failed'] > 0 || $result['sent'] === 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
@@ -1363,7 +1348,7 @@ class InviteeResource extends Resource
                             Notification::make()
                                 ->title('Event day SMS completed')
                                 ->body("Sent: {$result['sent']} | Failed: {$result['failed']} | Skipped: {$result['skipped']}")
-                                ->color($result['failed'] > 0 ? 'warning' : 'success')
+                                ->color($result['failed'] > 0 || $result['sent'] === 0 ? 'warning' : 'success')
                                 ->send();
                         }),
 
