@@ -728,7 +728,7 @@
 }
 
 .fi-modal-window {
-    max-width: min(100vw - 1rem, var(--modal-width, 48rem));
+    max-width: min(calc(100vw - 1rem), 48rem);
 }
 
 @media (max-width: 640px) {
