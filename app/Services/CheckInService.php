@@ -20,7 +20,13 @@ class CheckInService
         string $method = CheckIn::METHOD_QR,
         ?int $expectedEventId = null
     ): array {
-        $guestsCount = max(1, $guestsCount);
+        if ($guestsCount < 1) {
+            return [
+                'success' => false,
+                'title' => 'Invalid Guest Count',
+                'message' => 'At least one guest must be selected for check-in.',
+            ];
+        }
 
         try {
             return DB::transaction(function () use (
