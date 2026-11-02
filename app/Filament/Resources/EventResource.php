@@ -460,6 +460,96 @@ class EventResource extends Resource
                     ])
                     ->collapsible(),
 
+                Forms\Components\Section::make('WhatsApp Settings')
+                    ->description('Choose the single WhatsApp template used by Send WhatsApp in Invitees.')
+                    ->icon('heroicon-o-chat-bubble-left-right')
+                    ->schema([
+                        Forms\Components\Select::make('default_whatsapp_template_id')
+                            ->label('Default WhatsApp Template')
+                            ->options(function (?\App\Models\Event $record): array {
+                                return \App\Models\MessageTemplate::query()
+                                    ->where('channel', 'whatsapp')
+                                    ->where('status', 'active')
+                                    ->whereNotNull('whatsapp_template_name')
+                                    ->where('whatsapp_template_name', '!=', '')
+                                    ->where(function (\Illuminate\Database\Eloquent\Builder $query) use ($record): void {
+                                        $query->whereNull('event_id');
+
+                                        if ($record?->exists) {
+                                            $query->orWhere('event_id', $record->id);
+                                        }
+                                    })
+                                    ->orderBy('name')
+                                    ->get()
+                                    ->mapWithKeys(fn (\App\Models\MessageTemplate $template): array => [
+                                        $template->id => $template->name.' — '.$template->whatsapp_template_name
+                                            .' ('.strtoupper((string) ($template->whatsapp_language_code ?: 'en')).')',
+                                    ])
+                                    ->toArray();
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Choose an active Meta-approved template here. The Invitees Send WhatsApp action will use only this template.')
+                            ->columnSpanFull(),
+                    ])
+                    ->collapsible(),
+
+                Forms\Components\Section::make('Thank You Message Settings')
+                    ->description('Configure post-event thank-you SMS here. Manual sending remains available in Invitees.')
+                    ->icon('heroicon-o-heart')
+                    ->schema([
+                        Forms\Components\Select::make('thank_you_mode')
+                            ->label('Thank You Delivery Mode')
+                            ->options([
+                                'manual' => 'Manual — send from Invitees when ready',
+                                'automatic' => 'Automatic — SMS on the day after the event',
+                            ])
+                            ->default('manual')
+                            ->live()
+                            ->required()
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('manual_thank_you_scope')
+                            ->label('Default Manual Recipients')
+                            ->options([
+                                'all_active' => 'All Invitees (active cards) — default',
+                                'attending' => 'Confirmed Attending',
+                                'checked_in' => 'Checked-in Guests',
+                            ])
+                            ->default('all_active')
+                            ->helperText('This preselects recipients when you click Thank You in Invitees. Manual messages are never sent automatically.')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') !== 'automatic')
+                            ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') !== 'automatic')
+                            ->columnSpanFull(),
+
+                        Forms\Components\Select::make('auto_thank_you_scope')
+                            ->label('Automatic Recipients')
+                            ->options([
+                                'checked_in' => 'Checked-in Guests (recommended)',
+                                'attending' => 'Confirmed Attending Guests',
+                            ])
+                            ->default('checked_in')
+                            ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic'),
+
+                        Forms\Components\TimePicker::make('auto_thank_you_time')
+                            ->label('Automatic Send Time')
+                            ->default('09:00')
+                            ->seconds(false)
+                            ->native(false)
+                            ->helperText('Default: 9:00 AM Tanzania time, the day after the event.')
+                            ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic'),
+
+                        Forms\Components\Placeholder::make('thank_you_notice')
+                            ->label('Sending rules')
+                            ->content('Automatic mode requires an active SMS thank_you template and a running Laravel scheduler. Each eligible guest receives at most one automatic attempt. Thank-you messages use SMS only.')
+                            ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(2)
+                    ->collapsible(),
+
                 Forms\Components\Section::make('Reminder SMS Settings')
                     ->description('Enable reminders and choose the sending time for this event.')
                     ->icon('heroicon-o-clock')

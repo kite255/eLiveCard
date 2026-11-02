@@ -80,3 +80,9 @@ Schedule::command('events:complete-finished')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)
     ->onOneServer();
+
+// Opt-in post-event thank-you SMS; unique delivery records prevent re-sending.
+Schedule::command('sms:send-automatic-thank-you')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->onOneServer();

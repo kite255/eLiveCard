@@ -184,7 +184,7 @@ class InviteesRelationManager extends RelationManager
                             ->label('Full Name')
                             ->required()
                             ->maxLength(255)
-                            ->placeholder('Example: Guest Name')
+                            ->placeholder('Enter invitee full name')
                             ->dehydrateStateUsing(
                                 fn (?string $state): string =>
                                     trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
@@ -203,7 +203,7 @@ class InviteesRelationManager extends RelationManager
                             ->label('Email')
                             ->email()
                             ->maxLength(255)
-                            ->placeholder('Optional'),
+                            ->placeholder('name@example.com'),
 
                         Forms\Components\Select::make('card_type_id')
                             ->label('Card Type')
@@ -513,14 +513,31 @@ class InviteesRelationManager extends RelationManager
                         return 'SMS: '.$sms;
                     })
                     ->description(function (Invitee $record): string {
+                        $trackedStatus = null;
+                        $eventTemplateId = $this->getOwnerRecord()->default_whatsapp_template_id;
+
+                        if ($eventTemplateId && Schema::hasTable('whatsapp_template_sends')) {
+                            $trackedStatus = DB::table('whatsapp_template_sends')
+                                ->where('invitee_id', $record->id)
+                                ->where('message_template_id', $eventTemplateId)
+                                ->value('status');
+                        }
+
                         $whatsapp = match ($record->whatsapp_status) {
-                            'sending' => 'Sending',
-                            'submitted' => 'Submitted',
-                            'sent' => 'Sent',
                             'delivered' => 'Delivered',
                             'read' => 'Read',
-                            'failed' => 'Failed',
-                            default => 'Not Sent',
+                            default => match ($trackedStatus) {
+                                'pending' => 'Pending',
+                                'failed' => 'Failed',
+                                'submitted' => 'Submitted',
+                                default => match ($record->whatsapp_status) {
+                                    'queued', 'sending' => 'Pending',
+                                    'submitted' => 'Submitted',
+                                    'sent' => 'Sent',
+                                    'failed' => 'Failed',
+                                    default => 'Not Sent',
+                                },
+                            },
                         };
 
                         return 'WhatsApp: '.$whatsapp;
@@ -740,16 +757,16 @@ class InviteesRelationManager extends RelationManager
             ->headerActions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('add_manual_invitee')
-                    ->label('Add Invitee')
+                    ->label('Add Manually')
                     ->visible(fn (): bool => $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-user-plus')
                     ->color('primary')
                     ->modalHeading('Add Invitee Manually')
-                    ->modalDescription('Use this form to add one invitee without uploading Excel. Serial number, QR token, short code, and RSVP token will be generated automatically.')
+                    ->modalDescription('Enter guest details. Invitation identifiers are generated automatically.')
                     ->modalSubmitActionLabel('Save Invitee')
                     ->form([
-                        Forms\Components\Section::make('Manual Invitee Details')
-                            ->description('Enter the invitee details that will appear on the generated invitation card.')
+                        Forms\Components\Section::make('Invitee Information')
+                            ->description('Contact and invitation details.')
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Full Name')
@@ -760,15 +777,15 @@ class InviteesRelationManager extends RelationManager
                                         fn (?string $state): string =>
                                             trim(preg_replace('/\s+/', ' ', (string) $state) ?? '')
                                     )
-                                    ->helperText('The name must be unique within this event. A phone number may belong to multiple invitees.'),
+                                    ->helperText('Names must currently be unique within this event.'),
 
                                 Forms\Components\TextInput::make('phone')
                                     ->label('Phone Number')
                                     ->tel()
                                     ->required()
                                     ->maxLength(30)
-                                    ->placeholder('Example: 0711111111')
-                                    ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111. The same phone number may be used by multiple invitees.'),
+                                    ->placeholder('0712 345 678')
+                                    ->helperText('Tanzania mobile number; shared phone numbers are allowed.'),
 
                                 Forms\Components\TextInput::make('email')
                                     ->label('Email')
@@ -787,7 +804,10 @@ class InviteesRelationManager extends RelationManager
                                     ->live()
                                     ->required()
                                     ->afterStateUpdated(function ($state, callable $set): void {
-                                        $cardType = CardType::find($state);
+                                        $cardType = CardType::query()
+                                            ->where('event_id', $this->getOwnerRecord()->id)
+                                            ->where('is_active', true)
+                                            ->find($state);
 
                                         if ($cardType) {
                                             $set('allowed_guests', $cardType->allowed_people ?? 1);
@@ -798,24 +818,26 @@ class InviteesRelationManager extends RelationManager
                                     ->label('Allowed Guests')
                                     ->numeric()
                                     ->minValue(1)
-                                    ->default(1)
+                                    ->placeholder('Select a card type first')
                                     ->required()
-                                    ->helperText('This is filled automatically from the selected card type, but you can adjust it if needed.'),
+                                    ->helperText('Automatically filled from card type; editable if needed.'),
 
                                 Forms\Components\TextInput::make('category')
                                     ->label('Category')
                                     ->maxLength(100)
-                                    ->placeholder('Example: Family, Friends, Committee, VIP'),
+                                    ->datalist(['Family', 'Friends', 'Committee', 'VIP', 'VVIP'])
+                                    ->placeholder('Choose a suggestion or type a category'),
 
                                 Forms\Components\TextInput::make('table_number')
                                     ->label('Table Number')
                                     ->maxLength(50)
-                                    ->placeholder('Example: A1, VIP 2, Family Table'),
+                                    ->placeholder('e.g. A1, VIP 2'),
                             ])
                             ->columns(2),
 
-                        Forms\Components\Section::make('Default Status')
-                            ->description('These defaults are suitable for a new manual invitee.')
+                        Forms\Components\Section::make('Advanced Settings')
+                            ->description('RSVP, card status and confirmed guests (optional).')
+                            ->collapsed()
                             ->schema([
                                 Forms\Components\Select::make('rsvp_status')
                                     ->label('RSVP Status')
@@ -1041,7 +1063,7 @@ class InviteesRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send SMS')
                         ->icon('heroicon-o-paper-airplane')
-                        ->color('success')
+                        ->color('primary')
                         ->modalHeading('Send SMS Message')
                         ->modalDescription('Choose the SMS message option and recipients.')
                         ->modalSubmitActionLabel('Send SMS')
@@ -1091,42 +1113,19 @@ class InviteesRelationManager extends RelationManager
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send WhatsApp')
                         ->icon('heroicon-o-chat-bubble-left-right')
-                        ->color('primary')
+                        ->color('success')
                         ->modalHeading('Send WhatsApp Message')
-                        ->modalDescription('Choose the exact approved Meta WhatsApp template and recipients.')
-                        ->modalSubmitActionLabel('Send WhatsApp')
-                        ->form([
-                            Forms\Components\Select::make('message_template_id')
-                                ->label('WhatsApp Template')
-                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
-                                ->searchable()
-                                ->preload()
-                                ->required()
-                                ->helperText('Choose the exact approved Meta template to send, for example event_invitation_en, event_invitation_sw, or contribution_card_sw.'),
-
-                            Forms\Components\Select::make('recipient_scope')
-                                ->label('Send To')
-                                ->options([
-                                    'not_sent' => 'Invitees Not Yet Sent',
-                                    'all_active' => 'All Active Invitees',
-                                    'pending_rsvp' => 'Pending RSVP Invitees',
-                                    'attending' => 'Attending Invitees',
-                                ])
-                                ->default('not_sent')
-                                ->required(),
-
-                            Forms\Components\Placeholder::make('note')
-                                ->label('Note')
-                                ->content('This sends using the selected WhatsApp Cloud API template and saves the response in Message Logs.'),
-                        ])
+                                                ->modalSubmitActionLabel('Send WhatsApp')
+                        ->modalDescription('Send the saved event WhatsApp template to eligible invitees who have not yet been sent a WhatsApp message. Confirm to continue.')
                         ->requiresConfirmation()
-                        ->action(function (array $data): void {
-                            $selectedTemplate = $this->messageTemplateById((int) $data['message_template_id'], 'whatsapp');
+                        ->action(function (): void {
+                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+                            $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
                             if (! $selectedTemplate) {
                                 $this->brandedNotification()
                                     ->title('eLive Card • WhatsApp template not found')
-                                    ->body('Please choose a valid WhatsApp template.')
+                                    ->body('Choose an active WhatsApp template in Event Settings before sending.')
                                     ->danger()
                                     ->send();
 
@@ -1136,30 +1135,50 @@ class InviteesRelationManager extends RelationManager
                             $this->sendEventMessagesFromToolbar(
                                 channel: 'whatsapp',
                                 templateType: $selectedTemplate->type,
-                                recipientScope: $data['recipient_scope'],
+                                recipientScope: 'not_sent',
                                 actionTitle: 'WhatsApp messages processed',
                                 messageTemplateId: $selectedTemplate->id,
                             );
                         }),
 
-                    Tables\Actions\Action::make('send_reminder')
+                    Tables\Actions\Action::make('retry_failed_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Reminder')
+                        ->label('Retry Failed WhatsApp')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->modalHeading('Retry Failed WhatsApp Messages')
+                        ->modalDescription('Retry only failed attempts for the WhatsApp template configured in Event Settings. Accepted messages will not be resent.')
+                        ->modalSubmitActionLabel('Retry Failed')
+                        ->requiresConfirmation()
+                        ->action(function (): void {
+                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+                            $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+
+                            if (! $template) {
+                                $this->brandedNotification()->title('WhatsApp template not configured')
+                                    ->body('Configure an active WhatsApp template in Event Settings.')
+                                    ->danger()->send();
+                                return;
+                            }
+
+                            $this->sendEventMessagesFromToolbar(
+                                channel: 'whatsapp',
+                                templateType: $template->type,
+                                recipientScope: 'retry_failed',
+                                actionTitle: 'Failed WhatsApp messages retried',
+                                messageTemplateId: $template->id,
+                            );
+                        }),
+
+                    Tables\Actions\Action::make('send_reminder')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && ! (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
+                        ->label('Send Reminder')
                         ->icon('heroicon-o-bell')
-                        ->color('warning')
+                        ->color('primary')
                         ->modalHeading('Send Reminder')
-                        ->modalDescription('Choose reminder type, channel, and recipients.')
+                        ->modalDescription('Choose the SMS reminder type and recipients.')
                         ->modalSubmitActionLabel('Send Reminder')
                         ->form([
-                            Forms\Components\Select::make('channel')
-                                ->label('Channel')
-                                ->options([
-                                    'sms' => 'SMS',
-                                    'whatsapp' => 'WhatsApp',
-                                ])
-                                ->default('sms')
-                                ->required(),
-
                             Forms\Components\Select::make('template_type')
                                 ->label('Reminder Option')
                                 ->options([
@@ -1183,7 +1202,7 @@ class InviteesRelationManager extends RelationManager
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
                             $this->sendEventMessagesFromToolbar(
-                                channel: $data['channel'],
+                                channel: 'sms',
                                 templateType: $data['template_type'],
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Reminder messages processed',
@@ -1191,47 +1210,64 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                     Tables\Actions\Action::make('thank_you_message')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Thank You')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && $this->getOwnerRecord()->thank_you_mode !== 'automatic')
+                        ->label('Send Thank You')
                         ->icon('heroicon-o-heart')
-                        ->color('gray')
+                        ->color('primary')
                         ->modalHeading('Send Thank You Message')
-                        ->modalDescription('Choose thank-you message channel and recipients.')
+                        ->modalDescription('Send a thank-you SMS now. Configure automatic delivery in Event Settings.')
                         ->modalSubmitActionLabel('Send Thank You')
                         ->form([
-                            Forms\Components\Select::make('channel')
-                                ->label('Channel')
-                                ->options([
-                                    'sms' => 'SMS',
-                                    'whatsapp' => 'WhatsApp',
-                                ])
-                                ->default('sms')
-                                ->required(),
-
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
                                 ->options([
-                                    'attending' => 'Thank You to Attending Guests',
-                                    'checked_in' => 'Thank You to Checked-in Guests',
-                                    'all_active' => 'Thank You to All Active Invitees',
+                                    'all_active' => 'All Invitees (active cards)',
+                                    'attending' => 'Confirmed Attending',
+                                    'checked_in' => 'Checked-in Guests',
                                 ])
-                                ->default('attending')
+                                ->default(fn (): string => $this->getOwnerRecord()->manual_thank_you_scope ?: 'all_active')
                                 ->required(),
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Template Source')
-                                ->content('The system will use the active thank_you template for the selected channel.'),
+                                ->content('Uses the active SMS thank_you template. This action sends immediately.'),
                         ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
                             $this->sendEventMessagesFromToolbar(
-                                channel: $data['channel'],
+                                channel: 'sms',
                                 templateType: 'thank_you',
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Thank you messages processed',
                             );
                         }),
 
+
+                    Tables\Actions\Action::make('reminder_scheduled')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
+                        ->label(fn (): string => $this->getOwnerRecord()->auto_rsvp_pending_reminder_enabled || $this->getOwnerRecord()->auto_one_day_reminder_enabled || $this->getOwnerRecord()->auto_event_day_reminder_enabled ? 'Reminder Scheduled' : 'Reminder Setup Required')
+                        ->icon('heroicon-o-calendar-days')
+                        ->color('success')
+                        ->outlined()
+                        ->modalHeading('Automatic SMS Reminders')
+                        ->modalSubmitAction(false)
+                        ->modalContent(fn () => view('filament.components.automatic-message-status', [
+                            'mode' => 'reminder',
+                            'event' => $this->getOwnerRecord()->fresh(),
+                        ])),
+
+                    Tables\Actions\Action::make('thank_you_scheduled')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner() && $this->getOwnerRecord()->thank_you_mode === 'automatic')
+                        ->label(fn (): string => MessageTemplate::query()->where('channel', 'sms')->where('type', 'thank_you')->where('status', 'active')->where(fn (Builder $query) => $query->where('event_id', $this->getOwnerRecord()->id)->orWhereNull('event_id'))->exists() ? 'Thank You Scheduled' : 'Thank You Setup Required')
+                        ->icon('heroicon-o-calendar-days')
+                        ->color('success')
+                        ->outlined()
+                        ->modalHeading('Automatic Thank You SMS')
+                        ->modalSubmitAction(false)
+                        ->modalContent(fn () => view('filament.components.automatic-message-status', [
+                            'mode' => 'thank_you',
+                            'event' => $this->getOwnerRecord()->fresh(),
+                        ])),
 
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('export_rsvp')
@@ -1404,7 +1440,13 @@ class InviteesRelationManager extends RelationManager
                                 $data['allowed_guests'] = $cardType?->allowed_people ?? 1;
                             }
 
-                            $data['allowed_guests'] = max(1, (int) ($data['allowed_guests'] ?? 1));
+                            if (filter_var($data['allowed_guests'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) {
+            throw ValidationException::withMessages([
+                'allowed_guests' => 'Allowed guests must be a whole number of at least 1.',
+            ]);
+        }
+
+        $data['allowed_guests'] = (int) $data['allowed_guests'];
                             $data['confirmed_guests'] = max(0, (int) ($data['confirmed_guests'] ?? 0));
 
                             if ($data['confirmed_guests'] > $data['allowed_guests']) {
@@ -2606,47 +2648,97 @@ class InviteesRelationManager extends RelationManager
             ->whereNotNull('short_code')
             ->where('short_code', '!=', '');
 
-        match ($recipientScope) {
-            'not_sent' => $query->where(function ($query) use ($channel): void {
-                if ($channel === 'whatsapp') {
-                    $query
-                        ->whereNull('whatsapp_status')
-                        ->orWhere('whatsapp_status', '')
-                        ->orWhere('whatsapp_status', 'not_sent')
-                        ->orWhereNull('whatsapp_sent_at');
+        // Never send bulk WhatsApp messages to cancelled, blocked, or used cards.
+        if ($channel === 'whatsapp') {
+            $query->where('card_status', Invitee::CARD_STATUS_ACTIVE);
+        }
 
-                    return;
+        if ($channel === 'whatsapp') {
+            if (! $messageTemplateId || ! Schema::hasTable('whatsapp_template_sends')) {
+                $this->brandedNotification()->title('WhatsApp delivery tracking unavailable')
+                    ->body('Choose a saved event template and run database migrations before sending.')
+                    ->danger()->send();
+                return;
+            }
+
+            $query->where(function (Builder $eligible) use ($messageTemplateId, $recipientScope): void {
+                if ($recipientScope === 'retry_failed') {
+                    $eligible->whereExists(function ($sub) use ($messageTemplateId): void {
+                        $sub->selectRaw('1')->from('whatsapp_template_sends as wts')
+                            ->whereColumn('wts.invitee_id', 'invitees.id')
+                            ->where('wts.message_template_id', $messageTemplateId)
+                            ->where('wts.status', 'failed');
+                    });
+                } else {
+                    $eligible->whereNotExists(function ($sub) use ($messageTemplateId): void {
+                        $sub->selectRaw('1')->from('whatsapp_template_sends as wts')
+                            ->whereColumn('wts.invitee_id', 'invitees.id')
+                            ->where('wts.message_template_id', $messageTemplateId);
+                    });
+
+                    // Historical WhatsApp messages predate template-specific tracking.
+                    // Until migrated, exclude legacy sent recipients to avoid bulk duplicates.
+                    $eligible->where(function (Builder $legacy): void {
+                        $legacy->whereExists(function ($sub): void {
+                            $sub->selectRaw('1')->from('whatsapp_template_sends as previous')
+                                ->whereColumn('previous.invitee_id', 'invitees.id');
+                        })->orWhere(function (Builder $neverSent): void {
+                            $neverSent->whereNull('whatsapp_sent_at')
+                                ->where(function (Builder $status): void {
+                                    $status->whereNull('whatsapp_status')
+                                        ->orWhere('whatsapp_status', '')
+                                        ->orWhere('whatsapp_status', 'not_sent');
+                                });
+                        });
+                    });
                 }
-
-                $query
-                    ->whereNull('message_status')
-                    ->orWhere('message_status', '')
-                    ->orWhere('message_status', 'not_sent')
-                    ->orWhere('sms_status', Invitee::SMS_STATUS_NOT_SENT);
-            }),
-
-            'all_active' => $query->where('card_status', Invitee::CARD_STATUS_ACTIVE),
-
-            'pending_rsvp' => $query->where(function ($query): void {
-                $query
-                    ->whereNull('rsvp_status')
-                    ->orWhere('rsvp_status', '')
-                    ->orWhere('rsvp_status', Invitee::RSVP_PENDING)
-                    ->orWhere('rsvp_status', Invitee::RSVP_MAYBE);
-            }),
-
-            'attending' => $query->where('rsvp_status', Invitee::RSVP_ATTENDING),
-
-            'checked_in' => $query->where('checked_in_count', '>', 0),
-
-            'failed_sms' => $query->where('sms_status', Invitee::SMS_STATUS_FAILED),
-
-            default => null,
-        };
+            });
+        } else {
+            match ($recipientScope) {
+                'not_sent' => $query->where(function ($q): void {
+                    $q->whereNull('message_status')->orWhere('message_status', '')
+                        ->orWhere('message_status', 'not_sent')
+                        ->orWhere('sms_status', Invitee::SMS_STATUS_NOT_SENT);
+                }),
+                'all_active' => $query->where('card_status', Invitee::CARD_STATUS_ACTIVE),
+                'pending_rsvp' => $query->where(function ($q): void {
+                    $q->whereNull('rsvp_status')->orWhere('rsvp_status', '')
+                        ->orWhere('rsvp_status', Invitee::RSVP_PENDING)
+                        ->orWhere('rsvp_status', Invitee::RSVP_MAYBE);
+                }),
+                'attending' => $query->where('rsvp_status', Invitee::RSVP_ATTENDING),
+                'checked_in' => $query->where('checked_in_count', '>', 0),
+                'failed_sms' => $query->where('sms_status', Invitee::SMS_STATUS_FAILED),
+                default => null,
+            };
+        }
 
         $invitees = $query->get();
 
         if ($invitees->isEmpty()) {
+            if ($channel === 'whatsapp' && $messageTemplateId && Schema::hasTable('whatsapp_template_sends')) {
+                $counts = DB::table('whatsapp_template_sends')
+                    ->join('invitees', 'invitees.id', '=', 'whatsapp_template_sends.invitee_id')
+                    ->where('invitees.event_id', $this->getOwnerRecord()->id)
+                    ->where('whatsapp_template_sends.message_template_id', $messageTemplateId)
+                    ->where('invitees.card_status', Invitee::CARD_STATUS_ACTIVE)
+                    ->selectRaw('whatsapp_template_sends.status, COUNT(*) as total')
+                    ->groupBy('whatsapp_template_sends.status')
+                    ->pluck('total', 'status');
+
+                $pending = (int) ($counts['pending'] ?? 0);
+                $failed = (int) ($counts['failed'] ?? 0);
+                $submitted = (int) ($counts['submitted'] ?? 0);
+
+                $this->brandedNotification()
+                    ->title('eLive Card • No new WhatsApp invitations to send')
+                    ->body("Already tracked for this template — Pending: {$pending}; Failed: {$failed}; Submitted: {$submitted}. Pending invitations await queue processing. Use Retry Failed WhatsApp only for failed attempts.")
+                    ->warning()
+                    ->send();
+
+                return;
+            }
+
             $this->brandedNotification()
                 ->title('eLive Card • No invitees found')
                 ->body('No invitees matched the selected option.')
@@ -2681,13 +2773,59 @@ class InviteesRelationManager extends RelationManager
                 continue;
             }
 
-            $result = $this->sendInviteeMessageUsingTemplate(
+            if ($channel === 'whatsapp' && blank($this->normalizePhone($invitee->phone))) {
+                $skipped++;
+
+                continue;
+            }
+
+            if ($channel === 'whatsapp') {
+                $claimed = $recipientScope === 'retry_failed'
+                    ? DB::table('whatsapp_template_sends')
+                        ->where('event_id', $event->id)
+                        ->where('invitee_id', $invitee->id)
+                        ->where('message_template_id', $template->id)
+                        ->where('status', 'failed')
+                        ->update(['status' => 'pending', 'attempts' => DB::raw('attempts + 1'),
+                            'last_attempt_at' => now(), 'updated_at' => now()]) === 1
+                    : DB::table('whatsapp_template_sends')->insertOrIgnore([
+                        'event_id' => $event->id, 'invitee_id' => $invitee->id,
+                        'message_template_id' => $template->id, 'status' => 'pending',
+                        'attempts' => 1, 'last_attempt_at' => now(),
+                        'created_at' => now(), 'updated_at' => now(),
+                    ]) === 1;
+
+                if (! $claimed) {
+                    $skipped++;
+                    continue;
+                }
+            }
+
+            try {
+                $result = $this->sendInviteeMessageUsingTemplate(
                 invitee: $invitee,
                 channel: $channel,
                 templateType: $template->type ?: $templateType,
                 notifySkipped: false,
                 messageTemplateId: $template->id,
-            );
+                );
+            } catch (Throwable $error) {
+                $result = ['status' => 'failed', 'body' => $error->getMessage()];
+            }
+
+            if ($channel === 'whatsapp' && ($template->type !== MessageTemplate::TYPE_INVITATION
+                || ($result['status'] ?? null) === 'failed')) {
+                DB::table('whatsapp_template_sends')
+                    ->where('event_id', $event->id)
+                    ->where('invitee_id', $invitee->id)
+                    ->where('message_template_id', $template->id)
+                    ->update([
+                        'status' => in_array($result['status'] ?? null, ['sent', 'logged'], true) ? 'submitted' : 'failed',
+                        'last_error' => ($result['status'] ?? null) === 'failed'
+                            ? mb_substr((string) ($result['body'] ?? 'Sending failed'), 0, 1000) : null,
+                        'updated_at' => now(),
+                    ]);
+            }
 
             if (in_array($result['status'] ?? null, ['queued', 'sent', 'logged'], true)) {
                 $sent++;
@@ -4176,7 +4314,10 @@ class InviteesRelationManager extends RelationManager
     {
         $invitee->loadMissing('latestGeneratedCard');
 
-        return $invitee->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING;
+        return in_array($invitee->latestGeneratedCard?->status, [
+            GeneratedCard::STATUS_PENDING,
+            GeneratedCard::STATUS_GENERATING,
+        ], true);
     }
 
     protected function inviteeHasUsableGeneratedCard(Invitee $invitee): bool
@@ -4210,14 +4351,8 @@ class InviteesRelationManager extends RelationManager
 
     protected function prepareGeneratedCardForQueue(Invitee $invitee): GeneratedCard
     {
-        $templateId = $this->getOwnerRecord()
-            ->cardTemplates()
-            ->latest()
-            ->value('id');
-
-        if (! $templateId) {
-            throw new \Exception('No card template found for this event. Please upload a card template first.');
-        }
+        $templateId = app(\App\Services\CardGenerationService::class)
+            ->resolveTemplateForEvent($this->getOwnerRecord())->id;
 
         /*
         |--------------------------------------------------------------------------
@@ -4238,7 +4373,7 @@ class InviteesRelationManager extends RelationManager
             ],
             [
                 'event_id' => $this->getOwnerRecord()->id,
-                'status' => GeneratedCard::STATUS_GENERATING,
+                'status' => GeneratedCard::STATUS_PENDING,
                 'generated_at' => null,
                 'sent_at' => null,
             ]
@@ -4280,7 +4415,9 @@ class InviteesRelationManager extends RelationManager
                 ]);
             }
 
-            $data['allowed_guests'] = $cardType->allowed_people ?? 1;
+            $data['allowed_guests'] = filled($data['allowed_guests'] ?? null)
+                ? $data['allowed_guests']
+                : ($cardType->allowed_people ?? 1);
         }
 
         $data['serial_number'] = filled($data['serial_number'] ?? null)

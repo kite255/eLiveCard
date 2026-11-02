@@ -70,6 +70,12 @@ class Event extends Model
         'auto_event_day_reminder_enabled',
         'event_day_reminder_time',
 
+        'default_whatsapp_template_id',
+        'thank_you_mode',
+        'auto_thank_you_scope',
+        'manual_thank_you_scope',
+        'auto_thank_you_time',
+
         // Optional welcome SMS after successful check-in
         'welcome_sms_enabled',
         'welcome_sms_message',
@@ -80,6 +86,7 @@ class Event extends Model
         'start_time' => 'datetime:H:i',
         'end_time' => 'datetime:H:i',
 
+        'auto_thank_you_time' => 'datetime:H:i',
         'auto_sms_reminders_enabled' => 'boolean',
         'auto_rsvp_pending_reminder_enabled' => 'boolean',
         'rsvp_pending_reminder_time' => 'datetime:H:i',
