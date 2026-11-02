@@ -466,6 +466,13 @@ class EventResource extends Resource
                     ->schema([
                         Forms\Components\Select::make('default_whatsapp_template_id')
                             ->label('Default WhatsApp Template')
+                            ->default(fn (): ?int => \App\Models\MessageTemplate::query()
+                                ->whereNull('event_id')
+                                ->where('channel', 'whatsapp')
+                                ->where('type', 'invitation')
+                                ->where('status', 'active')
+                                ->where('whatsapp_template_name', 'elive_social_invitation_sw')
+                                ->value('id'))
                             ->options(function (?\App\Models\Event $record): array {
                                 return \App\Models\MessageTemplate::query()
                                     ->where('channel', 'whatsapp')
@@ -489,7 +496,7 @@ class EventResource extends Resource
                             })
                             ->searchable()
                             ->preload()
-                            ->helperText('Choose an active Meta-approved template here. The Invitees Send WhatsApp action will use only this template.')
+                            ->helperText('Defaults to eLive Social Invitation Swahili for new events. Existing events without a selection use this approved invitation template automatically. You can select another approved template.')
                             ->columnSpanFull(),
                     ])
                     ->collapsible(),
