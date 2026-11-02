@@ -707,6 +707,81 @@
 
 /*
 |--------------------------------------------------------------------------
+| Responsive admin content: readable forms, usable tables and actions
+|--------------------------------------------------------------------------
+*/
+
+/* Allow flexible admin panels to shrink instead of widening the viewport. */
+.fi-main,
+.fi-page,
+.fi-section,
+.fi-ta,
+.fi-fo-component-ctn {
+    min-width: 0;
+}
+
+/* Dense invitee and report tables scroll inside their own region on phones. */
+.fi-ta-content {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.fi-modal-window {
+    max-width: min(calc(100vw - 1rem), 48rem);
+}
+
+@media (max-width: 640px) {
+    .fi-main {
+        padding-inline: 0.75rem;
+    }
+
+    .fi-page {
+        gap: 1rem;
+    }
+
+    .fi-header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+
+    .fi-header-actions > * {
+        min-width: 0;
+    }
+
+    .fi-ta-header-toolbar,
+    .fi-ta-header,
+    .fi-ta-header-actions {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .fi-ta-header-actions .fi-btn {
+        max-width: 100%;
+        white-space: normal;
+        text-align: center;
+    }
+
+    .fi-modal-window {
+        width: calc(100vw - 1rem);
+        max-height: calc(100dvh - 1rem);
+        overflow-y: auto;
+    }
+
+    .fi-modal-footer-actions {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .fi-section-content {
+        min-width: 0;
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
 | Dark Mode
 |--------------------------------------------------------------------------
 */
