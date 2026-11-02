@@ -1121,6 +1121,7 @@ class InviteesRelationManager extends RelationManager
                         ->action(function (): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+                            $selectedTemplate ??= $templateId === 0 ? $this->defaultSocialInvitationTemplate() : null;
 
                             if (! $selectedTemplate) {
                                 $this->brandedNotification()
@@ -1153,6 +1154,7 @@ class InviteesRelationManager extends RelationManager
                         ->action(function (): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+                            $template ??= $templateId === 0 ? $this->defaultSocialInvitationTemplate() : null;
 
                             if (! $template) {
                                 $this->brandedNotification()->title('WhatsApp template not configured')
@@ -2890,6 +2892,17 @@ class InviteesRelationManager extends RelationManager
             })
             ->orderByRaw('CASE WHEN event_id = ? THEN 0 ELSE 1 END', [$eventId])
             ->latest('id')
+            ->first();
+    }
+
+    protected function defaultSocialInvitationTemplate(): ?MessageTemplate
+    {
+        return MessageTemplate::query()
+            ->whereNull('event_id')
+            ->where('channel', 'whatsapp')
+            ->where('type', 'invitation')
+            ->where('status', 'active')
+            ->where('whatsapp_template_name', 'elive_social_invitation_sw')
             ->first();
     }
 
