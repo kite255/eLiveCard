@@ -353,6 +353,104 @@
             border-radius: 8px !important;
         }
 
+        .mobile-table-wrap {
+            display: none;
+        }
+
+        .delivery-status {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .delivery-status.delivered,
+        .delivery-status.read {
+            color: var(--green);
+        }
+
+        .delivery-status.failed {
+            color: var(--red);
+        }
+
+        .delivery-status.submitted,
+        .delivery-status.queued {
+            color: var(--amber);
+        }
+
+        .comment-details summary {
+            color: var(--elive-blue);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .comment-details p {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            margin: 6px 0 0;
+            font-weight: 400;
+        }
+
+        @media (max-width: 760px) {
+            .desktop-table-wrap {
+                display: none;
+            }
+
+            .mobile-table-wrap {
+                display: block;
+                overflow-x: auto;
+            }
+
+            .mobile-table-wrap table {
+                width: 100%;
+                min-width: 0;
+                table-layout: fixed;
+            }
+
+            .mobile-table-wrap th,
+            .mobile-table-wrap td {
+                padding: 9px 5px;
+                font-size: 11px;
+                overflow-wrap: anywhere;
+                vertical-align: top;
+            }
+
+            .mobile-table-wrap th {
+                font-size: 10px;
+                letter-spacing: 0;
+                text-transform: none;
+            }
+
+            .mobile-table-wrap .name {
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .mobile-table-wrap .delivery-status {
+                font-size: 10px;
+                white-space: normal;
+            }
+
+            .mobile-table-wrap .subtle {
+                font-size: 10px;
+            }
+
+            .mobile-table-wrap details summary {
+                min-height: 36px;
+                cursor: pointer;
+                padding-top: 4px;
+                color: var(--elive-blue);
+                font-size: 10px;
+            }
+
+            .mobile-table-wrap .mobile-extra {
+                margin-top: 8px;
+                font-size: 11px;
+                line-height: 1.6;
+                overflow-wrap: anywhere;
+            }
+        }
+
         @media (max-width: 1050px) {
             .stats {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -413,7 +511,7 @@
         $showCommentColumn = (bool) ($visibleFields['comment'] ?? false);
 
         $visibleColumnCount =
-            3
+            5
             + ($showPhoneNumbers ? 1 : 0)
             + ($showCardTypeColumn ? 1 : 0)
             + ($showCategoryColumn ? 1 : 0)
@@ -542,7 +640,7 @@
                 </div>
             </form>
 
-            <div class="table-wrap">
+            <div class="table-wrap desktop-table-wrap">
                 <table>
                     <thead>
                         <tr>
@@ -570,6 +668,8 @@
                             @endif
 
                             <th>RSVP</th>
+                            <th>WhatsApp</th>
+                            <th>SMS</th>
 
                             @if ($showResponseDateColumn)
                                 <th>Response Date</th>
@@ -645,6 +745,9 @@
                                     </span>
                                 </td>
 
+                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></td>
+                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></td>
+
                                 @if ($showResponseDateColumn)
                                     <td>
                                         {{ $invitee->rsvp_confirmed_at?->format('d M Y H:i') ?? '—' }}
@@ -653,12 +756,14 @@
 
                                 @if ($showCommentColumn)
                                     <td>
-                                        <div
-                                            class="comment"
-                                            title="{{ $invitee->last_reply_message ?: 'No comment' }}"
-                                        >
-                                            {{ $invitee->last_reply_message ?: '—' }}
-                                        </div>
+                                        @if (filled($invitee->last_reply_message))
+                                            <details class="comment-details">
+                                                <summary>View comment</summary>
+                                                <p>{{ $invitee->last_reply_message }}</p>
+                                            </details>
+                                        @else
+                                            —
+                                        @endif
                                     </td>
                                 @endif
                             </tr>
@@ -670,6 +775,54 @@
                                     </div>
                                 </td>
                             </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mobile-table-wrap">
+                <table aria-label="Compact invitee RSVP and invitation delivery report">
+                    <thead>
+                        <tr>
+                            <th style="width:32%">Invitee</th>
+                            <th style="width:21%">RSVP</th>
+                            <th style="width:18%">WhatsApp</th>
+                            <th style="width:15%">SMS</th>
+                            <th style="width:14%">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($invitees as $invitee)
+                            @php
+                                $mobileRsvp = $invitee->rsvp_status ?: 'pending';
+                                $mobileStatus = match ($mobileRsvp) {
+                                    'attending' => 'attending',
+                                    'not_attending', 'declined' => 'not-attending',
+                                    default => 'pending',
+                                };
+                            @endphp
+                            <tr>
+                                <td>
+                                    <div class="name">{{ $invitee->name }}</div>
+                                    <details>
+                                        <summary>Details</summary>
+                                        <div class="mobile-extra">
+                                            <div>Card: {{ $invitee->cardType?->name ?: '—' }}</div>
+                                            <div>Guests: {{ max(0, (int) ($invitee->confirmed_guests ?? 0)) }} / {{ max(1, (int) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? $invitee->cardType?->allowed_guests ?? $invitee->cardType?->allowed_people ?? 1)) }}</div>
+                                            <div>Response: {{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y, H:i') ?? 'Not responded' }}</div>
+                                            <div>WhatsApp: {{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</div>
+                                            <div>SMS: {{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</div>
+                                            <div>Comment: {{ $invitee->last_reply_message ?: 'No comment' }}</div>
+                                        </div>
+                                    </details>
+                                </td>
+                                <td><span class="delivery-status {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span></td>
+                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></td>
+                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></td>
+                                <td>{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M H:i') ?? '—' }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="5">No invitees match the selected filters.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
