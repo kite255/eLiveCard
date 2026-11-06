@@ -353,6 +353,44 @@
             border-radius: 8px !important;
         }
 
+        .channel-heading {
+            text-align: center;
+            color: var(--elive-blue);
+        }
+
+        .channel-icon-heading {
+            text-align: center;
+            vertical-align: middle;
+            padding-top: 7px;
+            padding-bottom: 8px;
+        }
+
+        .channel-icon {
+            display: block;
+            width: 20px;
+            height: 20px;
+            margin: 0 auto;
+        }
+
+        .channel-icon-whatsapp {
+            color: #128C4E;
+        }
+
+        .channel-icon-sms {
+            color: var(--elive-blue);
+        }
+
+        @media (max-width: 760px) {
+            .mobile-table-wrap .channel-icon {
+                width: 18px;
+                height: 18px;
+            }
+
+            .mobile-table-wrap .channel-icon-heading {
+                padding: 5px 2px;
+            }
+        }
+
         .mobile-table-wrap {
             display: none;
         }
@@ -644,40 +682,51 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>#</th>
-                            <th>Invitee</th>
+                            <th rowspan="2">#</th>
+                            <th rowspan="2">Invitee</th>
 
                             @if ($showPhoneNumbers)
-                                <th>Phone</th>
+                                <th rowspan="2">Phone</th>
                             @endif
 
                             @if ($showCardTypeColumn)
-                                <th>Card Type</th>
+                                <th rowspan="2">Card Type</th>
                             @endif
 
                             @if ($showCategoryColumn)
-                                <th>Category</th>
+                                <th rowspan="2">Category</th>
                             @endif
 
                             @if ($showTableColumn)
-                                <th>Table</th>
+                                <th rowspan="2">Table</th>
                             @endif
 
                             @if ($showGuestsColumn)
-                                <th>Guests</th>
+                                <th rowspan="2">Guests</th>
                             @endif
 
-                            <th>RSVP</th>
-                            <th>WhatsApp</th>
-                            <th>SMS</th>
+                            <th rowspan="2">RSVP</th>
+                            <th colspan="2" scope="colgroup" class="channel-heading">CHANNEL</th>
 
                             @if ($showResponseDateColumn)
-                                <th>Response Date</th>
+                                <th rowspan="2">Response Date</th>
                             @endif
 
                             @if ($showCommentColumn)
-                                <th>Comment</th>
+                                <th rowspan="2">Comment</th>
                             @endif
+                        </tr>
+                        <tr>
+                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <title>WhatsApp</title>
+                                    <path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                    <path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/>
+                                </svg></th>
+                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <title>SMS</title>
+                                    <path d="M4 5.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 3v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                    <path d="M8 10h9M8 13.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                                </svg></th>
                         </tr>
                     </thead>
 
@@ -784,11 +833,22 @@
                 <table aria-label="Compact invitee RSVP and invitation delivery report">
                     <thead>
                         <tr>
-                            <th style="width:32%">Invitee</th>
-                            <th style="width:21%">RSVP</th>
-                            <th style="width:18%">WhatsApp</th>
-                            <th style="width:15%">SMS</th>
-                            <th style="width:14%">Time</th>
+                            <th rowspan="2" style="width:32%">Invitee</th>
+                            <th rowspan="2" style="width:21%">RSVP</th>
+                            <th colspan="2" scope="colgroup" class="channel-heading" style="width:33%">CHANNEL</th>
+                            <th rowspan="2" style="width:14%">Time</th>
+                        </tr>
+                        <tr>
+                            <th scope="col" class="channel-icon-heading" style="width:18%"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <title>WhatsApp</title>
+                                    <path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                    <path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/>
+                                </svg></th>
+                            <th scope="col" class="channel-icon-heading" style="width:15%"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <title>SMS</title>
+                                    <path d="M4 5.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 3v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                    <path d="M8 10h9M8 13.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                                </svg></th>
                         </tr>
                     </thead>
                     <tbody>
