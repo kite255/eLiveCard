@@ -6,6 +6,7 @@ use App\Models\CardType;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageLog;
+use App\Models\SmsLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -257,6 +258,96 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertViewHas('deliveryStatuses', fn (array $statuses): bool =>
                 $statuses[$invitee->id]['whatsapp'] === 'Failed'
             );
+    }
+
+    public function test_client_report_paginates_fifty_invitees_without_losing_filters(): void
+    {
+        $event = $this->reportEvent('Paginated Report');
+        $type = $this->reportCardType($event);
+
+        for ($index = 1; $index <= 52; $index++) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => sprintf('Test Guest %03d', $index),
+                'phone' => sprintf('25570001%04d', $index),
+                'rsvp_status' => 'pending',
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+
+        $first = $this->get($url . '?status=pending')
+            ->assertOk()
+            ->assertSee('Test Guest 001')
+            ->assertDontSee('Test Guest 052');
+        $first->assertViewHas('invitees', fn ($paginated) =>
+            $paginated->total() === 52
+            && $paginated->count() === 50
+            && $paginated->lastPage() === 2
+        );
+
+        $this->get($url . '?status=pending&page=2')
+            ->assertOk()
+            ->assertSee('Test Guest 052')
+            ->assertDontSee('Test Guest 001')
+            ->assertViewHas('invitees', fn ($paginated) =>
+                $paginated->total() === 52
+                && $paginated->count() === 2
+                && $paginated->currentPage() === 2
+            );
+    }
+
+    public function test_sms_delivery_uses_invitation_logs_not_newer_reminders(): void
+    {
+        $event = $this->reportEvent('Invitation SMS Report');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'SMS Guest',
+            'phone' => '255700000088',
+        ]);
+
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'phone' => $invitee->phone,
+            'sms_type' => 'invitation',
+            'status' => 'delivered',
+        ]);
+
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'phone' => $invitee->phone,
+            'sms_type' => 'rsvp_pending_reminder',
+            'status' => 'failed',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertViewHas('deliveryStatuses', fn (array $statuses): bool =>
+                $statuses[$invitee->id]['sms'] === 'Delivered'
+                && $statuses[$invitee->id]['whatsapp'] === 'Not Sent'
+            );
+    }
+
+    public function test_client_reply_is_html_escaped_and_phone_stays_hidden_by_default(): void
+    {
+        $event = $this->reportEvent('Private Client Report');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Safe Reply Guest',
+            'phone' => '255700000099',
+            'last_reply_message' => '<script>alert("injected")</script>',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertSee('&lt;script&gt;', false)
+            ->assertDontSee('<script>alert("injected")</script>', false)
+            ->assertDontSee($invitee->phone);
     }
 
     private function reportEvent(string $title): Event
