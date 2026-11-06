@@ -113,6 +113,37 @@ class PublicRsvpDeliveryReportTest extends TestCase
             });
     }
 
+    public function test_channel_heading_groups_whatsapp_and_sms_icons_without_hiding_status_words(): void
+    {
+        $event = $this->reportEvent('Channel Header Event');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Channel Guest',
+            'phone' => '255700000007',
+        ]);
+
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'submitted',
+        ]);
+
+        $response = $this->get($event->generateRsvpShareLink())->assertOk();
+
+        $html = $response->getContent();
+
+        $this->assertSame(2, substr_count($html, 'scope="colgroup" class="channel-heading"'));
+        $this->assertSame(2, substr_count($html, 'aria-label="WhatsApp"'));
+        $this->assertSame(2, substr_count($html, 'aria-label="SMS"'));
+        $response->assertSee('CHANNEL')
+            ->assertSee('Submitted')
+            ->assertSee('Not Sent')
+            ->assertSee('Channel Guest');
+    }
+
     public function test_mobile_table_shows_text_labels_and_expanded_comment_details(): void
     {
         $event = $this->reportEvent('Mobile Event');
