@@ -165,7 +165,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('SMS')
             ->assertSee('Response Time')
             ->assertDontSee('<summary>Details</summary>', false)
-            ->assertSee('Mobile comment is visible when expanded.')
+            ->assertSee('Mobile reply is visible in its own column.')
             ->assertSee('Reply');
     }
 
