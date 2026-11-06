@@ -313,6 +313,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'invitee_id' => $invitee->id,
             'phone' => $invitee->phone,
             'sms_type' => 'invitation',
+            'message' => 'Event invitation',
             'status' => 'delivered',
         ]);
 
@@ -321,6 +322,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'invitee_id' => $invitee->id,
             'phone' => $invitee->phone,
             'sms_type' => 'rsvp_pending_reminder',
+            'message' => 'Reminder message',
             'status' => 'failed',
         ]);
 
