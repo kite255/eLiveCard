@@ -391,6 +391,64 @@
             }
         }
 
+        .reply-value {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            max-width: 240px;
+            line-height: 1.4;
+        }
+
+        .reply-column-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .reply-column-label .channel-icon {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+        }
+
+        @media (max-width: 760px) {
+            .mobile-table-wrap table {
+                min-width: 490px;
+            }
+
+            .mobile-table-wrap .reply-value {
+                max-width: 120px;
+                font-size: 10px;
+            }
+
+            .mobile-table-wrap .channel-pair {
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+            }
+
+            .mobile-table-wrap .channel-pair > span {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+            }
+
+            .mobile-table-wrap .channel-pair .channel-icon {
+                margin: 0;
+                flex: 0 0 auto;
+                width: 13px;
+                height: 13px;
+            }
+
+            .mobile-table-wrap .response-time {
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+        }
+
         .mobile-table-wrap {
             display: none;
         }
@@ -549,14 +607,13 @@
         $showCommentColumn = (bool) ($visibleFields['comment'] ?? false);
 
         $visibleColumnCount =
-            5
+            7
             + ($showPhoneNumbers ? 1 : 0)
             + ($showCardTypeColumn ? 1 : 0)
             + ($showCategoryColumn ? 1 : 0)
             + ($showTableColumn ? 1 : 0)
             + ($showGuestsColumn ? 1 : 0)
-            + ($showResponseDateColumn ? 1 : 0)
-            + ($showCommentColumn ? 1 : 0);
+;
     @endphp
     <main class="page">
         <section class="hero">
@@ -708,13 +765,8 @@
                             <th rowspan="2">RSVP</th>
                             <th colspan="2" scope="colgroup" class="channel-heading">CHANNEL</th>
 
-                            @if ($showResponseDateColumn)
-                                <th rowspan="2">Response Date</th>
-                            @endif
-
-                            @if ($showCommentColumn)
-                                <th rowspan="2">Comment</th>
-                            @endif
+                            <th rowspan="2">WhatsApp Reply</th>
+                            <th rowspan="2">Response Time</th>
                         </tr>
                         <tr>
                             <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -797,24 +849,10 @@
                                 <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></td>
                                 <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></td>
 
-                                @if ($showResponseDateColumn)
-                                    <td>
-                                        {{ $invitee->rsvp_confirmed_at?->format('d M Y H:i') ?? '—' }}
-                                    </td>
-                                @endif
-
-                                @if ($showCommentColumn)
-                                    <td>
-                                        @if (filled($invitee->last_reply_message))
-                                            <details class="comment-details">
-                                                <summary>View comment</summary>
-                                                <p>{{ $invitee->last_reply_message }}</p>
-                                            </details>
-                                        @else
-                                            —
-                                        @endif
-                                    </td>
-                                @endif
+                                <td>
+                                    <div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div>
+                                </td>
+                                <td class="response-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i') ?? '—' }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -830,25 +868,14 @@
             </div>
 
             <div class="mobile-table-wrap">
-                <table aria-label="Compact invitee RSVP and invitation delivery report">
+                <table aria-label="Compact invitee RSVP, channel, reply and response time report">
                     <thead>
                         <tr>
-                            <th rowspan="2" style="width:32%">Invitee</th>
-                            <th rowspan="2" style="width:21%">RSVP</th>
-                            <th colspan="2" scope="colgroup" class="channel-heading" style="width:33%">CHANNEL</th>
-                            <th rowspan="2" style="width:14%">Time</th>
-                        </tr>
-                        <tr>
-                            <th scope="col" class="channel-icon-heading" style="width:18%"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <title>WhatsApp</title>
-                                    <path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/>
-                                </svg></th>
-                            <th scope="col" class="channel-icon-heading" style="width:15%"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <title>SMS</title>
-                                    <path d="M4 5.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 3v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M8 10h9M8 13.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                                </svg></th>
+                            <th style="width:26%">Invitee</th>
+                            <th style="width:18%">RSVP</th>
+                            <th style="width:23%">CHANNEL</th>
+                            <th style="width:19%"><span class="reply-column-label"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp reply" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp reply</title><path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/></svg> Reply</span></th>
+                            <th style="width:14%">Time</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -864,22 +891,17 @@
                             <tr>
                                 <td>
                                     <div class="name">{{ $invitee->name }}</div>
-                                    <details>
-                                        <summary>Details</summary>
-                                        <div class="mobile-extra">
-                                            <div>Card: {{ $invitee->cardType?->name ?: '—' }}</div>
-                                            <div>Guests: {{ in_array($mobileRsvp, ['not_attending', 'declined'], true) ? 0 : max(0, (int) ($invitee->confirmed_guests ?? 0)) }} / {{ max(1, (int) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? $invitee->cardType?->allowed_guests ?? $invitee->cardType?->allowed_people ?? 1)) }}</div>
-                                            <div>Response: {{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y, H:i') ?? 'Not responded' }}</div>
-                                            <div>WhatsApp: {{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</div>
-                                            <div>SMS: {{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</div>
-                                            <div>Comment: {{ $invitee->last_reply_message ?: 'No comment' }}</div>
-                                        </div>
-                                    </details>
+                                    <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
                                 </td>
                                 <td><span class="delivery-status {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span></td>
-                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></td>
-                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></td>
-                                <td>{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M H:i') ?? '—' }}</td>
+                                <td>
+                                    <div class="channel-pair">
+                                        <span><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp reply" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp reply</title><path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></span>
+                                        <span><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><path d="M4 5.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 3v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 10h9M8 13.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></span>
+                                    </div>
+                                </td>
+                                <td><div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div></td>
+                                <td class="response-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M H:i') ?? '—' }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="5">No invitees match the selected filters.</td></tr>
