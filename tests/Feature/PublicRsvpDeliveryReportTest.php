@@ -135,8 +135,8 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $html = $response->getContent();
 
-        $this->assertSame(2, substr_count($html, 'scope="colgroup" class="channel-heading"'));
-        $this->assertSame(2, substr_count($html, 'aria-label="WhatsApp"'));
+        $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading"'));
+        $this->assertSame(1, substr_count($html, 'aria-label="WhatsApp"'));
         $this->assertSame(2, substr_count($html, 'aria-label="SMS"'));
         $response->assertSee('CHANNEL')
             ->assertSee('Submitted')
@@ -144,7 +144,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Channel Guest');
     }
 
-    public function test_mobile_table_shows_text_labels_and_expanded_comment_details(): void
+    public function test_mobile_table_shows_reply_and_response_time_without_expand_controls(): void
     {
         $event = $this->reportEvent('Mobile Event');
         $cardType = $this->reportCardType($event);
@@ -155,17 +155,18 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'phone' => '255700000003',
             'rsvp_status' => 'attending',
             'rsvp_confirmed_at' => now(),
-            'last_reply_message' => 'Mobile comment is visible when expanded.',
+            'last_reply_message' => 'Mobile reply is visible in its own column.',
         ]);
 
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
-            ->assertSee('Compact invitee RSVP and invitation delivery report')
+            ->assertSee('Compact invitee RSVP, channel, reply and response time report')
             ->assertSee('WhatsApp')
             ->assertSee('SMS')
-            ->assertSee('Details')
+            ->assertSee('Response Time')
+            ->assertDontSee('<summary>Details</summary>', false)
             ->assertSee('Mobile comment is visible when expanded.')
-            ->assertSee('Response:');
+            ->assertSee('Reply');
     }
 
     public function test_rsvp_filters_and_search_are_event_scoped(): void
