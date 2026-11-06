@@ -808,7 +808,7 @@
                                         <summary>Details</summary>
                                         <div class="mobile-extra">
                                             <div>Card: {{ $invitee->cardType?->name ?: '—' }}</div>
-                                            <div>Guests: {{ max(0, (int) ($invitee->confirmed_guests ?? 0)) }} / {{ max(1, (int) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? $invitee->cardType?->allowed_guests ?? $invitee->cardType?->allowed_people ?? 1)) }}</div>
+                                            <div>Guests: {{ in_array($mobileRsvp, ['not_attending', 'declined'], true) ? 0 : max(0, (int) ($invitee->confirmed_guests ?? 0)) }} / {{ max(1, (int) ($invitee->final_allowed_guests ?? $invitee->allowed_guests ?? $invitee->cardType?->allowed_guests ?? $invitee->cardType?->allowed_people ?? 1)) }}</div>
                                             <div>Response: {{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y, H:i') ?? 'Not responded' }}</div>
                                             <div>WhatsApp: {{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</div>
                                             <div>SMS: {{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</div>
