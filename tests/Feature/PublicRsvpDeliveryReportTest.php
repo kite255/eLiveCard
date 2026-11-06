@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CardType;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageLog;
@@ -22,8 +23,16 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'status' => Event::STATUS_ACTIVE,
         ]);
 
+        $cardType = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Single',
+            'allowed_people' => 1,
+            'is_active' => true,
+        ]);
+
         $invitee = Invitee::query()->create([
             'event_id' => $event->id,
+            'card_type_id' => $cardType->id,
             'name' => 'Sample Invitee',
             'phone' => '255700000001',
             'rsvp_status' => 'attending',
@@ -80,8 +89,16 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'status' => Event::STATUS_ACTIVE,
         ]);
 
+        $cardType = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Single',
+            'allowed_people' => 1,
+            'is_active' => true,
+        ]);
+
         $invitee = Invitee::query()->create([
             'event_id' => $event->id,
+            'card_type_id' => $cardType->id,
             'name' => 'No Message Guest',
             'phone' => '255700000002',
         ]);
