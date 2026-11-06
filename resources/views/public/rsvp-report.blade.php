@@ -769,16 +769,8 @@
                             <th rowspan="2">Response Time</th>
                         </tr>
                         <tr>
-                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <title>WhatsApp</title>
-                                    <path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/>
-                                </svg></th>
-                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <title>SMS</title>
-                                    <path d="M4 5.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 3v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M8 10h9M8 13.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                                </svg></th>
+                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path d="M8 24l2-5a11 11 0 1 1 4.2 4.4Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 11c-.6 1.6 1 4 3.2 5.9 2.2 1.9 4.6 2.5 5.9 1l-2.7-1.5-1.2 1c-1.2-.6-2.1-1.5-2.7-2.7l1-1.2Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></th>
+                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="m3.5 7 8.5 6 8.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></th>
                         </tr>
                     </thead>
 
@@ -874,7 +866,7 @@
                             <th style="width:26%">Invitee</th>
                             <th style="width:18%">RSVP</th>
                             <th style="width:23%">CHANNEL</th>
-                            <th style="width:19%"><span class="reply-column-label"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp reply" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp reply</title><path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/></svg> Reply</span></th>
+                            <th style="width:19%"><span class="reply-column-label"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path d="M8 24l2-5a11 11 0 1 1 4.2 4.4Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 11c-.6 1.6 1 4 3.2 5.9 2.2 1.9 4.6 2.5 5.9 1l-2.7-1.5-1.2 1c-1.2-.6-2.1-1.5-2.7-2.7l1-1.2Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> Reply</span></th>
                             <th style="width:14%">Time</th>
                         </tr>
                     </thead>
@@ -896,8 +888,8 @@
                                 <td><span class="delivery-status {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span></td>
                                 <td>
                                     <div class="channel-pair">
-                                        <span><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp reply" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp reply</title><path d="M20 11.5a8 8 0 0 1-11.85 7L4 20l1.55-4.1A8 8 0 1 1 20 11.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.1 8.3c.25-.3.6-.28.8.08l.8 1.35c.17.28.12.52-.1.78l-.48.54c.43.83 1.12 1.52 1.95 1.95l.54-.48c.26-.22.5-.27.78-.1l1.35.8c.36.2.38.55.08.8-.54.48-1.2.7-1.9.5-2.05-.62-3.78-2.35-4.4-4.4-.2-.7.02-1.36.5-1.9Z" fill="currentColor"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></span>
-                                        <span><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><path d="M4 5.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9l-5 3v-14a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 10h9M8 13.5h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></span>
+                                        <span><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path d="M8 24l2-5a11 11 0 1 1 4.2 4.4Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 11c-.6 1.6 1 4 3.2 5.9 2.2 1.9 4.6 2.5 5.9 1l-2.7-1.5-1.2 1c-1.2-.6-2.1-1.5-2.7-2.7l1-1.2Z" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></span>
+                                        <span><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="m3.5 7 8.5 6 8.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></span>
                                     </div>
                                 </td>
                                 <td><div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div></td>

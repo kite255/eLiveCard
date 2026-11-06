@@ -136,7 +136,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $html = $response->getContent();
 
         $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading"'));
-        $this->assertSame(1, substr_count($html, 'aria-label="WhatsApp"'));
+        $this->assertSame(3, substr_count($html, 'aria-label="WhatsApp"'));
         $this->assertSame(2, substr_count($html, 'aria-label="SMS"'));
         $response->assertSee('CHANNEL')
             ->assertSee('Submitted')
