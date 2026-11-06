@@ -112,4 +112,138 @@ class PublicRsvpDeliveryReportTest extends TestCase
                 ];
             });
     }
+
+    public function test_mobile_table_shows_text_labels_and_expanded_comment_details(): void
+    {
+        $event = $this->reportEvent('Mobile Event');
+        $cardType = $this->reportCardType($event);
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $cardType->id,
+            'name' => 'Mobile Guest',
+            'phone' => '255700000003',
+            'rsvp_status' => 'attending',
+            'rsvp_confirmed_at' => now(),
+            'last_reply_message' => 'Mobile comment is visible when expanded.',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertSee('Compact invitee RSVP and invitation delivery report')
+            ->assertSee('WhatsApp')
+            ->assertSee('SMS')
+            ->assertSee('Details')
+            ->assertSee('Mobile comment is visible when expanded.')
+            ->assertSee('Response:');
+    }
+
+    public function test_rsvp_filters_and_search_are_event_scoped(): void
+    {
+        $event = $this->reportEvent('Filtered Event');
+        $type = $this->reportCardType($event);
+
+        foreach ([['Alice Attending', 'attending'], ['Bob Pending', 'pending'], ['Charlie Declined', 'not_attending']] as [$name, $status]) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => $name,
+                'phone' => '255700000004',
+                'rsvp_status' => $status,
+            ]);
+        }
+
+        $other = $this->reportEvent('Another Event');
+        Invitee::query()->create([
+            'event_id' => $other->id,
+            'card_type_id' => $this->reportCardType($other)->id,
+            'name' => 'Other Event Guest',
+            'phone' => '255700000005',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $url = $event->generateRsvpShareLink();
+
+        $this->get($url . '?search=alice&status=attending')
+            ->assertOk()
+            ->assertSee('Alice Attending')
+            ->assertDontSee('Bob Pending')
+            ->assertDontSee('Charlie Declined')
+            ->assertDontSee('Other Event Guest');
+
+        $this->get($url . '?status=pending')
+            ->assertOk()
+            ->assertSee('Bob Pending')
+            ->assertDontSee('Alice Attending')
+            ->assertDontSee('Other Event Guest');
+    }
+
+    public function test_expired_or_disabled_client_report_link_is_rejected(): void
+    {
+        $event = $this->reportEvent('Protected Event');
+        $url = $event->generateRsvpShareLink();
+
+        $event->forceFill(['rsvp_share_expires_at' => now()->subMinute()])->save();
+
+        $this->get($url)->assertGone();
+
+        $event->forceFill(['rsvp_share_expires_at' => null])->save();
+        $event->disableRsvpShareLink();
+
+        $this->get($url)->assertNotFound();
+    }
+
+    public function test_report_uses_latest_invitation_attempt_and_ignores_other_events(): void
+    {
+        $event = $this->reportEvent('Message Status Event');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Latest Status Guest',
+            'phone' => '255700000006',
+        ]);
+
+        foreach (['delivered', 'failed'] as $status) {
+            MessageLog::query()->create([
+                'event_id' => $event->id,
+                'invitee_id' => $invitee->id,
+                'channel' => 'whatsapp',
+                'type' => 'invitation',
+                'status' => $status,
+            ]);
+        }
+
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'thank_you',
+            'status' => 'read',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertViewHas('deliveryStatuses', fn (array $statuses): bool =>
+                $statuses[$invitee->id]['whatsapp'] === 'Failed'
+            );
+    }
+
+    private function reportEvent(string $title): Event
+    {
+        return Event::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'title' => $title,
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+    }
+
+    private function reportCardType(Event $event): CardType
+    {
+        return CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Single',
+            'allowed_people' => 1,
+            'is_active' => true,
+        ]);
+    }
 }
