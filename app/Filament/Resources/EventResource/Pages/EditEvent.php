@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource;
 use App\Services\AuditLogService;
 use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 
 class EditEvent extends EditRecord
@@ -25,6 +26,7 @@ class EditEvent extends EditRecord
 
             Actions\DeleteAction::make()
                 ->label('Delete Event')
+                ->successNotificationTitle('eLive Card • Event deleted successfully')
                 ->before(function (): void {
                     AuditLogService::deleted(
                         subject: $this->record,
@@ -85,9 +87,13 @@ class EditEvent extends EditRecord
         );
     }
 
-    protected function getSavedNotificationTitle(): ?string
+    protected function getSavedNotification(): ?Notification
     {
-        return 'Event updated successfully';
+        return Notification::make()
+            ->title('eLive Card • Event updated')
+            ->body('Changes to "'.$this->record->title.'" were saved successfully.')
+            ->success()
+            ->duration(6000);
     }
 
     public function hasCombinedRelationManagerTabsWithContent(): bool

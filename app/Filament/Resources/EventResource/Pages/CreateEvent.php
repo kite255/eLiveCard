@@ -6,6 +6,7 @@ use App\Filament\Resources\EventResource;
 use App\Models\User;
 use App\Services\AuditLogService;
 use Filament\Resources\Pages\CreateRecord;
+use Filament\Notifications\Notification;
 
 class CreateEvent extends CreateRecord
 {
@@ -67,9 +68,13 @@ class CreateEvent extends CreateRecord
         );
     }
 
-    protected function getCreatedNotificationTitle(): ?string
+    protected function getCreatedNotification(): ?Notification
     {
-        return 'Event created successfully';
+        return Notification::make()
+            ->title('eLive Card • Event created')
+            ->body('The event "'.$this->record->title.'" was saved successfully. You can now add card types, invitees and templates.')
+            ->success()
+            ->duration(6000);
     }
 
     protected function getRedirectUrl(): string
