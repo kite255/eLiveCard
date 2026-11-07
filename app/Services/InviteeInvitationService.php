@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Jobs\SendInvitationSmsJob;
 use App\Jobs\SendInvitationWhatsAppJob;
 use App\Services\AuditLogService;
+use App\Services\SmsService;
+use App\Services\WhatsAppApiCloudService;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
@@ -167,6 +169,140 @@ class InviteeInvitationService
         ])->save();
 
         return $this->result('queued', 'WhatsApp invitation queued for delivery. This does not mean it was delivered.');
+    }
+
+    /**
+     * Single-recipient send action: wait for gateway acceptance/rejection in the
+     * current HTTP request. Bulk and selected-recipient actions still use queues.
+     *
+     * A provider submission is not a delivery receipt.
+     */
+    public function sendImmediately(Event $event, Invitee $invitee, string $channel): array
+    {
+        if ((int) $invitee->event_id !== (int) $event->id
+            || $invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+            return $this->result('skipped', 'The invitee must have an active invitation for this event.');
+        }
+
+        if (blank($invitee->phone) || blank($invitee->short_code)) {
+            return $this->result('failed', 'A phone number and private invitation link are required.');
+        }
+
+        $template = $this->template($event, $channel);
+        if (! $template) {
+            return $this->result('failed', 'No active invitation template is configured for this channel.');
+        }
+
+        try {
+            return Cache::lock('direct-invitation-'.$channel.'-'.$event->id.'-'.$invitee->id, 90)
+                ->block(1, function () use ($event, $invitee, $template, $channel): array {
+                    $invitee->refresh()->loadMissing(['event', 'cardType']);
+
+                    if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+                        return $this->result('skipped', 'Invitation card is no longer active.');
+                    }
+
+                    if ($channel === MessageTemplate::CHANNEL_SMS) {
+                        $reason = app(SmsInvitationRecipientsService::class)->exclusionReason($invitee);
+                        if ($reason !== null) {
+                            return $this->result('skipped', $reason);
+                        }
+
+                        $message = EliveMessagePlaceholders::render((string) $template->content, $invitee);
+                        if (trim($message) === '' || preg_match('/#[A-Z_]+#/', $message)) {
+                            return $this->result('failed', 'SMS template has an empty message or unresolved placeholders.');
+                        }
+
+                        // Set in-flight state before contacting the provider to block repeated clicks.
+                        $invitee->forceFill([
+                            'last_message_channel' => 'sms',
+                            'last_message_status' => 'sending',
+                            'message_status' => 'sending',
+                            'sms_status' => Invitee::SMS_STATUS_PENDING,
+                        ])->save();
+
+                        try {
+                            $response = app(SmsService::class)->sendInvitation($invitee, $message);
+                            if (! ($response['success'] ?? false)) {
+                                return $this->result('failed', 'SMS provider did not accept the invitation.');
+                            }
+
+                            $driver = $response['driver'] ?? null;
+                            if ($driver === 'log' || ($response['status'] ?? null) === 'logged') {
+                                return $this->result('logged', 'SMS was logged only, not submitted to the SMS gateway.');
+                            }
+
+                            return $this->result('submitted', 'SMS accepted by the gateway. Handset delivery is not yet confirmed.');
+                        } catch (Throwable $exception) {
+                            report($exception);
+                            return $this->result('failed', 'SMS submission could not be confirmed. Check the provider log before retrying.');
+                        }
+                    }
+
+                    if ($channel !== MessageTemplate::CHANNEL_WHATSAPP
+                        || ! Schema::hasTable('whatsapp_template_sends')) {
+                        return $this->result('failed', 'WhatsApp invitation tracking is unavailable.');
+                    }
+
+                    if ($invitee->messageLogs()
+                        ->where('event_id', $event->id)
+                        ->where('channel', 'whatsapp')
+                        ->where('type', MessageTemplate::TYPE_INVITATION)
+                        ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+                        ->exists()) {
+                        return $this->result('skipped', 'This WhatsApp invitation was already submitted.');
+                    }
+
+                    $claimed = DB::table('whatsapp_template_sends')->insertOrIgnore([
+                        'event_id' => $event->id,
+                        'invitee_id' => $invitee->id,
+                        'message_template_id' => $template->id,
+                        'status' => 'pending',
+                        'attempts' => 1,
+                        'last_attempt_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    if ($claimed !== 1) {
+                        return $this->result('skipped', 'WhatsApp invitation has already been requested. Check its status before retrying.');
+                    }
+
+                    try {
+                        $response = app(WhatsAppApiCloudService::class)->sendInvitation(
+                            invitee: $invitee,
+                            languageCode: (string) ($template->whatsapp_language_code ?: 'en'),
+                            messageTemplateId: (int) $template->id,
+                        );
+
+                        DB::table('whatsapp_template_sends')
+                            ->where('event_id', $event->id)
+                            ->where('invitee_id', $invitee->id)
+                            ->where('message_template_id', $template->id)
+                            ->where('status', 'pending')
+                            ->update(['status' => 'submitted', 'last_error' => null, 'updated_at' => now()]);
+
+                        return $this->result('submitted', 'WhatsApp accepted the invitation. Delivery/read confirmation may arrive later.');
+                    } catch (Throwable $exception) {
+                        report($exception);
+
+                        DB::table('whatsapp_template_sends')
+                            ->where('event_id', $event->id)
+                            ->where('invitee_id', $invitee->id)
+                            ->where('message_template_id', $template->id)
+                            ->where('status', 'pending')
+                            ->update([
+                                'status' => 'failed',
+                                'last_error' => mb_substr($exception->getMessage(), 0, 1000),
+                                'updated_at' => now(),
+                            ]);
+
+                        return $this->result('failed', 'WhatsApp submission could not be confirmed. Check the message log before retrying.');
+                    }
+                });
+        } catch (\\Illuminate\\Contracts\\Cache\\LockTimeoutException $exception) {
+            return $this->result('skipped', 'This invitation is already being sent. Check its status.');
+        }
     }
 
     /**
