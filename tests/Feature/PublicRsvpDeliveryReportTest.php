@@ -202,6 +202,69 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('<td class="mobile-row-number">1</td>', false);
     }
 
+    public function test_shared_rsvp_link_searches_card_type_and_table_within_event(): void
+    {
+        $event = $this->reportEvent('Searchable RSVP Event');
+        $single = $this->reportCardType($event);
+        $vip = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'VIP Family',
+            'allowed_people' => 4,
+            'is_active' => true,
+        ]);
+
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $single->id,
+            'name' => 'Alice RSVP',
+            'phone' => '255700000100',
+            'table_number' => 'Table 12',
+        ]);
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $vip->id,
+            'name' => 'Bob RSVP',
+            'phone' => '255700000200',
+            'table_number' => 'Table 20',
+        ]);
+
+        $other = $this->reportEvent('Other Private RSVP Event');
+        Invitee::query()->create([
+            'event_id' => $other->id,
+            'card_type_id' => $this->reportCardType($other)->id,
+            'name' => 'Other Event Guest',
+            'phone' => '255700000300',
+            'table_number' => 'Table 12',
+        ]);
+
+        $url = $event->generateRsvpShareLink();
+
+        $this->get($url.'?search=VIP%20Family')->assertOk()
+            ->assertSee('Bob RSVP')->assertDontSee('Alice RSVP')
+            ->assertDontSee('Other Event Guest');
+
+        $this->get($url.'?search=Table%2012')->assertOk()
+            ->assertSee('Alice RSVP')->assertDontSee('Bob RSVP')
+            ->assertDontSee('Other Event Guest');
+    }
+
+    public function test_shared_rsvp_search_does_not_expose_hidden_phone_numbers(): void
+    {
+        $event = $this->reportEvent('Phone Privacy RSVP Event');
+        $event->forceFill(['rsvp_share_show_phone' => false])->save();
+
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Private Phone Guest',
+            'phone' => '255700001234',
+        ]);
+
+        $this->get($event->generateRsvpShareLink().'?search=255700001234')
+            ->assertOk()->assertDontSee('Private Phone Guest')
+            ->assertDontSee('255700001234');
+    }
+
     public function test_rsvp_filters_and_search_are_event_scoped(): void
     {
         $event = $this->reportEvent('Filtered Event');
