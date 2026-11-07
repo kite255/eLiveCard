@@ -1065,28 +1065,32 @@ class InviteesRelationManager extends RelationManager
                     ->icon('heroicon-o-envelope')
                     ->color('primary')
                     ->modalHeading('Send SMS Invitations')
-                    ->modalDescription('Uses the active SMS Invitation template. Already sent invitations are skipped by the delivery job.')
-                    ->modalSubmitActionLabel('Queue SMS Invitations')
+                    ->modalDescription('Review eligible recipients before queueing. SMS is also available as a manual fallback for failed or unconfirmed WhatsApp invitations.')
+                    ->modalSubmitActionLabel('Queue Eligible SMS Invitations')
                     ->form([
                         Forms\Components\Select::make('recipient_scope')
                             ->label('Recipients')
-                            ->options([
-                                'not_sent' => 'Invitees Not Yet Sent',
-                                'all_active' => 'All Active Invitees',
-                                'pending_rsvp' => 'Pending RSVP Invitees',
-                                'attending' => 'Attending Invitees',
-                                'failed_sms' => 'Failed SMS Invitees',
-                            ])
-                            ->default('not_sent')
+                            ->options(\App\Services\SmsInvitationAudienceService::options())
+                            ->default(\App\Services\SmsInvitationAudienceService::NOT_SENT)
+                            ->live()
                             ->required(),
+                        Forms\Components\Placeholder::make('sms_audience_preview')
+                            ->label('Recipient Review')
+                            ->content(function (Forms\Get $get): string {
+                                $scope = (string) ($get('recipient_scope') ?: \App\Services\SmsInvitationAudienceService::NOT_SENT);
+                                if (! array_key_exists($scope, \App\Services\SmsInvitationAudienceService::options())) {
+                                    return 'Choose a valid recipient group.';
+                                }
+                                $audience = app(\App\Services\SmsInvitationAudienceService::class)
+                                    ->preview($this->getOwnerRecord(), $scope);
+
+                                return "{$audience['total']} eligible for SMS. {$audience['excluded']} excluded (already submitted, queued, or not matching the selected group). Only active cards with a phone and private link are considered."
+                                    . ($scope === \App\Services\SmsInvitationAudienceService::WHATSAPP_UNDELIVERED
+                                        ? ' WhatsApp may still arrive; check recipients before proceeding.' : '');
+                            }),
                     ])
                     ->requiresConfirmation()
-                    ->action(fn (array $data) => $this->sendEventMessagesFromToolbar(
-                        channel: 'sms',
-                        templateType: MessageTemplate::TYPE_INVITATION,
-                        recipientScope: $data['recipient_scope'],
-                        actionTitle: 'SMS invitations processed',
-                    )),
+                    ->action(fn (array $data) => $this->sendBulkSmsInvitations((string) ($data['recipient_scope'] ?? ''))),
 
                     Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
@@ -2751,6 +2755,62 @@ class InviteesRelationManager extends RelationManager
             ->color($failed > 0 ? 'warning' : 'success')
             ->persistent()
             ->send();
+    }
+
+    protected function sendBulkSmsInvitations(string $scope): void
+    {
+        abort_unless($this->canSendMessagesForOwner(), 403);
+
+        if (! array_key_exists($scope, \App\Services\SmsInvitationAudienceService::options())) {
+            $this->brandedNotification()->title('Invalid SMS recipient group')->danger()->send();
+            return;
+        }
+
+        $event = $this->getOwnerRecord();
+        $sender = app(\App\Services\InviteeInvitationService::class);
+        if (! $sender->template($event, MessageTemplate::CHANNEL_SMS)) {
+            $this->brandedNotification()
+                ->title('eLive Card • SMS invitation template missing')
+                ->body('Activate an SMS Invitation template in Message Templates before sending.')
+                ->danger()->send();
+            return;
+        }
+
+        $audience = app(\App\Services\SmsInvitationAudienceService::class)
+            ->preview($event, $scope);
+
+        $counts = ['queued' => 0, 'skipped' => $audience['excluded'], 'failed' => 0];
+
+        foreach ($audience['eligible'] as $invitee) {
+            // Sending service independently checks event, card status, and previous
+            // accepted/queued invitation state. Never bypass its duplicate protection.
+            $result = $sender->send($event, $invitee->fresh(), MessageTemplate::CHANNEL_SMS);
+            $status = $result['status'] ?? 'failed';
+            $counts[$status] = ($counts[$status] ?? 0) + 1;
+        }
+
+        AuditLogService::system(
+            action: 'bulk_sms_invitations_processed',
+            description: 'SMS invitation recipients reviewed and queued.',
+            eventId: $event->id,
+            metadata: [
+                'scope' => $scope,
+                'fallback_channel' => in_array($scope, [
+                    \App\Services\SmsInvitationAudienceService::FAILED_WHATSAPP,
+                    \App\Services\SmsInvitationAudienceService::WHATSAPP_UNDELIVERED,
+                ], true) ? 'whatsapp' : null,
+                'eligible' => $audience['total'],
+                'queued' => $counts['queued'],
+                'skipped' => $counts['skipped'],
+                'failed' => $counts['failed'],
+            ],
+        );
+
+        $this->brandedNotification()
+            ->title('eLive Card • SMS invitations processed')
+            ->body("Queued: {$counts['queued']}. Skipped: {$counts['skipped']}. Failed: {$counts['failed']}. Queued does not mean delivered.")
+            ->color($counts['failed'] > 0 ? 'warning' : ($counts['queued'] > 0 ? 'success' : 'info'))
+            ->persistent()->send();
     }
 
     protected function processInviteeInvitation(Invitee $record, string $channel): void
