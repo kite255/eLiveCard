@@ -340,17 +340,64 @@
         }
 
         .pagination {
-            padding: 16px 20px;
+            padding: 14px 20px;
             border-top: 1px solid var(--border);
         }
 
-        .pagination nav > div:first-child {
-            margin-bottom: 10px;
+        .pagination-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
-        .pagination a,
-        .pagination span {
-            border-radius: 8px !important;
+        .pagination-link,
+        .pagination-current {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 34px;
+            padding: 6px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 12px;
+            text-decoration: none;
+            line-height: 1.3;
+        }
+
+        .pagination-link {
+            color: var(--elive-blue);
+            background: #fff;
+            font-weight: 700;
+        }
+
+        .pagination-link:hover {
+            border-color: var(--elive-blue);
+            background: var(--bg);
+        }
+
+        .pagination-link:focus-visible {
+            outline: 2px solid var(--elive-orange);
+            outline-offset: 2px;
+        }
+
+        .pagination-link.is-disabled {
+            color: var(--muted);
+            cursor: default;
+            opacity: .65;
+        }
+
+        .pagination-current {
+            color: var(--text);
+            border-color: transparent;
+        }
+
+        .pagination-summary {
+            text-align: center;
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 12px;
         }
 
         .channel-heading {
@@ -914,9 +961,26 @@
             </div>
 
             @if ($invitees->hasPages())
-                <div class="pagination">
-                    {{ $invitees->links() }}
-                </div>
+                <nav class="pagination" aria-label="Invitee report pages">
+                    <div class="pagination-controls">
+                        @if ($invitees->onFirstPage())
+                            <span class="pagination-link is-disabled" aria-disabled="true">Previous</span>
+                        @else
+                            <a class="pagination-link" rel="prev" href="{{ $invitees->previousPageUrl() }}">Previous</a>
+                        @endif
+
+                        <span class="pagination-current" aria-current="page">Page {{ $invitees->currentPage() }} of {{ $invitees->lastPage() }}</span>
+
+                        @if ($invitees->hasMorePages())
+                            <a class="pagination-link" rel="next" href="{{ $invitees->nextPageUrl() }}">Next</a>
+                        @else
+                            <span class="pagination-link is-disabled" aria-disabled="true">Next</span>
+                        @endif
+                    </div>
+                    <div class="pagination-summary">
+                        Showing {{ $invitees->firstItem() }} to {{ $invitees->lastItem() }} of {{ $invitees->total() }} results
+                    </div>
+                </nav>
             @endif
         </section>
     </main>
