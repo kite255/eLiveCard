@@ -780,10 +780,33 @@
                     <option value="maybe" @selected($status === 'maybe')>Maybe</option>
                 </select>
 
+                <select name="sms_delivery" class="select" aria-label="SMS delivery status">
+                    <option value="">All SMS delivery statuses</option>
+                    <option value="not_sent" @selected($smsDelivery === 'not_sent')>Not Sent</option>
+                    <option value="queued" @selected($smsDelivery === 'queued')>Queued</option>
+                    <option value="submitted" @selected($smsDelivery === 'submitted')>Submitted</option>
+                    <option value="delivered" @selected($smsDelivery === 'delivered')>Delivered</option>
+                    <option value="failed" @selected($smsDelivery === 'failed')>Failed</option>
+                    <option value="logged_only" @selected($smsDelivery === 'logged_only')>Logged Only</option>
+                    <option value="unknown" @selected($smsDelivery === 'unknown')>Unknown</option>
+                </select>
+
+                <select name="whatsapp_delivery" class="select" aria-label="WhatsApp delivery status">
+                    <option value="">All WhatsApp delivery statuses</option>
+                    <option value="not_sent" @selected($whatsappDelivery === 'not_sent')>Not Sent</option>
+                    <option value="queued" @selected($whatsappDelivery === 'queued')>Queued</option>
+                    <option value="submitted" @selected($whatsappDelivery === 'submitted')>Submitted</option>
+                    <option value="delivered" @selected($whatsappDelivery === 'delivered')>Delivered</option>
+                    <option value="read" @selected($whatsappDelivery === 'read')>Read</option>
+                    <option value="failed" @selected($whatsappDelivery === 'failed')>Failed</option>
+                    <option value="logged_only" @selected($whatsappDelivery === 'logged_only')>Logged Only</option>
+                    <option value="unknown" @selected($whatsappDelivery === 'unknown')>Unknown</option>
+                </select>
+
                 <div style="display:flex; gap:8px;">
                     <button type="submit" class="button">Apply Filters</button>
 
-                    @if ($search !== '' || $status !== '')
+                    @if ($search !== '' || $status !== '' || $smsDelivery !== '' || $whatsappDelivery !== '')
                         <a href="{{ request()->url() }}" class="button secondary">
                             Clear
                         </a>

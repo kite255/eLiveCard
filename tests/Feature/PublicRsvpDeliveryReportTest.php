@@ -355,6 +355,120 @@ class PublicRsvpDeliveryReportTest extends TestCase
             );
     }
 
+    public function test_shared_rsvp_filters_by_latest_sms_and_whatsapp_invitation_status(): void
+    {
+        $event = $this->reportEvent('Delivery Filters Event');
+        $type = $this->reportCardType($event);
+        $make = function (string $name) use ($event, $type): Invitee {
+            return Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => $name,
+                'phone' => '255700000999',
+            ]);
+        };
+
+        $delivered = $make('Delivered SMS Guest');
+        $submitted = $make('Submitted SMS Guest');
+        $uncontacted = $make('Uncontacted Guest');
+
+        foreach ([[$delivered, 'delivered'], [$submitted, 'sent']] as [$invitee, $status]) {
+            SmsLog::query()->create([
+                'event_id' => $event->id,
+                'invitee_id' => $invitee->id,
+                'phone' => $invitee->phone,
+                'sms_type' => 'invitation_card',
+                'message' => 'Invitation',
+                'status' => $status,
+            ]);
+        }
+
+        // A newer reminder must not override the last invitation status.
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $delivered->id,
+            'phone' => $delivered->phone,
+            'sms_type' => 'rsvp_pending_reminder',
+            'message' => 'Reminder',
+            'status' => 'failed',
+        ]);
+
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $delivered->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'read',
+        ]);
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $submitted->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'failed',
+        ]);
+
+        $other = $this->reportEvent('Other Delivery Event');
+        Invitee::query()->create([
+            'event_id' => $other->id,
+            'card_type_id' => $this->reportCardType($other)->id,
+            'name' => 'Private Other Event Guest',
+            'phone' => '255700000991',
+        ]);
+
+        $url = $event->generateRsvpShareLink();
+
+        $this->get($url.'?sms_delivery=delivered&whatsapp_delivery=read')
+            ->assertOk()
+            ->assertSee('Delivered SMS Guest')
+            ->assertDontSee('Submitted SMS Guest')
+            ->assertDontSee('Uncontacted Guest')
+            ->assertDontSee('Private Other Event Guest')
+            ->assertSee('name="sms_delivery"', false)
+            ->assertSee('name="whatsapp_delivery"', false);
+
+        $this->get($url.'?sms_delivery=submitted')
+            ->assertOk()->assertSee('Submitted SMS Guest')
+            ->assertDontSee('Delivered SMS Guest');
+
+        $this->get($url.'?sms_delivery=not_sent')
+            ->assertOk()->assertSee('Uncontacted Guest')
+            ->assertDontSee('Delivered SMS Guest');
+
+        $this->get($url.'?whatsapp_delivery=failed')
+            ->assertOk()->assertSee('Submitted SMS Guest')
+            ->assertDontSee('Delivered SMS Guest');
+
+        $this->get($url.'?sms_delivery=invalid')
+            ->assertSessionHasErrors('sms_delivery');
+    }
+
+    public function test_rsvp_delivery_filter_uses_latest_attempt_not_previous_delivery(): void
+    {
+        $event = $this->reportEvent('Latest Delivery Attempt');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Resent Invitation Guest',
+            'phone' => '255700000045',
+        ]);
+
+        foreach (['delivered', 'sent'] as $status) {
+            SmsLog::query()->create([
+                'event_id' => $event->id,
+                'invitee_id' => $invitee->id,
+                'phone' => $invitee->phone,
+                'sms_type' => 'invitation_card',
+                'message' => 'Invitation',
+                'status' => $status,
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+        $this->get($url.'?sms_delivery=submitted')->assertOk()->assertSee('Resent Invitation Guest');
+        $this->get($url.'?sms_delivery=delivered')->assertOk()->assertDontSee('Resent Invitation Guest');
+    }
+
     public function test_report_pagination_is_compact_accessible_and_retains_filters(): void
     {
         $event = $this->reportEvent('Compact Pagination Test');
