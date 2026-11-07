@@ -671,6 +671,12 @@ class Event extends Model
                 $this->end_time->minute,
                 $this->end_time->second
             );
+
+            // An event starting in the evening and ending at midnight (or
+            // earlier on the clock) ends the following calendar day.
+            if ($this->start_time && $endsAt->lessThanOrEqualTo($this->starts_at)) {
+                $endsAt->addDay();
+            }
         }
 
         return $endsAt;
