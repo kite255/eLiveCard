@@ -7,7 +7,8 @@ use App\Imports\InviteesImport;
 use App\Models\Event;
 use Filament\Actions;
 use Filament\Forms;
-use Filament\Notifications\Notification;
+use App\Support\ActionToast;
+use Illuminate\Support\Facades\Log;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
@@ -54,12 +55,7 @@ class ListInvitees extends ListRecords
                     $filePath = Storage::disk('local')->path($data['import_file']);
 
                     if (! file_exists($filePath)) {
-                        Notification::make()
-                            ->title('Import failed')
-                            ->body('Uploaded file was not found. Please upload the Excel file again.')
-                            ->danger()
-                            ->persistent()
-                            ->send();
+                        ActionToast::failure('Import failed', 'Uploaded file was not found. Please upload the Excel file again.');
 
                         return;
                     }
@@ -74,31 +70,20 @@ class ListInvitees extends ListRecords
                                 ->take(15)
                                 ->implode("\n");
 
-                            Notification::make()
-                                ->title('Import completed with errors')
-                                ->body(
-                                    $import->importedCount . " invitee(s) imported.\n"
-                                    . $errors
-                                )
-                                ->warning()
-                                ->persistent()
-                                ->send();
+                            ActionToast::warning(
+                                'Import completed with errors',
+                                $import->importedCount . " invitee(s) imported.\n" . $errors
+                            );
 
                             return;
                         }
 
-                        Notification::make()
-                            ->title('Invitees imported successfully')
-                            ->body($import->importedCount . ' invitee(s) imported successfully.')
-                            ->success()
-                            ->send();
+                        $import->importedCount > 0
+                            ? ActionToast::success('Invitees imported successfully', $import->importedCount . ' invitee(s) imported.')
+                            : ActionToast::warning('No invitees imported', 'The file did not contain any valid invitees.');
                     } catch (\Throwable $exception) {
-                        Notification::make()
-                            ->title('Import failed')
-                            ->body($exception->getMessage())
-                            ->danger()
-                            ->persistent()
-                            ->send();
+                        Log::error('Invitee import failed', ['exception' => $exception]);
+                        ActionToast::failure('Import failed', 'The import could not be completed. Please check the file and contact support if the issue persists.');
                     }
                 }),
         ];

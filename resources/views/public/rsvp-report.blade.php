@@ -353,6 +353,209 @@
             border-radius: 8px !important;
         }
 
+        .channel-heading {
+            text-align: center;
+            color: var(--elive-blue);
+        }
+
+        .channel-icon-heading {
+            text-align: center;
+            vertical-align: middle;
+            padding-top: 7px;
+            padding-bottom: 8px;
+        }
+
+        .channel-icon {
+            display: block;
+            width: 20px;
+            height: 20px;
+            margin: 0 auto;
+        }
+
+        .channel-icon-whatsapp {
+            color: #25D366;
+        }
+
+        .channel-icon-sms {
+            color: var(--elive-blue);
+        }
+
+        @media (max-width: 760px) {
+            .mobile-table-wrap .channel-icon {
+                width: 18px;
+                height: 18px;
+            }
+
+            .mobile-table-wrap .channel-icon-heading {
+                padding: 5px 2px;
+            }
+        }
+
+        .reply-value {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            max-width: 240px;
+            line-height: 1.4;
+        }
+
+        .reply-column-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .reply-column-label .channel-icon {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+        }
+
+        @media (max-width: 760px) {
+            .mobile-table-wrap table {
+                min-width: 490px;
+            }
+
+            .mobile-table-wrap .mobile-row-number {
+                width: 6%;
+                text-align: center;
+                font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+                padding-left: 3px;
+                padding-right: 3px;
+            }
+
+            .mobile-table-wrap .reply-value {
+                max-width: 120px;
+                font-size: 10px;
+            }
+
+            .mobile-table-wrap .channel-pair {
+                display: flex;
+                flex-direction: column;
+                gap: 3px;
+            }
+
+            .mobile-table-wrap .channel-pair > span {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+            }
+
+            .mobile-table-wrap .channel-pair .channel-icon {
+                margin: 0;
+                flex: 0 0 auto;
+                width: 13px;
+                height: 13px;
+            }
+
+            .mobile-table-wrap .response-time {
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+        }
+
+        .mobile-table-wrap {
+            display: none;
+        }
+
+        .delivery-status {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .delivery-status.delivered,
+        .delivery-status.read {
+            color: var(--green);
+        }
+
+        .delivery-status.failed {
+            color: var(--red);
+        }
+
+        .delivery-status.submitted,
+        .delivery-status.queued {
+            color: var(--amber);
+        }
+
+        .comment-details summary {
+            color: var(--elive-blue);
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .comment-details p {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            margin: 6px 0 0;
+            font-weight: 400;
+        }
+
+        @media (max-width: 760px) {
+            .desktop-table-wrap {
+                display: none;
+            }
+
+            .mobile-table-wrap {
+                display: block;
+                overflow-x: auto;
+            }
+
+            .mobile-table-wrap table {
+                width: 100%;
+                min-width: 0;
+                table-layout: fixed;
+            }
+
+            .mobile-table-wrap th,
+            .mobile-table-wrap td {
+                padding: 9px 5px;
+                font-size: 11px;
+                overflow-wrap: anywhere;
+                vertical-align: top;
+            }
+
+            .mobile-table-wrap th {
+                font-size: 10px;
+                letter-spacing: 0;
+                text-transform: none;
+            }
+
+            .mobile-table-wrap .name {
+                font-size: 11px;
+                font-weight: 700;
+            }
+
+            .mobile-table-wrap .delivery-status {
+                font-size: 10px;
+                white-space: normal;
+            }
+
+            .mobile-table-wrap .subtle {
+                font-size: 10px;
+            }
+
+            .mobile-table-wrap details summary {
+                min-height: 36px;
+                cursor: pointer;
+                padding-top: 4px;
+                color: var(--elive-blue);
+                font-size: 10px;
+            }
+
+            .mobile-table-wrap .mobile-extra {
+                margin-top: 8px;
+                font-size: 11px;
+                line-height: 1.6;
+                overflow-wrap: anywhere;
+            }
+        }
+
         @media (max-width: 1050px) {
             .stats {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -413,14 +616,13 @@
         $showCommentColumn = (bool) ($visibleFields['comment'] ?? false);
 
         $visibleColumnCount =
-            3
+            7
             + ($showPhoneNumbers ? 1 : 0)
             + ($showCardTypeColumn ? 1 : 0)
             + ($showCategoryColumn ? 1 : 0)
             + ($showTableColumn ? 1 : 0)
             + ($showGuestsColumn ? 1 : 0)
-            + ($showResponseDateColumn ? 1 : 0)
-            + ($showCommentColumn ? 1 : 0);
+;
     @endphp
     <main class="page">
         <section class="hero">
@@ -542,42 +744,42 @@
                 </div>
             </form>
 
-            <div class="table-wrap">
+            <div class="table-wrap desktop-table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>#</th>
-                            <th>Invitee</th>
+                            <th rowspan="2">#</th>
+                            <th rowspan="2">Invitee</th>
 
                             @if ($showPhoneNumbers)
-                                <th>Phone</th>
+                                <th rowspan="2">Phone</th>
                             @endif
 
                             @if ($showCardTypeColumn)
-                                <th>Card Type</th>
+                                <th rowspan="2">Card Type</th>
                             @endif
 
                             @if ($showCategoryColumn)
-                                <th>Category</th>
+                                <th rowspan="2">Category</th>
                             @endif
 
                             @if ($showTableColumn)
-                                <th>Table</th>
+                                <th rowspan="2">Table</th>
                             @endif
 
                             @if ($showGuestsColumn)
-                                <th>Guests</th>
+                                <th rowspan="2">Guests</th>
                             @endif
 
-                            <th>RSVP</th>
+                            <th rowspan="2">RSVP</th>
+                            <th colspan="2" scope="colgroup" class="channel-heading">CHANNEL</th>
 
-                            @if ($showResponseDateColumn)
-                                <th>Response Date</th>
-                            @endif
-
-                            @if ($showCommentColumn)
-                                <th>Comment</th>
-                            @endif
+                            <th rowspan="2">WhatsApp Reply</th>
+                            <th rowspan="2">Response Time</th>
+                        </tr>
+                        <tr>
+                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg></th>
+                            <th scope="col" class="channel-icon-heading"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="m3.5 7 8.5 6 8.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></th>
                         </tr>
                     </thead>
 
@@ -645,22 +847,13 @@
                                     </span>
                                 </td>
 
-                                @if ($showResponseDateColumn)
-                                    <td>
-                                        {{ $invitee->rsvp_confirmed_at?->format('d M Y H:i') ?? '—' }}
-                                    </td>
-                                @endif
+                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></td>
+                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></td>
 
-                                @if ($showCommentColumn)
-                                    <td>
-                                        <div
-                                            class="comment"
-                                            title="{{ $invitee->last_reply_message ?: 'No comment' }}"
-                                        >
-                                            {{ $invitee->last_reply_message ?: '—' }}
-                                        </div>
-                                    </td>
-                                @endif
+                                <td>
+                                    <div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div>
+                                </td>
+                                <td class="response-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i') ?? '—' }}</td>
                             </tr>
                         @empty
                             <tr>
@@ -670,6 +863,51 @@
                                     </div>
                                 </td>
                             </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mobile-table-wrap">
+                <table aria-label="Compact invitee RSVP, channel, reply and response time report">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="mobile-row-number">#</th>
+                            <th style="width:24%">Invitee</th>
+                            <th style="width:17%">RSVP</th>
+                            <th style="width:22%">CHANNEL</th>
+                            <th style="width:19%"><span class="reply-column-label"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg> Reply</span></th>
+                            <th style="width:12%">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse ($invitees as $invitee)
+                            @php
+                                $mobileRsvp = $invitee->rsvp_status ?: 'pending';
+                                $mobileStatus = match ($mobileRsvp) {
+                                    'attending' => 'attending',
+                                    'not_attending', 'declined' => 'not-attending',
+                                    default => 'pending',
+                                };
+                            @endphp
+                            <tr>
+                                <td class="mobile-row-number">{{ $invitees->firstItem() + $loop->index }}</td>
+                                <td>
+                                    <div class="name">{{ $invitee->name }}</div>
+                                    <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
+                                </td>
+                                <td><span class="delivery-status {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span></td>
+                                <td>
+                                    <div class="channel-pair">
+                                        <span><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span></span>
+                                        <span><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="m3.5 7 8.5 6 8.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span></span>
+                                    </div>
+                                </td>
+                                <td><div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div></td>
+                                <td class="response-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M H:i') ?? '—' }}</td>
+                            </tr>
+                        @empty
+                            <tr><td colspan="6">No invitees match the selected filters.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

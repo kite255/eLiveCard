@@ -93,17 +93,17 @@ class PublicRsvpReportController extends Controller
                     $query->where(function (Builder $query) use ($like, $showPhoneNumbers): void {
                         $query
                             ->whereRaw(
-                                "LOWER(COALESCE(name, '')) LIKE ? ESCAPE '\\'",
+                                "LOWER(COALESCE(name, '')) LIKE ? ESCAPE '!'",
                                 [$like]
                             )
                             ->orWhereRaw(
-                                "LOWER(COALESCE(category, '')) LIKE ? ESCAPE '\\'",
+                                "LOWER(COALESCE(category, '')) LIKE ? ESCAPE '!'",
                                 [$like]
                             );
 
                         if ($showPhoneNumbers) {
                             $query->orWhereRaw(
-                                "LOWER(COALESCE(phone, '')) LIKE ? ESCAPE '\\'",
+                                "LOWER(COALESCE(phone, '')) LIKE ? ESCAPE '!'",
                                 [$like]
                             );
                         }
@@ -138,6 +138,67 @@ class PublicRsvpReportController extends Controller
             ->orderBy('name')
             ->paginate(self::PER_PAGE)
             ->withQueryString();
+
+        // Retrieve only invitation delivery records for the invitees on this page.
+        // Batch queries avoid an additional query for every invitee.
+        $inviteeIds = $invitees->getCollection()->pluck('id')->all();
+        $deliveryStatuses = [];
+
+        foreach ($inviteeIds as $id) {
+            $deliveryStatuses[$id] = [
+                'whatsapp' => 'Not Sent',
+                'sms' => 'Not Sent',
+            ];
+        }
+
+        if ($inviteeIds !== [] && Schema::hasTable('message_logs')) {
+            $latestWhatsApp = \Illuminate\Support\Facades\DB::table('message_logs')
+                ->where('event_id', $event->id)
+                ->whereIn('invitee_id', $inviteeIds)
+                ->where('channel', 'whatsapp')
+                ->where('type', 'invitation')
+                ->orderByDesc('id')
+                ->get(['invitee_id', 'status'])
+                ->unique('invitee_id');
+
+            foreach ($latestWhatsApp as $log) {
+                $deliveryStatuses[$log->invitee_id]['whatsapp'] =
+                    $this->deliveryLabel($log->status);
+            }
+        }
+
+        // SMS logs have their own invitation type. Fall back to message_logs
+        // for installations where the dedicated SMS table has no records.
+        if ($inviteeIds !== [] && Schema::hasTable('message_logs')) {
+            $latestSmsMessages = \Illuminate\Support\Facades\DB::table('message_logs')
+                ->where('event_id', $event->id)
+                ->whereIn('invitee_id', $inviteeIds)
+                ->where('channel', 'sms')
+                ->where('type', 'invitation')
+                ->orderByDesc('id')
+                ->get(['invitee_id', 'status'])
+                ->unique('invitee_id');
+
+            foreach ($latestSmsMessages as $log) {
+                $deliveryStatuses[$log->invitee_id]['sms'] =
+                    $this->deliveryLabel($log->status);
+            }
+        }
+
+        if ($inviteeIds !== [] && Schema::hasTable('sms_logs')) {
+            $latestSms = \Illuminate\Support\Facades\DB::table('sms_logs')
+                ->where('event_id', $event->id)
+                ->whereIn('invitee_id', $inviteeIds)
+                ->whereIn('sms_type', ['invitation', 'invitation_card'])
+                ->orderByDesc('id')
+                ->get(['invitee_id', 'status'])
+                ->unique('invitee_id');
+
+            foreach ($latestSms as $log) {
+                $deliveryStatuses[$log->invitee_id]['sms'] =
+                    $this->deliveryLabel($log->status);
+            }
+        }
 
         $stats = $event->invitees()
             ->selectRaw('COUNT(*) AS total')
@@ -241,7 +302,21 @@ class PublicRsvpReportController extends Controller
             'status' => $status,
             'showPhoneNumbers' => $showPhoneNumbers,
             'visibleFields' => $visibleFields,
+            'deliveryStatuses' => $deliveryStatuses,
         ]);
+    }
+
+    private function deliveryLabel(?string $status): string
+    {
+        return match (strtolower(trim((string) $status))) {
+            'delivered' => 'Delivered',
+            'read' => 'Read',
+            'failed', 'undelivered', 'expired', 'rejected' => 'Failed',
+            'queued', 'pending', 'sending' => 'Queued',
+            'submitted', 'accepted', 'sent', 'success' => 'Submitted',
+            'logged' => 'Logged Only',
+            default => 'Unknown',
+        };
     }
 
     private function eventUsesGuestCounts(Event $event): bool
@@ -290,8 +365,8 @@ class PublicRsvpReportController extends Controller
     private function escapeLikeTerm(string $value): string
     {
         return str_replace(
-            ['\\', '%', '_'],
-            ['\\\\', '\\%', '\\_'],
+            ['!', '%', '_'],
+            ['!!', '!%', '!_'],
             $value
         );
     }

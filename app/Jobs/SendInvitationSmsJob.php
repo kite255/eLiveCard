@@ -217,9 +217,11 @@ class SendInvitationSmsJob implements ShouldQueue
             AuditLogService::messageSent(
                 subject: $freshInvitee,
                 eventId: $event->id,
-                description: $status === 'logged'
-                    ? 'Invitation SMS was processed using the log driver.'
-                    : 'Invitation SMS was sent successfully.',
+                description: match (strtolower($status)) {
+                    'logged' => 'Invitation SMS was processed using the log driver.',
+                    'delivered' => 'Invitation SMS delivery was confirmed by the provider.',
+                    default => 'Invitation SMS was submitted to the SMS provider; delivery is not yet confirmed.',
+                },
                 oldValues: $oldValues,
                 newValues: $freshInvitee->only([
                     'message_status',

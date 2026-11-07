@@ -32,6 +32,9 @@ class AutomaticThankYouSmsTest extends TestCase
 
     public function test_automatic_mode_sends_once_to_checked_in_guests(): void
     {
+        // Freeze time away from midnight so event-day calculations are deterministic.
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07 12:00:00', 'Africa/Dar_es_Salaam'));
+
         $event = $this->makeEvent('automatic');
         $this->makeTemplate($event);
         $included = $this->makeInvitee($event, 'Checked In', 1);
