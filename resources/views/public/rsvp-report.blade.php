@@ -747,6 +747,14 @@
             }
             .mobile-rsvp-empty { text-align: center; padding: 30px 12px; color: var(--muted); }
         }
+
+        .live-search-status {
+            min-height: 1.25em;
+            margin: 0 14px 8px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+        #rsvp-live-results[aria-busy="true"] { opacity: .65; }
     </style>
 </head>
 
@@ -859,10 +867,13 @@
                 </div>
             </div>
 
-            <form method="GET" action="{{ request()->url() }}" class="filters">
+            <form method="GET" action="{{ request()->url() }}" class="filters" id="rsvp-report-filters" role="search">
                 <input
                     type="search"
                     name="search"
+                    id="rsvp-live-search"
+                    aria-label="Search invitees"
+                    autocomplete="off"
                     value="{{ $search }}"
                     class="input"
                     placeholder="{{ $showPhoneNumbers ? 'Search name, phone, category, card type or table' : 'Search name, category, card type or table' }}"
@@ -903,13 +914,13 @@
                 <div style="display:flex; gap:8px;">
                     <button type="submit" class="button">Apply Filters</button>
 
-                    @if ($search !== '' || $status !== '' || $smsDelivery !== '' || $whatsappDelivery !== '')
-                        <a href="{{ request()->url() }}" class="button secondary">
-                            Clear
-                        </a>
-                    @endif
+                    <a id="rsvp-clear-filters" href="{{ request()->url() }}" class="button secondary" @if ($search === '' && $status === '' && $smsDelivery === '' && $whatsappDelivery === '') hidden @endif>
+                        Clear
+                    </a>
                 </div>
             </form>
+            <p id="rsvp-live-status" class="live-search-status" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div id="rsvp-live-results">
 
             <div class="table-wrap desktop-table-wrap">
                 <table>
@@ -1115,7 +1126,122 @@
                     </div>
                 </nav>
             @endif
+            </div>
         </section>
     </main>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('rsvp-report-filters');
+    const search = document.getElementById('rsvp-live-search');
+    const results = document.getElementById('rsvp-live-results');
+    const notice = document.getElementById('rsvp-live-status');
+
+    if (!form || !search || !results || !notice || !window.fetch || !window.AbortController) {
+        return;
+    }
+
+    let debounceTimer;
+    let activeRequest;
+    let generation = 0;
+
+    const valuesUrl = () => {
+        const url = new URL(form.action, window.location.href);
+        const values = new FormData(form);
+        for (const [name, value] of values.entries()) {
+            if (typeof value === 'string' && value.trim() !== '') {
+                url.searchParams.set(name, value.trim());
+            }
+        }
+        return url;
+    };
+
+    const cancelPending = () => {
+        clearTimeout(debounceTimer);
+        generation += 1;
+        if (activeRequest) {
+            activeRequest.abort();
+            activeRequest = null;
+        }
+    };
+
+    const load = async (url, historyMode = 'replace') => {
+        cancelPending();
+        const thisGeneration = generation;
+        activeRequest = new AbortController();
+        const signal = activeRequest.signal;
+        results.setAttribute('aria-busy', 'true');
+        notice.textContent = 'Searching invitees…';
+
+        try {
+            const response = await fetch(url.toString(), {
+                signal,
+                headers: { 'Accept': 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+            if (!response.ok) throw new Error('Search request failed');
+            const html = await response.text();
+            if (signal.aborted || thisGeneration !== generation) return;
+            const documentResult = new DOMParser().parseFromString(html, 'text/html');
+            const updated = documentResult.getElementById('rsvp-live-results');
+            if (!updated) throw new Error('Search results missing');
+            results.innerHTML = updated.innerHTML;
+            if (historyMode === 'push') {
+                window.history.pushState(null, '', url);
+            } else if (historyMode === 'replace') {
+                window.history.replaceState(null, '', url);
+            }
+            // Clear link is outside the results region; keep it synchronized.
+            const nextClear = documentResult.querySelector('#rsvp-clear-filters');
+            const currentClear = document.getElementById('rsvp-clear-filters');
+            if (currentClear && nextClear) currentClear.hidden = nextClear.hidden;
+            notice.textContent = '';
+        } catch (error) {
+            if (!signal.aborted && thisGeneration === generation) {
+                notice.textContent = 'Unable to update results. Press Apply Filters to try again.';
+            }
+        } finally {
+            if (thisGeneration === generation) {
+                results.removeAttribute('aria-busy');
+                activeRequest = null;
+            }
+        }
+    };
+
+    const schedule = () => {
+        cancelPending();
+        debounceTimer = setTimeout(() => load(valuesUrl()), 450);
+    };
+
+    search.addEventListener('input', schedule);
+
+    for (const select of form.querySelectorAll('select[name]')) {
+        select.addEventListener('change', () => load(valuesUrl()));
+    }
+
+    form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        load(valuesUrl());
+    });
+
+    results.addEventListener('click', (event) => {
+        const link = event.target.closest('a[href]');
+        if (!link || !link.closest('.pagination') || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        event.preventDefault();
+        load(new URL(link.href, window.location.href), 'push');
+    });
+
+    window.addEventListener('popstate', () => {
+        const params = new URLSearchParams(window.location.search);
+        for (const field of form.querySelectorAll('[name]')) {
+            field.value = params.get(field.name) || '';
+        }
+        load(new URL(window.location.href), 'none');
+    });
+});
+</script>
 </body>
 </html>
