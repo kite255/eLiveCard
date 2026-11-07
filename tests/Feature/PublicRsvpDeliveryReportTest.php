@@ -369,7 +369,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         }
 
         $queries = [];
-        \Illuminate\\Support\Facades\\DB::listen(function (\Illuminate\Database\Events\\QueryExecuted $query) use (&$queries): void {
+        \Illuminate\Support\Facades\DB::listen(function (\Illuminate\Database\Events\QueryExecuted $query) use (&$queries): void {
             if (str_contains($query->sql, 'LOWER(COALESCE(name')) {
                 $queries[] = ['sql' => $query->sql, 'bindings' => $query->bindings];
             }
