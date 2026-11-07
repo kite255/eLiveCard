@@ -552,6 +552,18 @@ class InviteesRelationManager extends RelationManager
                     })
                     ->wrap(),
 
+                Tables\Columns\TextColumn::make('sms_delivery_status')
+                    ->label('SMS Delivery')
+                    ->state(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                        ->forInvitee($record)['label'])
+                    ->description(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                        ->forInvitee($record)['description'])
+                    ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                        ->forInvitee($record)['color'])
+                    ->badge()
+                    ->wrap()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('sms_status')
                     ->label('SMS Status')
                     ->badge()
@@ -1673,6 +1685,40 @@ class InviteesRelationManager extends RelationManager
                                 default => $notice->danger(),
                             };
                             $notice->send();
+                        }),
+
+                    Tables\Actions\Action::make('refresh_sms_delivery')
+                        ->label('Refresh SMS Delivery Status')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('info')
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner())
+                        ->requiresConfirmation()
+                        ->modalHeading('Check SMS provider delivery report')
+                        ->modalDescription('Fetch the latest available provider delivery report for this invitee. Submitted does not mean delivered, and no provider response will remain unverified.')
+                        ->action(function (Invitee $record): void {
+                            abort_unless($this->canSendMessagesForOwner(), 403);
+                            $service = app(\App\Services\InvitationSmsDeliveryStatusService::class);
+                            $state = $service->forInvitee($record);
+                            $log = $state['log'];
+
+                            if (! $log || blank($log->provider_message_id)) {
+                                $this->brandedNotification()
+                                    ->title('eLive Card • SMS status unverified')
+                                    ->body('No provider reference exists for this invitation. Cannot verify delivery from the SMS provider.')
+                                    ->warning()->send();
+                                return;
+                            }
+
+                            $result = app(\App\Services\SmsService::class)
+                                ->refreshDeliveryReport((string) $log->provider_message_id);
+                            $fresh = $service->forInvitee($record->fresh());
+                            $this->brandedNotification()
+                                ->title('eLive Card • SMS delivery: '.$fresh['label'])
+                                ->body(($result['success'] ?? false)
+                                    ? $fresh['description']
+                                    : 'Provider report could not be verified. '.$fresh['description'])
+                                ->color(($result['success'] ?? false) ? 'success' : 'warning')
+                                ->persistent()->send();
                         }),
 
                     ])->dropdown(false),
