@@ -942,6 +942,37 @@
                         </a>
                     @endif
                 @endif
+
+                @if ($canManageEvent)
+                    <div
+                        x-data="{
+                            scannerUrl: @js(route('gate.check-in.show', ['event' => $event->getKey()])),
+                            copied: false,
+                            async copyScanner() {
+                                try {
+                                    await navigator.clipboard.writeText(this.scannerUrl);
+                                    this.copied = true;
+                                } catch (error) {
+                                    window.prompt('Copy the event scanner link:', this.scannerUrl);
+                                }
+                            },
+                            shareScanner() {
+                                const message = 'eLive Card Gate Scanner - ' + @js($event->title) + '\\n' + this.scannerUrl + '\\nSign in with your assigned gate officer account.';
+                                window.open('https://wa.me/?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
+                            }
+                        }"
+                        style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"
+                    >
+                        <button type="button" class="elive-action-button" x-on:click="copyScanner()">
+                            @svg('heroicon-o-clipboard-document')
+                            <span x-text="copied ? 'Link Copied' : 'Copy Scanner Link'"></span>
+                        </button>
+                        <button type="button" class="elive-action-button elive-action-success" x-on:click="shareScanner()">
+                            @svg('heroicon-o-share')
+                            Share Scanner
+                        </button>
+                    </div>
+                @endif
             </div>
         </section>
 
