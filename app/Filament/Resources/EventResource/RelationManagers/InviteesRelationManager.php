@@ -1623,8 +1623,8 @@ class InviteesRelationManager extends RelationManager
                         ->color('success')
                         ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
                         ->modalHeading(fn (Invitee $record): string => 'Send WhatsApp invitation to '.$record->name)
-                        ->modalDescription('Uses the active WhatsApp invitation template selected in Event Settings. Previously sent invitations will not be resent.')
-                        ->modalSubmitActionLabel('Queue WhatsApp Invitation')
+                        ->modalDescription('Sends this invitation immediately using the WhatsApp template selected in Event Settings. The provider response will appear after submission; accepted does not mean delivered. Previously submitted invitations will not be resent.')
+                        ->modalSubmitActionLabel('Send WhatsApp Now')
                         ->requiresConfirmation()
                         ->form([
                             Forms\Components\Placeholder::make('whatsapp_template_preview')
@@ -1639,8 +1639,8 @@ class InviteesRelationManager extends RelationManager
                         ->color('primary')
                         ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
                         ->modalHeading(fn (Invitee $record): string => 'Send SMS invitation to '.$record->name)
-                        ->modalDescription('Uses the active SMS Invitation template. Already sent or queued invitations are skipped.')
-                        ->modalSubmitActionLabel('Queue SMS Invitation')
+                        ->modalDescription('Sends this invitation immediately using the active SMS Invitation template. The provider response will appear after submission; accepted does not mean delivered. Already sent or pending invitations are skipped.')
+                        ->modalSubmitActionLabel('Send SMS Now')
                         ->requiresConfirmation()
                         ->form([
                             Forms\Components\Placeholder::make('sms_invitation_preview')
