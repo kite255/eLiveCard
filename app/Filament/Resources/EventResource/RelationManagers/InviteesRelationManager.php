@@ -1060,54 +1060,33 @@ class InviteesRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\Action::make('send_message')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Send SMS')
-                        ->icon('heroicon-o-paper-airplane')
-                        ->color('primary')
-                        ->modalHeading('Send SMS Message')
-                        ->modalDescription('Choose the SMS message option and recipients.')
-                        ->modalSubmitActionLabel('Send SMS')
-                        ->form([
-                            Forms\Components\Select::make('template_type')
-                                ->label('Message Option')
-                                ->options([
-                                    'invitation' => 'Invitation SMS',
-                                    'card_link' => 'Card Link SMS',
-                                    'custom' => 'Custom SMS',
-                                ])
-                                ->default('invitation')
-                                ->required(),
-
-                            Forms\Components\Select::make('recipient_scope')
-                                ->label('Send To')
-                                ->options([
-                                    'not_sent' => 'Invitees Not Yet Sent',
-                                    'all_active' => 'All Active Invitees',
-                                    'pending_rsvp' => 'Pending RSVP Invitees',
-                                    'attending' => 'Attending Invitees',
-                                    'failed_sms' => 'Failed SMS Invitees',
-                                ])
-                                ->default('not_sent')
-                                ->required(),
-
-                            Forms\Components\Placeholder::make('note')
-                                ->label('Template Source')
-                                ->content('The system will use the active SMS template from the Message Templates tab.'),
-                        ])
-                        ->requiresConfirmation()
-                        ->action(function (array $data): void {
-                            $templateType = match ($data['template_type']) {
-                                'card_link' => 'invitation',
-                                default => $data['template_type'],
-                            };
-
-                            $this->sendEventMessagesFromToolbar(
-                                channel: 'sms',
-                                templateType: $templateType,
-                                recipientScope: $data['recipient_scope'],
-                                actionTitle: 'SMS messages processed',
-                            );
-                        }),
+                    ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                    ->label('Send SMS Invitations')
+                    ->icon('heroicon-o-envelope')
+                    ->color('primary')
+                    ->modalHeading('Send SMS Invitations')
+                    ->modalDescription('Uses the active SMS Invitation template. Already sent invitations are skipped by the delivery job.')
+                    ->modalSubmitActionLabel('Queue SMS Invitations')
+                    ->form([
+                        Forms\Components\Select::make('recipient_scope')
+                            ->label('Recipients')
+                            ->options([
+                                'not_sent' => 'Invitees Not Yet Sent',
+                                'all_active' => 'All Active Invitees',
+                                'pending_rsvp' => 'Pending RSVP Invitees',
+                                'attending' => 'Attending Invitees',
+                                'failed_sms' => 'Failed SMS Invitees',
+                            ])
+                            ->default('not_sent')
+                            ->required(),
+                    ])
+                    ->requiresConfirmation()
+                    ->action(fn (array $data) => $this->sendEventMessagesFromToolbar(
+                        channel: 'sms',
+                        templateType: MessageTemplate::TYPE_INVITATION,
+                        recipientScope: $data['recipient_scope'],
+                        actionTitle: 'SMS invitations processed',
+                    )),
 
                     Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
