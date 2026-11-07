@@ -81,6 +81,75 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('255700000001');
     }
 
+    public function test_shared_rsvp_displays_actual_channel_status_times_on_desktop_and_mobile(): void
+    {
+        $event = $this->reportEvent('Timestamped RSVP Report');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Timestamp Guest',
+            'phone' => '255700000012',
+        ]);
+
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'phone' => $invitee->phone,
+            'sms_type' => 'invitation_card',
+            'message' => 'Invitation',
+            'status' => 'delivered',
+            'sent_at' => '2026-11-07 19:18:00',
+            'delivered_at' => '2026-11-07 19:44:00',
+            'delivery_report_checked_at' => '2026-11-07 20:11:13',
+        ]);
+
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'delivered',
+            'sent_at' => '2026-11-07 19:20:00',
+            'delivered_at' => '2026-11-07 19:45:00',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertViewHas('deliveryTimes', fn (array $times): bool =>
+                $times[$invitee->id]['sms'] === '07 Nov 2026 19:44'
+                && $times[$invitee->id]['whatsapp'] === '07 Nov 2026 19:45'
+            )
+            ->assertSee('07 Nov 2026 19:44')
+            ->assertSee('07 Nov 2026 19:45')
+            ->assertDontSee('07 Nov 2026 20:11');
+    }
+
+    public function test_shared_rsvp_omits_missing_status_timestamps(): void
+    {
+        $event = $this->reportEvent('No Timestamps');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'No Timestamp Guest',
+            'phone' => '255700000013',
+        ]);
+
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'sent',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertViewHas('deliveryTimes', fn (array $times): bool =>
+                $times[$invitee->id]['sms'] === null
+                && $times[$invitee->id]['whatsapp'] === null
+            );
+    }
+
     public function test_uncontacted_invitee_is_not_misrepresented_as_delivered(): void
     {
         $event = Event::query()->create([

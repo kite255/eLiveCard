@@ -159,8 +159,10 @@ class PublicRsvpReportController extends Controller
         // Batch queries avoid an additional query for every invitee.
         $inviteeIds = $invitees->getCollection()->pluck('id')->all();
         $deliveryStatuses = [];
+        $deliveryTimes = [];
 
         foreach ($inviteeIds as $id) {
+            $deliveryTimes[$id] = ['whatsapp' => null, 'sms' => null];
             $deliveryStatuses[$id] = [
                 'whatsapp' => 'Not Sent',
                 'sms' => 'Not Sent',
@@ -168,18 +170,23 @@ class PublicRsvpReportController extends Controller
         }
 
         if ($inviteeIds !== [] && Schema::hasTable('message_logs')) {
+            $messageTimeColumns = array_values(array_intersect(
+                ['sent_at', 'delivered_at', 'read_at', 'failed_at'],
+                Schema::getColumnListing('message_logs')
+            ));
             $latestWhatsApp = \Illuminate\Support\Facades\DB::table('message_logs')
                 ->where('event_id', $event->id)
                 ->whereIn('invitee_id', $inviteeIds)
                 ->where('channel', 'whatsapp')
                 ->where('type', 'invitation')
                 ->orderByDesc('id')
-                ->get(['invitee_id', 'status'])
+                ->get(array_merge(['invitee_id', 'status'], $messageTimeColumns))
                 ->unique('invitee_id');
 
             foreach ($latestWhatsApp as $log) {
                 $deliveryStatuses[$log->invitee_id]['whatsapp'] =
                     $this->deliveryLabel($log->status);
+                $deliveryTimes[$log->invitee_id]['whatsapp'] = $this->deliveryTime($log);
             }
         }
 
@@ -192,12 +199,16 @@ class PublicRsvpReportController extends Controller
                 ->where('channel', 'sms')
                 ->where('type', 'invitation')
                 ->orderByDesc('id')
-                ->get(['invitee_id', 'status'])
+                ->get(array_merge(['invitee_id', 'status'], array_values(array_intersect(
+                    ['sent_at', 'delivered_at', 'read_at', 'failed_at'],
+                    Schema::getColumnListing('message_logs')
+                ))))
                 ->unique('invitee_id');
 
             foreach ($latestSmsMessages as $log) {
                 $deliveryStatuses[$log->invitee_id]['sms'] =
                     $this->deliveryLabel($log->status);
+                $deliveryTimes[$log->invitee_id]['sms'] = $this->deliveryTime($log);
             }
         }
 
@@ -207,12 +218,13 @@ class PublicRsvpReportController extends Controller
                 ->whereIn('invitee_id', $inviteeIds)
                 ->whereIn('sms_type', ['invitation', 'invitation_card'])
                 ->orderByDesc('id')
-                ->get(['invitee_id', 'status'])
+                ->get(['invitee_id', 'status', 'sent_at', 'delivered_at', 'failed_at'])
                 ->unique('invitee_id');
 
             foreach ($latestSms as $log) {
                 $deliveryStatuses[$log->invitee_id]['sms'] =
                     $this->deliveryLabel($log->status);
+                $deliveryTimes[$log->invitee_id]['sms'] = $this->deliveryTime($log);
             }
         }
 
@@ -321,6 +333,7 @@ class PublicRsvpReportController extends Controller
             'showPhoneNumbers' => $showPhoneNumbers,
             'visibleFields' => $visibleFields,
             'deliveryStatuses' => $deliveryStatuses,
+            'deliveryTimes' => $deliveryTimes,
         ]);
     }
 
@@ -365,6 +378,30 @@ class PublicRsvpReportController extends Controller
         END";
 
         return $query->whereRaw("({$sql}) = ?", [$wanted]);
+    }
+
+    /**
+     * Return the timestamp for the recorded delivery state, not the last polling
+     * time or an unrelated reminder. Do not invent a time from created_at.
+     */
+    private function deliveryTime(object $log): ?string
+    {
+        $label = $this->deliveryLabel($log->status ?? null);
+        $field = match ($label) {
+            'Read' => 'read_at',
+            'Delivered' => 'delivered_at',
+            'Failed' => 'failed_at',
+            'Submitted' => 'sent_at',
+            default => null,
+        };
+
+        if ($field === null || empty($log->{$field})) {
+            return null;
+        }
+
+        return \Illuminate\Support\Carbon::parse($log->{$field})
+            ->timezone('Africa/Dar_es_Salaam')
+            ->format('d M Y H:i');
     }
 
     private function deliveryLabel(?string $status): string
