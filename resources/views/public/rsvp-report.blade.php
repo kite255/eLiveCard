@@ -650,6 +650,103 @@
                 padding: 16px;
             }
         }
+
+        /* Phone-only invitee cards: do not squeeze delivery status into a table column. */
+        .mobile-rsvp-cards { display: none; }
+
+        @media (max-width: 760px) {
+            .mobile-table-wrap { display: none; }
+            .mobile-rsvp-cards {
+                display: grid;
+                gap: 12px;
+                padding: 12px;
+            }
+            .mobile-rsvp-card {
+                min-width: 0;
+                background: #fff;
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 14px;
+            }
+            .mobile-card-top {
+                display: flex;
+                gap: 10px;
+                align-items: flex-start;
+                justify-content: space-between;
+            }
+            .mobile-card-identity { min-width: 0; flex: 1; }
+            .mobile-card-identity .name { font-size: 13px; overflow-wrap: anywhere; }
+            .mobile-card-identity .subtle { font-size: 11px; }
+            .mobile-card-number { font-variant-numeric: tabular-nums; color: var(--muted); }
+            .mobile-card-top .badge { flex: 0 0 auto; font-size: 10px; }
+            .mobile-card-channels {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                margin-top: 12px;
+            }
+            .mobile-channel {
+                min-width: 0;
+                padding: 10px;
+                border-radius: 9px;
+                background: var(--bg);
+            }
+            .mobile-channel-heading {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                font-weight: 800;
+                margin-bottom: 8px;
+            }
+            .mobile-channel-heading .channel-icon {
+                width: 16px;
+                height: 16px;
+                margin: 0;
+                flex: 0 0 auto;
+            }
+            .mobile-channel .delivery-status {
+                display: inline-block;
+                font-size: 12px;
+                white-space: nowrap;
+                overflow-wrap: normal;
+            }
+            .mobile-channel-time {
+                display: block;
+                margin-top: 5px;
+                color: var(--muted);
+                font-size: 10px;
+                line-height: 1.5;
+                font-variant-numeric: tabular-nums;
+            }
+            .mobile-card-bottom {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                gap: 12px;
+                padding-top: 12px;
+                margin-top: 12px;
+                border-top: 1px solid var(--border);
+            }
+            .mobile-card-bottom > div { min-width: 0; }
+            .mobile-card-label {
+                display: block;
+                color: var(--muted);
+                font-size: 10px;
+                font-weight: 700;
+                margin-bottom: 4px;
+            }
+            .mobile-card-reply {
+                font-size: 12px;
+                line-height: 1.4;
+                overflow-wrap: anywhere;
+            }
+            .mobile-card-rsvp-time {
+                font-size: 11px;
+                font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+            }
+            .mobile-rsvp-empty { text-align: center; padding: 30px 12px; color: var(--muted); }
+        }
     </style>
 </head>
 
@@ -938,49 +1035,62 @@
                 </table>
             </div>
 
-            <div class="mobile-table-wrap">
-                <table aria-label="Compact invitee RSVP, channel, reply and response time report">
-                    <thead>
-                        <tr>
-                            <th scope="col" class="mobile-row-number">#</th>
-                            <th style="width:24%">Invitee</th>
-                            <th style="width:17%">RSVP</th>
-                            <th style="width:22%">CHANNEL</th>
-                            <th style="width:19%"><span class="reply-column-label"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg> Reply</span></th>
-                            <th style="width:12%">Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @forelse ($invitees as $invitee)
-                            @php
-                                $mobileRsvp = $invitee->rsvp_status ?: 'pending';
-                                $mobileStatus = match ($mobileRsvp) {
-                                    'attending' => 'attending',
-                                    'not_attending', 'declined' => 'not-attending',
-                                    default => 'pending',
-                                };
-                            @endphp
-                            <tr>
-                                <td class="mobile-row-number">{{ $invitees->firstItem() + $loop->index }}</td>
-                                <td>
-                                    <div class="name">{{ $invitee->name }}</div>
-                                    <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
-                                </td>
-                                <td><span class="delivery-status {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span></td>
-                                <td>
-                                    <div class="channel-pair">
-                                        <span><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span>@if ($deliveryTimes[$invitee->id]['whatsapp'] ?? null)<span class="subtle"> {{ $deliveryTimes[$invitee->id]['whatsapp'] }}</span>@endif</span>
-                                        <span><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="m3.5 7 8.5 6 8.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span>@if ($deliveryTimes[$invitee->id]['sms'] ?? null)<span class="subtle"> {{ $deliveryTimes[$invitee->id]['sms'] }}</span>@endif</span>
-                                    </div>
-                                </td>
-                                <td><div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div></td>
-                                <td class="response-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M H:i') ?? '—' }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="6">No invitees match the selected filters.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+            <div class="mobile-rsvp-cards" aria-label="Compact invitee RSVP, channel, reply and response time report">
+                @forelse ($invitees as $invitee)
+                    @php
+                        $mobileRsvp = $invitee->rsvp_status ?: 'pending';
+                        $mobileStatus = match ($mobileRsvp) {
+                            'attending' => 'attending',
+                            'not_attending', 'declined' => 'not-attending',
+                            default => 'pending',
+                        };
+                        $whatsappTime = $deliveryTimes[$invitee->id]['whatsapp'] ?? null;
+                        $smsTime = $deliveryTimes[$invitee->id]['sms'] ?? null;
+                    @endphp
+                    <article class="mobile-rsvp-card" aria-label="Invitee {{ $invitee->name }}">
+                        <div class="mobile-card-top">
+                            <div class="mobile-card-identity">
+                                <div class="name"><span class="mobile-card-number">{{ $invitees->firstItem() + $loop->index }}.</span> {{ $invitee->name }}</div>
+                                <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
+                            </div>
+                            <span class="badge {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span>
+                        </div>
+                        <div class="mobile-card-channels">
+                            <div class="mobile-channel">
+                                <div class="mobile-channel-heading">
+                                    <svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg>
+                                    WhatsApp
+                                </div>
+                                <span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span>
+                                @if ($whatsappTime)
+                                    <time class="mobile-channel-time">{{ \Illuminate\Support\Carbon::createFromFormat('d M Y H:i', $whatsappTime)->format('d M Y') }}<br>{{ \Illuminate\Support\Carbon::createFromFormat('d M Y H:i', $whatsappTime)->format('H:i') }}</time>
+                                @endif
+                            </div>
+                            <div class="mobile-channel">
+                                <div class="mobile-channel-heading">
+                                    <svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><title>SMS</title><rect x="2.5" y="5" width="19" height="14" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="m3.5 7 8.5 6 8.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                    SMS
+                                </div>
+                                <span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span>
+                                @if ($smsTime)
+                                    <time class="mobile-channel-time">{{ \Illuminate\Support\Carbon::createFromFormat('d M Y H:i', $smsTime)->format('d M Y') }}<br>{{ \Illuminate\Support\Carbon::createFromFormat('d M Y H:i', $smsTime)->format('H:i') }}</time>
+                                @endif
+                            </div>
+                        </div>
+                        <div class="mobile-card-bottom">
+                            <div>
+                                <span class="mobile-card-label">WhatsApp Reply</span>
+                                <div class="mobile-card-reply">{{ $invitee->last_reply_message ?: '—' }}</div>
+                            </div>
+                            <div>
+                                <span class="mobile-card-label">RSVP Time</span>
+                                <div class="mobile-card-rsvp-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M, H:i') ?? '—' }}</div>
+                            </div>
+                        </div>
+                    </article>
+                @empty
+                    <div class="mobile-rsvp-empty">No invitees match the selected filters.</div>
+                @endforelse
             </div>
 
             @if ($invitees->hasPages())
