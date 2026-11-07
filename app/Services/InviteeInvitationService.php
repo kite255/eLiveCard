@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Jobs\SendInvitationSmsJob;
 use App\Jobs\SendInvitationWhatsAppJob;
+use App\Services\AuditLogService;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
 use App\Support\EliveMessagePlaceholders;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
@@ -165,6 +167,90 @@ class InviteeInvitationService
         ])->save();
 
         return $this->result('queued', 'WhatsApp invitation queued for delivery. This does not mean it was delivered.');
+    }
+
+    /**
+     * Explicit, single-recipient administrative override. Never use for bulk sending.
+     * Historical delivery status and communication logs remain intact.
+     */
+    public function forceResendSms(Event $event, Invitee $invitee, string $reason): array
+    {
+        $reason = trim($reason);
+
+        if (mb_strlen($reason) < 10 || mb_strlen($reason) > 500) {
+            return $this->result('failed', 'Provide a reason between 10 and 500 characters.');
+        }
+
+        if ((int) $invitee->event_id !== (int) $event->id
+            || $invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+            return $this->result('failed', 'Invitee must belong to the event and have an active card.');
+        }
+
+        if (blank($invitee->phone) || blank($invitee->short_code)) {
+            return $this->result('failed', 'A phone number and private invitation link are required.');
+        }
+
+        $template = $this->template($event, MessageTemplate::CHANNEL_SMS);
+        if (! $template) {
+            return $this->result('failed', 'No active SMS invitation template is configured.');
+        }
+
+        return Cache::lock('force-sms-invitation-'.$event->id.'-'.$invitee->id, 30)
+            ->block(3, function () use ($event, $invitee, $template, $reason): array {
+                $invitee->refresh()->loadMissing(['event', 'cardType']);
+
+                if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+                    return $this->result('skipped', 'Invitation card is no longer active.');
+                }
+
+                // A force resend must not bypass an in-flight invitation.
+                if ($invitee->last_message_channel === 'sms'
+                    && in_array((string) $invitee->last_message_status, ['queued', 'pending', 'sending', 'processing'], true)) {
+                    return $this->result('skipped', 'An SMS is already queued or processing. Resolve it before forcing a resend.');
+                }
+
+                $message = EliveMessagePlaceholders::render((string) $template->content, $invitee);
+                if (trim($message) === '' || preg_match('/#[A-Z_]+#/', $message)) {
+                    return $this->result('failed', 'SMS template contains an empty message or unresolved placeholder.');
+                }
+
+                // Record authorization and intent before dispatch so a worker never
+                // receives an untracked forced-send request.
+                AuditLogService::record(
+                    action: 'invitation_sms.force_resend_requested',
+                    subject: $invitee,
+                    eventId: $event->id,
+                    description: 'An authorized user requested an explicit invitation SMS resend.',
+                    metadata: [
+                        'reason' => $reason,
+                        'previous_invitation_sms_status' => $invitee->invitation_sms_status,
+                        'previous_sms_status' => $invitee->sms_status,
+                        'recipient_id' => $invitee->id,
+                    ],
+                );
+
+                try {
+                    SendInvitationSmsJob::dispatch(
+                        eventId: (int) $event->id,
+                        inviteeId: (int) $invitee->id,
+                        customMessage: $message,
+                        forceResend: true,
+                    );
+
+                    $invitee->forceFill([
+                        'last_message_channel' => 'sms',
+                        'last_message_status' => 'queued',
+                        'message_status' => 'queued',
+                        'sms_status' => Invitee::SMS_STATUS_PENDING,
+                    ])->save();
+                } catch (Throwable $error) {
+                    report($error);
+
+                    return $this->result('failed', 'Could not queue the forced invitation SMS.');
+                }
+
+                return $this->result('queued', 'Force resend queued. This may incur another SMS charge and does not confirm delivery.');
+            });
     }
 
     private function result(string $status, string $message): array
