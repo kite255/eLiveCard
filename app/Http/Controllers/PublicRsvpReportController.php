@@ -76,10 +76,14 @@ class PublicRsvpReportController extends Controller
                 'string',
                 'in:attending,not_attending,declined,pending,maybe',
             ],
+            'sms_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,failed,logged_only,unknown'],
+            'whatsapp_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,read,failed,logged_only,unknown'],
         ]);
 
         $search = trim((string) ($validated['search'] ?? ''));
         $status = trim((string) ($validated['status'] ?? ''));
+        $smsDelivery = trim((string) ($validated['sms_delivery'] ?? ''));
+        $whatsappDelivery = trim((string) ($validated['whatsapp_delivery'] ?? ''));
         $showPhoneNumbers = (bool) $event->rsvp_share_show_phone;
 
         $invitees = $event->invitees()
@@ -137,6 +141,8 @@ class PublicRsvpReportController extends Controller
                     $query->where('rsvp_status', $status);
                 }
             )
+            ->when($smsDelivery !== '', fn (Builder $query) => $this->filterDelivery($query, 'sms', $smsDelivery))
+            ->when($whatsappDelivery !== '', fn (Builder $query) => $this->filterDelivery($query, 'whatsapp', $whatsappDelivery))
             ->orderByRaw("
                 CASE
                     WHEN rsvp_status = 'attending' THEN 1
@@ -310,10 +316,55 @@ class PublicRsvpReportController extends Controller
             'confirmedGuests' => $confirmedGuests,
             'search' => $search,
             'status' => $status,
+            'smsDelivery' => $smsDelivery,
+            'whatsappDelivery' => $whatsappDelivery,
             'showPhoneNumbers' => $showPhoneNumbers,
             'visibleFields' => $visibleFields,
             'deliveryStatuses' => $deliveryStatuses,
         ]);
+    }
+
+    /**
+     * Match only the latest invitation attempt per channel (not reminders),
+     * using the same SMS-log preference as the displayed report status.
+     * The correlated subqueries preserve event isolation and pagination.
+     */
+    private function filterDelivery(Builder $query, string $channel, string $wanted): Builder
+    {
+        $latestMessage = Schema::hasTable('message_logs')
+            ? "(SELECT ml.status FROM message_logs ml
+                WHERE ml.event_id = invitees.event_id
+                AND ml.invitee_id = invitees.id
+                AND ml.channel = '".$channel."'
+                AND ml.type = 'invitation'
+                ORDER BY ml.id DESC LIMIT 1)"
+            : 'NULL';
+
+        $raw = $latestMessage;
+
+        if ($channel === 'sms' && Schema::hasTable('sms_logs')) {
+            $latestSms = "(SELECT sl.status FROM sms_logs sl
+                WHERE sl.event_id = invitees.event_id
+                AND sl.invitee_id = invitees.id
+                AND sl.sms_type IN ('invitation', 'invitation_card')
+                ORDER BY sl.id DESC LIMIT 1)";
+            $raw = "COALESCE({$latestSms}, {$latestMessage})";
+        }
+
+        // Canonical labels mirror deliveryLabel(), not invitees.sms_status.
+        $normalized = "LOWER(TRIM(COALESCE({$raw}, 'not_sent')))";
+        $sql = "CASE
+            WHEN {$normalized} = 'delivered' THEN 'delivered'
+            WHEN {$normalized} = 'read' THEN 'read'
+            WHEN {$normalized} IN ('failed', 'undelivered', 'expired', 'rejected') THEN 'failed'
+            WHEN {$normalized} IN ('queued', 'pending', 'sending') THEN 'queued'
+            WHEN {$normalized} IN ('submitted', 'accepted', 'sent', 'success') THEN 'submitted'
+            WHEN {$normalized} = 'logged' THEN 'logged_only'
+            WHEN {$normalized} = 'not_sent' THEN 'not_sent'
+            ELSE 'unknown'
+        END";
+
+        return $query->whereRaw("({$sql}) = ?", [$wanted]);
     }
 
     private function deliveryLabel(?string $status): string
