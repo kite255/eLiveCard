@@ -17,6 +17,7 @@ class GateCheckInController extends Controller
      */
     public function show(Event $event)
     {
+        $this->authorizeGateAccess($event);
         $recentCheckIns = Invitee::query()
             ->with('cardType')
             ->where('event_id', $event->id)
@@ -51,6 +52,7 @@ class GateCheckInController extends Controller
      */
     public function verify(Request $request, Event $event): JsonResponse
     {
+        $this->authorizeGateAccess($event);
         $validated = $request->validate([
             'scanned_value' => ['nullable', 'string', 'max:255'],
             'search' => ['nullable', 'string', 'max:255'],
@@ -183,6 +185,8 @@ class GateCheckInController extends Controller
         Event $event,
         CheckInService $checkInService
     ): JsonResponse {
+        $this->authorizeGateAccess($event);
+
         $validated = $request->validate([
             'invitee_id' => ['required', 'integer'],
             'guest_count' => ['required', 'integer', 'min:1'],
@@ -620,4 +624,17 @@ class GateCheckInController extends Controller
     {
         return Schema::hasColumn('invitees', $column);
     }
+    /**
+     * Gate links are shareable, not bearer credentials: each scanner must
+     * authenticate and be explicitly authorized for this event.
+     */
+    private function authorizeGateAccess(Event $event): void
+    {
+        abort_unless(
+            $event->canBeCheckedInBy(auth()->user()),
+            403,
+            'You are not assigned to scan this event.'
+        );
+    }
+
 }
