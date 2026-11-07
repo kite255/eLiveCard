@@ -235,10 +235,45 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Compact invitee RSVP, channel, reply and response time report')
             ->assertSee('WhatsApp')
             ->assertSee('SMS')
-            ->assertSee('Response Time')
+            ->assertSee('RSVP Time')
+            ->assertSee('mobile-rsvp-card')
             ->assertDontSee('<summary>Details</summary>', false)
             ->assertSee('Mobile reply is visible in its own column.')
             ->assertSee('Reply');
+    }
+
+    public function test_mobile_rsvp_cards_keep_channel_statuses_and_timestamps_readable(): void
+    {
+        $event = $this->reportEvent('Mobile Card Delivery');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Responsive Guest',
+            'phone' => '255700000056',
+            'rsvp_status' => 'attending',
+            'last_reply_message' => 'Nitahudhuria',
+        ]);
+
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'phone' => $invitee->phone,
+            'sms_type' => 'invitation_card',
+            'message' => 'Invitation',
+            'status' => 'sent',
+            'sent_at' => '2026-11-07 19:18:00',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertSee('class="mobile-rsvp-cards"', false)
+            ->assertSee('class="mobile-card-channels"', false)
+            ->assertSee('class="mobile-channel-time"', false)
+            ->assertSee('Submitted')
+            ->assertSee('07 Nov 2026')
+            ->assertSee('Nitahudhuria')
+            ->assertSee('Responsive Guest')
+            ->assertDontSee('<summary>Details</summary>', false);
     }
 
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
@@ -260,15 +295,14 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $this->get($url)
             ->assertOk()
-            ->assertSee('<th scope="col" class="mobile-row-number">#</th>', false)
-            ->assertSee('<td class="mobile-row-number">1</td>', false)
-            ->assertSee('<td class="mobile-row-number">50</td>', false)
-            ->assertDontSee('<td class="mobile-row-number">51</td>', false);
+            ->assertSee('<span class="mobile-card-number">1.</span>', false)
+            ->assertSee('<span class="mobile-card-number">50.</span>', false)
+            ->assertDontSee('<span class="mobile-card-number">51.</span>', false);
 
         $this->get($url . '?page=2')
             ->assertOk()
-            ->assertSee('<td class="mobile-row-number">51</td>', false)
-            ->assertDontSee('<td class="mobile-row-number">1</td>', false);
+            ->assertSee('<span class="mobile-card-number">51.</span>', false)
+            ->assertDontSee('<span class="mobile-card-number">1.</span>', false);
     }
 
     public function test_shared_rsvp_link_searches_card_type_and_table_within_event(): void
