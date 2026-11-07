@@ -1090,18 +1090,18 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Send WhatsApp')
+                        ->label('Send WhatsApp Invitations')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
-                        ->modalHeading('Send WhatsApp Message')
-                                                ->modalSubmitActionLabel('Send WhatsApp')
-                        ->modalDescription('Send the saved event WhatsApp template to eligible invitees who have not yet been sent a WhatsApp message. Confirm to continue.')
+                        ->modalHeading('Send WhatsApp Invitations')
+                        ->modalSubmitActionLabel('Queue WhatsApp Invitations')
+                        ->modalDescription('Send the event default WhatsApp invitation template only to invitees who have not received it.')
                         ->requiresConfirmation()
                         ->action(function (): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
-                            if (! $selectedTemplate) {
+                            if (! $selectedTemplate || $selectedTemplate->type !== MessageTemplate::TYPE_INVITATION) {
                                 $this->brandedNotification()
                                     ->title('eLive Card • WhatsApp template not found')
                                     ->body('Choose an active WhatsApp template in Event Settings before sending.')
@@ -1113,9 +1113,9 @@ class InviteesRelationManager extends RelationManager
 
                             $this->sendEventMessagesFromToolbar(
                                 channel: 'whatsapp',
-                                templateType: $selectedTemplate->type,
+                                templateType: MessageTemplate::TYPE_INVITATION,
                                 recipientScope: 'not_sent',
-                                actionTitle: 'WhatsApp messages processed',
+                                actionTitle: 'WhatsApp invitations processed',
                                 messageTemplateId: $selectedTemplate->id,
                             );
                         }),
@@ -1133,8 +1133,8 @@ class InviteesRelationManager extends RelationManager
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
-                            if (! $template) {
-                                $this->brandedNotification()->title('WhatsApp template not configured')
+                            if (! $template || $template->type !== MessageTemplate::TYPE_INVITATION) {
+                                $this->brandedNotification()->title('WhatsApp invitation template not configured')
                                     ->body('Configure an active WhatsApp template in Event Settings.')
                                     ->danger()->send();
                                 return;
