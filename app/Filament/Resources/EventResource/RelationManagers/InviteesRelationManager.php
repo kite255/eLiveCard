@@ -2930,7 +2930,7 @@ class InviteesRelationManager extends RelationManager
         abort_unless($this->canSendMessagesForOwner(), 403);
 
         $result = app(\App\Services\InviteeInvitationService::class)
-            ->send($this->getOwnerRecord(), $record, $channel);
+            ->sendImmediately($this->getOwnerRecord(), $record, $channel);
 
         AuditLogService::record(
             action: 'invitee.invitation_'.$result['status'],
@@ -2945,8 +2945,8 @@ class InviteesRelationManager extends RelationManager
             ->body($result['message']);
 
         match ($result['status']) {
-            'queued' => $notification->success(),
-            'skipped' => $notification->warning(),
+            'submitted' => $notification->success(),
+            'logged', 'skipped' => $notification->warning(),
             default => $notification->danger(),
         };
 
