@@ -89,6 +89,35 @@ class InvitationSmsDeliveryStatusTest extends TestCase
         $this->assertStringContainsString('undelivered', $state['description']);
     }
 
+    public function test_sms_status_time_uses_actual_delivered_at_not_report_check_time(): void
+    {
+        $invitee = $this->invitee();
+        $log = $this->log($invitee, 'delivered');
+        $log->forceFill([
+            'delivered_at' => '2026-11-07 19:44:00',
+            'delivery_report_checked_at' => '2026-11-07 20:11:13',
+        ])->save();
+
+        $state = app(InvitationSmsDeliveryStatusService::class)->forInvitee($invitee);
+        $this->assertSame('Delivered', $state['label']);
+        $this->assertSame('07 Nov 2026, 19:44', $state['status_time']);
+        $this->assertSame('Delivered', $state['status_time_label']);
+
+        $log->forceFill(['status' => 'sent', 'sent_at' => '2026-11-07 19:18:00'])->save();
+        $state = app(InvitationSmsDeliveryStatusService::class)->forInvitee($invitee);
+        $this->assertSame('Submitted', $state['label']);
+        $this->assertSame('07 Nov 2026, 19:18', $state['status_time']);
+    }
+
+    public function test_unknown_status_does_not_invent_a_delivery_time(): void
+    {
+        $invitee = $this->invitee();
+        $this->log($invitee, 'unknown');
+        $state = app(InvitationSmsDeliveryStatusService::class)->forInvitee($invitee);
+        $this->assertSame('Unknown', $state['label']);
+        $this->assertNull($state['status_time']);
+    }
+
     public function test_force_resend_queue_state_takes_precedence_over_older_sent_log(): void
     {
         $invitee = $this->invitee();
