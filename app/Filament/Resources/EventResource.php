@@ -195,16 +195,39 @@ class EventResource extends Resource
                         Forms\Components\DatePicker::make('event_date')
                             ->label('Event Date')
                             ->required()
-                            ->native(false),
+                            ->native(false)
+                            ->live(),
 
                         Forms\Components\TimePicker::make('start_time')
                             ->label('Start Time')
                             ->required()
-                            ->seconds(false),
+                            ->seconds(false)
+                            ->live(),
 
                         Forms\Components\TimePicker::make('end_time')
                             ->label('End Time')
-                            ->seconds(false),
+                            ->seconds(false)
+                            ->live()
+                            ->helperText(function (Forms\Get $get): string {
+                                if (blank($get('end_time')) || blank($get('event_date'))) {
+                                    return 'Optional. Leave blank if the end time is not known. An earlier end time means the following day.';
+                                }
+
+                                try {
+                                    $date = Carbon::parse($get('event_date'))->startOfDay();
+                                    $end = Carbon::parse($get('end_time'));
+                                    $start = filled($get('start_time')) ? Carbon::parse($get('start_time')) : null;
+
+                                    if ($start && $end->format('H:i:s') <= $start->format('H:i:s')) {
+                                        $date->addDay();
+                                        return 'Ends the next day: '.$date->format('M j, Y').' at '.$end->format('g:i A').'.';
+                                    }
+
+                                    return 'Ends on '.$date->format('M j, Y').' at '.$end->format('g:i A').'.';
+                                } catch (\Throwable) {
+                                    return 'End times earlier than or equal to the start time are treated as the following day.';
+                                }
+                            }),
 
                         Forms\Components\Select::make('status')
                             ->label('Status')
