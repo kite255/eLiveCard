@@ -292,6 +292,39 @@ class PublicRsvpDeliveryReportTest extends TestCase
             );
     }
 
+    public function test_report_pagination_is_compact_accessible_and_retains_filters(): void
+    {
+        $event = $this->reportEvent('Compact Pagination Test');
+        $type = $this->reportCardType($event);
+
+        for ($number = 1; $number <= 51; $number++) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => sprintf('Pagination Guest %03d', $number),
+                'phone' => sprintf('25570003%04d', $number),
+                'rsvp_status' => 'pending',
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+
+        $this->get($url . '?status=pending')
+            ->assertOk()
+            ->assertSee('aria-label="Invitee report pages"', false)
+            ->assertSee('Page 1 of 2')
+            ->assertSee('Showing 1 to 50 of 51 results')
+            ->assertSee('status=pending&amp;page=2', false)
+            ->assertDontSee('<svg class="w-5 h-5"', false);
+
+        $this->get($url . '?status=pending&page=2')
+            ->assertOk()
+            ->assertSee('Page 2 of 2')
+            ->assertSee('Showing 51 to 51 of 51 results')
+            ->assertSee('rel="prev"', false)
+            ->assertDontSee('<svg class="w-5 h-5"', false);
+    }
+
     public function test_client_report_paginates_fifty_invitees_without_losing_filters(): void
     {
         $event = $this->reportEvent('Paginated Report');
