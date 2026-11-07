@@ -1813,8 +1813,7 @@ class InviteesRelationManager extends RelationManager
                     ->icon('heroicon-m-ellipsis-horizontal')
                     ->color('primary')
                     ->iconButton()
-                    ->tooltip('Manage invitee')
-                    ->maxHeight('min(70vh, 480px)'),
+                    ->tooltip('Manage invitee'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
