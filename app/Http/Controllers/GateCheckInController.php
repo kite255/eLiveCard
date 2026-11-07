@@ -9,6 +9,7 @@ use App\Services\CheckInService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class GateCheckInController extends Controller
 {
@@ -34,6 +35,26 @@ class GateCheckInController extends Controller
             'event' => $event,
             'recentCheckIns' => $recentCheckIns,
         ]);
+    }
+
+    /**
+     * Event-specific, shareable scanner URL. The ID uniquely selects the event
+     * and the slug makes the link understandable to gate officers.
+     */
+    public function showNamed(Event $event, string $slug)
+    {
+        $this->authorizeGateAccess($event);
+
+        $expectedSlug = Str::slug($event->title) ?: 'event';
+
+        if ($slug !== $expectedSlug) {
+            return redirect()->route('gate.check-in.named', [
+                'event' => $event->getKey(),
+                'slug' => $expectedSlug,
+            ]);
+        }
+
+        return $this->show($event);
     }
 
     /**
