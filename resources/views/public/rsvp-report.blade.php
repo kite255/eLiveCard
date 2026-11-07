@@ -768,7 +768,7 @@
                     name="search"
                     value="{{ $search }}"
                     class="input"
-                    placeholder="{{ $showPhoneNumbers ? 'Search name, phone or category' : 'Search name or category' }}"
+                    placeholder="{{ $showPhoneNumbers ? 'Search name, phone, category, card type or table' : 'Search name, category, card type or table' }}"
                 >
 
                 <select name="status" class="select">
