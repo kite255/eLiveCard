@@ -4,52 +4,20 @@
 @section('description', $event->public_summary ?: 'View public event details on eLive Card.')
 
 @php
-    $startsAt = null;
-    $endsAt = null;
-
-    if ($event->event_date) {
-        $startsAt = $event->event_date->copy();
-
-        if ($event->start_time) {
-            $startsAt->setTime(
-                $event->start_time->hour,
-                $event->start_time->minute,
-                $event->start_time->second
-            );
-        } else {
-            $startsAt->startOfDay();
-        }
-
-        $endsAt = $event->event_date->copy();
-
-        if ($event->end_time) {
-            $endsAt->setTime(
-                $event->end_time->hour,
-                $event->end_time->minute,
-                $event->end_time->second
-            );
-        } elseif ($event->start_time) {
-            $endsAt = $startsAt->copy()->addHours(6);
-        } else {
-            $endsAt->endOfDay();
-        }
-    }
-
+    // Use the single overnight-aware Event schedule for the public page.
+    $startsAt = $event->starts_at;
+    $endsAt = $event->ends_at;
     $now = now();
 
-    $isCompleted = $event->status === \App\Models\Event::STATUS_COMPLETED
-        || ($endsAt && $now->greaterThan($endsAt));
+    $isCompleted = $event->display_status === \App\Models\Event::STATUS_COMPLETED;
+    $isHappeningNow = $event->display_status === \App\Models\Event::STATUS_ACTIVE;
 
-    $isHappeningNow = ! $isCompleted
-        && $startsAt
-        && $endsAt
-        && $now->betweenIncluded($startsAt, $endsAt);
-
-    $statusLabel = match (true) {
-        $isCompleted => 'Completed',
-        $isHappeningNow => 'Happening Now',
-        $event->event_date?->isToday() => 'Today',
-        default => 'Upcoming',
+    $statusLabel = match ($event->display_status) {
+        \App\Models\Event::STATUS_COMPLETED => 'Completed',
+        \App\Models\Event::STATUS_ACTIVE => 'Happening Now',
+        \App\Models\Event::STATUS_DRAFT => 'Draft',
+        \App\Models\Event::STATUS_CANCELLED => 'Cancelled',
+        default => $event->event_date?->isToday() ? 'Today' : 'Upcoming',
     };
 
     $organizerPhone = $event->effective_organizer_phone;
