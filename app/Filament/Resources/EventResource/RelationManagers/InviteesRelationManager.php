@@ -502,15 +502,10 @@ class InviteesRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('message_status_summary')
                     ->label('Message Status')
                     ->state(function (Invitee $record): string {
-                        $sms = match ($record->sms_status) {
-                            Invitee::SMS_STATUS_SENT => 'Sent',
-                            Invitee::SMS_STATUS_DELIVERED => 'Delivered',
-                            Invitee::SMS_STATUS_FAILED => 'Failed',
-                            Invitee::SMS_STATUS_PENDING => 'Pending',
-                            default => 'Not Sent',
-                        };
+                        $sms = app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                            ->forInvitee($record);
 
-                        return 'SMS: '.$sms;
+                        return 'SMS: '.$sms['label'];
                     })
                     ->description(function (Invitee $record): string {
                         $trackedStatus = null;
@@ -543,13 +538,8 @@ class InviteesRelationManager extends RelationManager
                         return 'WhatsApp: '.$whatsapp;
                     })
                     ->badge()
-                    ->color(fn (Invitee $record): string => match ($record->sms_status) {
-                        Invitee::SMS_STATUS_SENT,
-                        Invitee::SMS_STATUS_DELIVERED => 'success',
-                        Invitee::SMS_STATUS_FAILED => 'danger',
-                        Invitee::SMS_STATUS_PENDING => 'warning',
-                        default => 'gray',
-                    })
+                    ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                        ->forInvitee($record)['color'])
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('sms_delivery_status')
