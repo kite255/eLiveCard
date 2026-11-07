@@ -12,7 +12,7 @@ class InvitationSmsDeliveryStatusService
      * Historical invitee statuses are not delivery evidence. Prefer the latest
      * invitation SMS provider log; otherwise expose the uncertainty explicitly.
      *
-     * @return array{label: string, color: string, description: string, log: ?SmsLog}
+     * @return array{label: string, color: string, description: string, log: ?SmsLog, status_time: ?string, status_time_label: ?string}
      */
     public function forInvitee(Invitee $invitee): array
     {
@@ -72,11 +72,34 @@ class InvitationSmsDeliveryStatusService
             $details[] = 'Last error: '.$log->error_message;
         }
 
-        return $this->result($label, $color, implode(' | ', $details), $log);
+        $timestamp = match ($label) {
+            'Delivered' => $log->delivered_at,
+            'Failed' => $log->failed_at,
+            'Submitted' => $log->sent_at ?? $log->created_at,
+            'Queued', 'Processing' => $log->created_at,
+            default => null,
+        };
+        $timeLabel = match ($label) {
+            'Delivered' => 'Delivered',
+            'Failed' => 'Failed',
+            'Submitted' => 'Submitted',
+            'Queued' => 'Queued',
+            'Processing' => 'Processing',
+            default => null,
+        };
+
+        return $this->result($label, $color, implode(' | ', $details), $log, $timestamp?->format('d M Y, H:i'), $timestamp ? $timeLabel : null);
     }
 
-    private function result(string $label, string $color, string $description, ?SmsLog $log = null): array
+    private function result(string $label, string $color, string $description, ?SmsLog $log = null, ?string $statusTime = null, ?string $statusTimeLabel = null): array
     {
-        return compact('label', 'color', 'description', 'log');
+        return [
+            'label' => $label,
+            'color' => $color,
+            'description' => $description,
+            'log' => $log,
+            'status_time' => $statusTime,
+            'status_time_label' => $statusTimeLabel,
+        ];
     }
 }
