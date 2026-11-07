@@ -946,7 +946,7 @@
                 @if ($canManageEvent)
                     <div
                         x-data="{
-                            scannerUrl: @js(route('gate.check-in.show', ['event' => $event->getKey()])),
+                            scannerUrl: @js(route('gate.check-in.named', ['event' => $event->getKey(), 'slug' => \Illuminate\Support\Str::slug($event->title) ?: 'event'])),
                             copied: false,
                             async copyScanner() {
                                 try {
