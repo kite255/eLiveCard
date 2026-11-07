@@ -242,6 +242,37 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Reply');
     }
 
+    public function test_live_search_keeps_existing_search_and_delivery_filters_on_shared_report(): void
+    {
+        $event = $this->reportEvent('Live Search Event');
+        $type = $this->reportCardType($event);
+
+        foreach (['Asha Wadi', 'Austin Wanjango'] as $name) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => $name,
+                'phone' => '255700000006',
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+        $this->get($url)->assertOk()
+            ->assertSee('id="rsvp-report-filters"', false)
+            ->assertSee('id="rsvp-live-search"', false)
+            ->assertSee('id="rsvp-live-results"', false)
+            ->assertSee('id="rsvp-live-status"', false)
+            ->assertSee("search.addEventListener('input', schedule)", false)
+            ->assertSee('450', false)
+            ->assertSee("results.addEventListener('click'", false)
+            ->assertSee("window.addEventListener('popstate'", false);
+
+        // The live update uses the same GET endpoint and server-side access rules.
+        $this->get($url.'?search=asha')->assertOk()
+            ->assertSee('Asha Wadi')
+            ->assertDontSee('Austin Wanjango');
+    }
+
     public function test_mobile_rsvp_cards_keep_channel_statuses_and_timestamps_readable(): void
     {
         $event = $this->reportEvent('Mobile Card Delivery');
