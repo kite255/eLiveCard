@@ -58,7 +58,6 @@ class ListEvents extends ListRecords
         parent::mount();
 
         $this->normaliseFilters();
-        $this->synchroniseFinishedEvents();
     }
 
     public function updatedStatusFilter(): void
@@ -107,8 +106,6 @@ class ListEvents extends ListRecords
 
     protected function getViewData(): array
     {
-        $this->synchroniseFinishedEvents();
-
         $statusIds = $this->getStatusIds();
 
         return [
@@ -349,38 +346,6 @@ class ListEvents extends ListRecords
         return 'active';
     }
 
-    protected function synchroniseFinishedEvents(): void
-    {
-        EventResource::getEloquentQuery()
-            ->where('status', Event::STATUS_ACTIVE)
-            ->whereNotNull('event_date')
-            ->select([
-                'id',
-                'status',
-                'event_date',
-                'start_time',
-                'end_time',
-            ])
-            ->orderBy('id')
-            ->chunkById(250, function (Collection $events): void {
-                foreach ($events as $event) {
-                    $eventEnd = $this->eventEnd($event);
-
-                    if (! $eventEnd || now()->lessThanOrEqualTo($eventEnd)) {
-                        continue;
-                    }
-
-                    Event::query()
-                        ->whereKey($event->getKey())
-                        ->where('status', Event::STATUS_ACTIVE)
-                        ->update([
-                            'status' => Event::STATUS_COMPLETED,
-                            'updated_at' => now(),
-                        ]);
-                }
-            });
-    }
-
     protected function eventDate(Event $event): ?Carbon
     {
         if (blank($event->event_date)) {
@@ -413,27 +378,21 @@ class ListEvents extends ListRecords
 
     protected function eventEnd(Event $event): ?Carbon
     {
-        $eventDate = $this->eventDate($event);
-
-        if (! $eventDate) {
+        if (! $event->event_date) {
             return null;
         }
 
+        // Reuse the model's overnight-aware calculation so the Events list
+        // cannot treat a midnight end as the morning before the event starts.
         if (filled($event->end_time)) {
-            $endTime = Carbon::parse($event->end_time);
-
-            return $eventDate->setTime(
-                $endTime->hour,
-                $endTime->minute,
-                $endTime->second,
-            );
+            return $event->ends_at;
         }
 
         if (filled($event->start_time)) {
             return $this->eventStart($event)?->addHours(6);
         }
 
-        return $eventDate->endOfDay();
+        return $this->eventDate($event)?->endOfDay();
     }
 
     protected function applySearch(
