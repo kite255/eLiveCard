@@ -93,17 +93,17 @@ class PublicRsvpReportController extends Controller
                     $query->where(function (Builder $query) use ($like, $showPhoneNumbers): void {
                         $query
                             ->whereRaw(
-                                "LOWER(COALESCE(name, '')) LIKE ? ESCAPE '\\'",
+                                "LOWER(COALESCE(name, '')) LIKE ? ESCAPE '!'",
                                 [$like]
                             )
                             ->orWhereRaw(
-                                "LOWER(COALESCE(category, '')) LIKE ? ESCAPE '\\'",
+                                "LOWER(COALESCE(category, '')) LIKE ? ESCAPE '!'",
                                 [$like]
                             );
 
                         if ($showPhoneNumbers) {
                             $query->orWhereRaw(
-                                "LOWER(COALESCE(phone, '')) LIKE ? ESCAPE '\\'",
+                                "LOWER(COALESCE(phone, '')) LIKE ? ESCAPE '!'",
                                 [$like]
                             );
                         }
@@ -365,8 +365,8 @@ class PublicRsvpReportController extends Controller
     private function escapeLikeTerm(string $value): string
     {
         return str_replace(
-            ['\\', '%', '_'],
-            ['\\\\', '\\%', '\\_'],
+            ['!', '%', '_'],
+            ['!!', '!%', '!_'],
             $value
         );
     }
