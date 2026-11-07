@@ -76,6 +76,52 @@ class InviteeDedicatedInvitationActionsTest extends TestCase
         Queue::assertNotPushed(SendInvitationWhatsAppJob::class);
     }
 
+    public function test_force_resend_requires_reason_and_queues_only_explicit_override(): void
+    {
+        Queue::fake();
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $this->template($event, 'sms');
+        $invitee->forceFill([
+            'invitation_sms_status' => 'sent',
+            'sms_status' => 'sent',
+            'last_message_channel' => 'sms',
+            'last_message_status' => 'sent',
+        ])->save();
+
+        $service = app(InviteeInvitationService::class);
+
+        $this->assertSame('failed', $service->forceResendSms($event, $invitee, 'short')['status']);
+        Queue::assertNothingPushed();
+
+        $this->assertSame('skipped', $service->send($event, $invitee, 'sms')['status']);
+        $this->assertSame('queued', $service->forceResendSms($event, $invitee, 'Customer requested another SMS copy.')['status']);
+
+        Queue::assertPushed(SendInvitationSmsJob::class, function (SendInvitationSmsJob $job): bool {
+            return $job->forceResend === true;
+        });
+        Queue::assertPushed(SendInvitationSmsJob::class, 1);
+
+        $this->assertSame('skipped', $service->forceResendSms($event, $invitee->fresh(), 'Trying twice for same guest.')['status']);
+        Queue::assertPushed(SendInvitationSmsJob::class, 1);
+    }
+
+    public function test_force_resend_rejects_cancelled_or_wrong_event_invitees(): void
+    {
+        Queue::fake();
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $other = $this->event();
+        $this->template($event, 'sms');
+        $service = app(InviteeInvitationService::class);
+
+        $this->assertSame('failed', $service->forceResendSms($other, $invitee, 'Need another invitation SMS.')['status']);
+
+        $invitee->forceFill(['card_status' => Invitee::CARD_STATUS_CANCELLED])->save();
+        $this->assertSame('failed', $service->forceResendSms($event, $invitee->fresh(), 'Need another invitation SMS.')['status']);
+        Queue::assertNothingPushed();
+    }
+
     public function test_whatsapp_action_uses_event_default_template_once(): void
     {
         Queue::fake();
