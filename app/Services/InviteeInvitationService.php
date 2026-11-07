@@ -300,7 +300,7 @@ class InviteeInvitationService
                         return $this->result('failed', 'WhatsApp submission could not be confirmed. Check the message log before retrying.');
                     }
                 });
-        } catch (\\Illuminate\\Contracts\\Cache\\LockTimeoutException $exception) {
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $exception) {
             return $this->result('skipped', 'This invitation is already being sent. Check its status.');
         }
     }
