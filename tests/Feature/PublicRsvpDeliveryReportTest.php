@@ -354,6 +354,57 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee($invitee->phone);
     }
 
+    public function test_search_uses_portable_like_escape_and_treats_wildcards_literally(): void
+    {
+        $event = $this->reportEvent('Safe PostgreSQL Search');
+        $type = $this->reportCardType($event);
+
+        foreach (['Ngoyi % Family', 'Ngoyi_Committee', 'Ngoyi!VIP', 'Ngoyi Another', 'Other Guest'] as $name) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => $name,
+                'phone' => '255700000111',
+            ]);
+        }
+
+        $queries = [];
+        \Illuminate\Support\Facades\DB::listen(function (\Illuminate\Database\Events\QueryExecuted $query) use (&$queries): void {
+            if (str_contains($query->sql, 'LOWER(COALESCE(name')) {
+                $queries[] = ['sql' => $query->sql, 'bindings' => $query->bindings];
+            }
+        });
+
+        $url = $event->generateRsvpShareLink();
+        $this->get($url . '?search=ngoyi')
+            ->assertOk()
+            ->assertSee('Ngoyi Another')
+            ->assertDontSee('Other Guest');
+
+        $this->get($url . '?search=' . urlencode('Ngoyi %'))
+            ->assertOk()
+            ->assertSee('Ngoyi % Family')
+            ->assertDontSee('Ngoyi Another')
+            ->assertDontSee('Ngoyi_Committee');
+
+        $this->get($url . '?search=' . urlencode('Ngoyi_'))
+            ->assertOk()
+            ->assertSee('Ngoyi_Committee')
+            ->assertDontSee('Ngoyi Another');
+
+        $this->get($url . '?search=' . urlencode('Ngoyi!'))
+            ->assertOk()
+            ->assertSee('Ngoyi!VIP')
+            ->assertDontSee('Ngoyi Another');
+
+        $this->assertNotEmpty($queries);
+        foreach ($queries as $query) {
+            $this->assertStringContainsString("ESCAPE '!'", $query['sql']);
+            $this->assertSame(3, count($query['bindings']));
+            $this->assertStringNotContainsString("ESCAPE '\\\\'", $query['sql']);
+        }
+    }
+
     private function reportEvent(string $title): Event
     {
         return Event::query()->create([
