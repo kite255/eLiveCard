@@ -506,7 +506,8 @@ class InviteesRelationManager extends RelationManager
                         $sms = app(\App\Services\InvitationSmsDeliveryStatusService::class)
                             ->forInvitee($record);
 
-                        return 'SMS: '.$sms['label'];
+                        return 'SMS: '.$sms['label']
+                            .($sms['status_time'] ? ' • '.$sms['status_time'] : '');
                     })
                     ->description(function (Invitee $record): string {
                         $trackedStatus = null;
@@ -536,7 +537,15 @@ class InviteesRelationManager extends RelationManager
                             },
                         };
 
-                        return 'WhatsApp: '.$whatsapp;
+                        $at = match ($whatsapp) {
+                            'Read' => $record->whatsapp_read_at,
+                            'Delivered' => $record->whatsapp_delivered_at,
+                            'Failed' => $record->whatsapp_failed_at,
+                            'Sent', 'Submitted' => $record->whatsapp_sent_at,
+                            default => null,
+                        };
+
+                        return 'WhatsApp: '.$whatsapp.($at ? ' • '.$at->format('d M Y, H:i') : '');
                     })
                     ->badge()
                     ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
@@ -547,8 +556,11 @@ class InviteesRelationManager extends RelationManager
                     ->label('SMS Delivery')
                     ->state(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
                         ->forInvitee($record)['label'])
-                    ->description(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
-                        ->forInvitee($record)['description'])
+                    ->description(function (Invitee $record): string {
+                        $state = app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record);
+                        return ($state['status_time'] ? ($state['status_time_label'].' at '.$state['status_time'].' | ') : '')
+                            .$state['description'];
+                    })
                     ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
                         ->forInvitee($record)['color'])
                     ->badge()
@@ -572,6 +584,17 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('whatsapp_status')
                     ->label('WhatsApp Status')
+                    ->description(function (Invitee $record): ?string {
+                        $status = strtolower((string) $record->whatsapp_status);
+                        $at = match ($status) {
+                            'read' => $record->whatsapp_read_at,
+                            'delivered' => $record->whatsapp_delivered_at,
+                            'failed' => $record->whatsapp_failed_at,
+                            'sent', 'submitted' => $record->whatsapp_sent_at,
+                            default => null,
+                        };
+                        return $at ? 'Status at '.$at->format('d M Y, H:i') : null;
+                    })
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         'not_sent', null, '' => 'Not Sent',
