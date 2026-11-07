@@ -374,6 +374,16 @@ Route::middleware(['auth'])->group(function () {
         ->whereNumber('event')
         ->name('gate.check-in.show');
 
+    // Human-readable share link; the event ID keeps the lookup unambiguous.
+    // Existing numeric scanner links remain valid for older invitations.
+    Route::get(
+        '/gate/events/{event}/{slug}/check-in',
+        [GateCheckInController::class, 'showNamed']
+    )
+        ->whereNumber('event')
+        ->where('slug', '[a-z0-9-]+')
+        ->name('gate.check-in.named');
+
     Route::post(
         '/gate/events/{event}/verify',
         [GateCheckInController::class, 'verify']
