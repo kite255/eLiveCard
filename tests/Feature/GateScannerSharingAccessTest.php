@@ -38,18 +38,30 @@ class GateScannerSharingAccessTest extends TestCase
         ]);
 
         $scanner = route('gate.check-in.show', $event);
+        $namedScanner = route('gate.check-in.named', [
+            'event' => $event->id,
+            'slug' => 'wedding-gate',
+        ]);
         $verify = route('gate.check-in.verify', $event);
         $confirm = route('gate.check-in.confirm', $event);
 
         $this->get($scanner)->assertRedirect();
+        $this->get($namedScanner)->assertRedirect('/admin/login');
         $this->actingAs($stranger)->get($scanner)->assertForbidden();
+        $this->actingAs($stranger)->get($namedScanner)->assertForbidden();
         $this->actingAs($stranger)->postJson($verify, ['search' => 'EXAMPLE'])->assertForbidden();
         $this->actingAs($stranger)->postJson($confirm, ['invitee_id' => 123, 'guest_count' => 1])->assertForbidden();
 
         $this->actingAs($officer)->get($scanner)->assertOk();
+        $this->actingAs($officer)->get($namedScanner)->assertOk();
+        $this->actingAs($officer)->get(route('gate.check-in.named', [
+            'event' => $event->id,
+            'slug' => 'older-wedding-title',
+        ]))->assertRedirect($namedScanner);
         $this->actingAs($officer)->get(route('gate.check-in.show', $otherEvent))->assertForbidden();
 
         $event->assignedUsers()->updateExistingPivot($officer->id, ['is_active' => false]);
         $this->actingAs($officer)->get($scanner)->assertForbidden();
+        $this->actingAs($officer)->get($namedScanner)->assertForbidden();
     }
 }
