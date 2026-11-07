@@ -99,7 +99,17 @@ class PublicRsvpReportController extends Controller
                             ->orWhereRaw(
                                 "LOWER(COALESCE(category, '')) LIKE ? ESCAPE '!'",
                                 [$like]
-                            );
+                            )
+                            ->orWhereRaw(
+                                "LOWER(COALESCE(table_number, '')) LIKE ? ESCAPE '!'",
+                                [$like]
+                            )
+                            ->orWhereHas('cardType', function (Builder $cardTypeQuery) use ($like): void {
+                                $cardTypeQuery->whereRaw(
+                                    "LOWER(COALESCE(name, '')) LIKE ? ESCAPE '!'",
+                                    [$like]
+                                );
+                            });
 
                         if ($showPhoneNumbers) {
                             $query->orWhereRaw(
