@@ -85,9 +85,9 @@ class InviteeInvitationService
         $invitee->loadMissing(['event', 'cardType']);
 
         if ($channel === MessageTemplate::CHANNEL_SMS) {
-            if (in_array((string) $invitee->invitation_sms_status, ['sent', 'delivered'], true)
-                || ($invitee->last_message_channel === 'sms' && $invitee->last_message_status === 'queued')) {
-                return $this->result('skipped', 'Invitation SMS has already been sent or queued.');
+            $exclusion = app(SmsInvitationRecipientsService::class)->exclusionReason($invitee);
+            if ($exclusion !== null) {
+                return $this->result('skipped', $exclusion);
             }
 
             $message = EliveMessagePlaceholders::render((string) $template->content, $invitee);
