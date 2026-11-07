@@ -17,7 +17,7 @@
         \App\Models\Event::STATUS_ACTIVE => 'Happening Now',
         \App\Models\Event::STATUS_DRAFT => 'Draft',
         \App\Models\Event::STATUS_CANCELLED => 'Cancelled',
-        default => $event->event_date?->isToday() ? 'Today' : 'Upcoming',
+        default => 'Upcoming',
     };
 
     $organizerPhone = $event->effective_organizer_phone;
