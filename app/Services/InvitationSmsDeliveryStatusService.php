@@ -25,7 +25,7 @@ class InvitationSmsDeliveryStatusService
 
         if ($invitee->last_message_channel === 'sms'
             && in_array((string) $invitee->last_message_status, ['queued', 'pending', 'sending', 'processing'], true)
-            && (! $log || $invitee->updated_at?->gt($log->created_at))) {
+            && (string) $invitee->sms_status === Invitee::SMS_STATUS_PENDING) {
             return $this->result('Queued', 'warning', 'Invitation is awaiting queue processing. Delivery is not confirmed.', $log);
         }
 
