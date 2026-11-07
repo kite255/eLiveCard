@@ -29,6 +29,8 @@ class OvernightEventCompletionTest extends TestCase
 
             $this->assertSame('2026-11-09 00:00', $event->ends_at->format('Y-m-d H:i'));
             $this->assertSame(Event::STATUS_ACTIVE, $event->display_status);
+            $this->assertTrue(Event::query()->active()->whereKey($event->id)->exists());
+            $this->assertFalse(Event::query()->completed()->whereKey($event->id)->exists());
 
             $this->artisan('events:complete-finished')->assertExitCode(0);
             $this->assertSame(Event::STATUS_ACTIVE, $event->fresh()->status);
@@ -36,6 +38,7 @@ class OvernightEventCompletionTest extends TestCase
             Carbon::setTestNow(Carbon::parse('2026-11-09 00:01:00', 'Africa/Dar_es_Salaam'));
             $this->artisan('events:complete-finished')->assertExitCode(0);
             $this->assertSame(Event::STATUS_COMPLETED, $event->fresh()->status);
+            $this->assertTrue(Event::query()->completed()->whereKey($event->id)->exists());
         } finally {
             Carbon::setTestNow();
         }
