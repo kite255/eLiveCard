@@ -16,6 +16,9 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\SendAutomaticThankYouSms::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
+        // Filament provides /admin/login, not the conventional Laravel login route.
+        $middleware->redirectGuestsTo('/admin/login');
+
         $middleware->trustProxies(
             at: '*',
             headers: Request::HEADER_X_FORWARDED_FOR
