@@ -1296,6 +1296,8 @@ class InviteesRelationManager extends RelationManager
             ->actionsPosition(Tables\Enums\ActionsPosition::AfterColumns)
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    // Invitee details, card management and private links.
+                    Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make()
                         ->label('View')
                         ->icon('heroicon-o-eye')
@@ -1582,6 +1584,10 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
+                    ])->dropdown(false),
+
+                    // Invitation-only communication actions.
+                    Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('send_whatsapp_invitation')
                         ->label('Send WhatsApp Invitation')
                         ->icon('heroicon-o-chat-bubble-left-right')
@@ -1618,6 +1624,10 @@ class InviteesRelationManager extends RelationManager
                         ])
                         ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'sms')),
 
+                    ])->dropdown(false),
+
+                    // RSVP management actions.
+                    Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('mark_attending')
                         ->label('Mark Attending')
                         ->visible(fn (): bool => $this->canManageInviteesForOwner())
@@ -1729,6 +1739,10 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
+                    ])->dropdown(false),
+
+                    // Destructive and irreversible actions.
+                    Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('cancel_invitee')
                         ->label('Cancel Invitee')
                         ->visible(fn (): bool => $this->canManageInviteesForOwner())
@@ -1793,12 +1807,14 @@ class InviteesRelationManager extends RelationManager
                                     ->send();
                             }
                         }),
+                    ])->dropdown(false),
                 ])
                     ->label('Manage invitee')
                     ->icon('heroicon-m-ellipsis-horizontal')
                     ->color('primary')
                     ->iconButton()
-                    ->tooltip('Manage invitee'),
+                    ->tooltip('Manage invitee')
+                    ->maxHeight('min(70vh, 480px)'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
