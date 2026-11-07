@@ -14,7 +14,7 @@ class InviteeActionsMenuStructureTest extends TestCase
         $menu = substr($source, $start, $end - $start);
 
         $this->assertSame(4, substr_count($menu, '->dropdown(false)'));
-        $this->assertStringContainsString("->maxHeight('min(70vh, 480px)')", $menu);
+        $this->assertStringNotContainsString('->maxHeight(', $menu);
 
         $names = [
             'edit_invitee',
