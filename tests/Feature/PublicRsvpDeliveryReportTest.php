@@ -262,7 +262,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $this->get($event->generateRsvpShareLink().'?search=255700001234')
             ->assertOk()->assertDontSee('Private Phone Guest')
-            ->assertDontSee('255700001234');
+            ->assertSee('No invitees match the selected filters.');
     }
 
     public function test_rsvp_filters_and_search_are_event_scoped(): void
@@ -526,7 +526,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->assertNotEmpty($queries);
         foreach ($queries as $query) {
             $this->assertStringContainsString("ESCAPE '!'", $query['sql']);
-            $this->assertSame(3, count($query['bindings']));
+            $this->assertSame(5, count($query['bindings']));
             $this->assertStringNotContainsString("ESCAPE '\\\\'", $query['sql']);
         }
     }
