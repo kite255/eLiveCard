@@ -1060,69 +1060,48 @@ class InviteesRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\Action::make('send_message')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Send SMS')
-                        ->icon('heroicon-o-paper-airplane')
-                        ->color('primary')
-                        ->modalHeading('Send SMS Message')
-                        ->modalDescription('Choose the SMS message option and recipients.')
-                        ->modalSubmitActionLabel('Send SMS')
-                        ->form([
-                            Forms\Components\Select::make('template_type')
-                                ->label('Message Option')
-                                ->options([
-                                    'invitation' => 'Invitation SMS',
-                                    'card_link' => 'Card Link SMS',
-                                    'custom' => 'Custom SMS',
-                                ])
-                                ->default('invitation')
-                                ->required(),
-
-                            Forms\Components\Select::make('recipient_scope')
-                                ->label('Send To')
-                                ->options([
-                                    'not_sent' => 'Invitees Not Yet Sent',
-                                    'all_active' => 'All Active Invitees',
-                                    'pending_rsvp' => 'Pending RSVP Invitees',
-                                    'attending' => 'Attending Invitees',
-                                    'failed_sms' => 'Failed SMS Invitees',
-                                ])
-                                ->default('not_sent')
-                                ->required(),
-
-                            Forms\Components\Placeholder::make('note')
-                                ->label('Template Source')
-                                ->content('The system will use the active SMS template from the Message Templates tab.'),
-                        ])
-                        ->requiresConfirmation()
-                        ->action(function (array $data): void {
-                            $templateType = match ($data['template_type']) {
-                                'card_link' => 'invitation',
-                                default => $data['template_type'],
-                            };
-
-                            $this->sendEventMessagesFromToolbar(
-                                channel: 'sms',
-                                templateType: $templateType,
-                                recipientScope: $data['recipient_scope'],
-                                actionTitle: 'SMS messages processed',
-                            );
-                        }),
+                    ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                    ->label('Send SMS Invitations')
+                    ->icon('heroicon-o-envelope')
+                    ->color('primary')
+                    ->modalHeading('Send SMS Invitations')
+                    ->modalDescription('Uses the active SMS Invitation template. Already sent invitations are skipped by the delivery job.')
+                    ->modalSubmitActionLabel('Queue SMS Invitations')
+                    ->form([
+                        Forms\Components\Select::make('recipient_scope')
+                            ->label('Recipients')
+                            ->options([
+                                'not_sent' => 'Invitees Not Yet Sent',
+                                'all_active' => 'All Active Invitees',
+                                'pending_rsvp' => 'Pending RSVP Invitees',
+                                'attending' => 'Attending Invitees',
+                                'failed_sms' => 'Failed SMS Invitees',
+                            ])
+                            ->default('not_sent')
+                            ->required(),
+                    ])
+                    ->requiresConfirmation()
+                    ->action(fn (array $data) => $this->sendEventMessagesFromToolbar(
+                        channel: 'sms',
+                        templateType: MessageTemplate::TYPE_INVITATION,
+                        recipientScope: $data['recipient_scope'],
+                        actionTitle: 'SMS invitations processed',
+                    )),
 
                     Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Send WhatsApp')
+                        ->label('Send WhatsApp Invitations')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
-                        ->modalHeading('Send WhatsApp Message')
-                                                ->modalSubmitActionLabel('Send WhatsApp')
-                        ->modalDescription('Send the saved event WhatsApp template to eligible invitees who have not yet been sent a WhatsApp message. Confirm to continue.')
+                        ->modalHeading('Send WhatsApp Invitations')
+                        ->modalSubmitActionLabel('Queue WhatsApp Invitations')
+                        ->modalDescription('Send the event default WhatsApp invitation template only to invitees who have not received it.')
                         ->requiresConfirmation()
                         ->action(function (): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
-                            if (! $selectedTemplate) {
+                            if (! $selectedTemplate || $selectedTemplate->type !== MessageTemplate::TYPE_INVITATION) {
                                 $this->brandedNotification()
                                     ->title('eLive Card • WhatsApp template not found')
                                     ->body('Choose an active WhatsApp template in Event Settings before sending.')
@@ -1134,9 +1113,9 @@ class InviteesRelationManager extends RelationManager
 
                             $this->sendEventMessagesFromToolbar(
                                 channel: 'whatsapp',
-                                templateType: $selectedTemplate->type,
+                                templateType: MessageTemplate::TYPE_INVITATION,
                                 recipientScope: 'not_sent',
-                                actionTitle: 'WhatsApp messages processed',
+                                actionTitle: 'WhatsApp invitations processed',
                                 messageTemplateId: $selectedTemplate->id,
                             );
                         }),
@@ -1154,8 +1133,8 @@ class InviteesRelationManager extends RelationManager
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
-                            if (! $template) {
-                                $this->brandedNotification()->title('WhatsApp template not configured')
+                            if (! $template || $template->type !== MessageTemplate::TYPE_INVITATION) {
+                                $this->brandedNotification()->title('WhatsApp invitation template not configured')
                                     ->body('Configure an active WhatsApp template in Event Settings.')
                                     ->danger()->send();
                                 return;
@@ -1603,87 +1582,41 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
-                    Tables\Actions\Action::make('send_card_link')
-                        ->label('Send Message')
-                        ->icon('heroicon-o-paper-airplane')
+                    Tables\Actions\Action::make('send_whatsapp_invitation')
+                        ->label('Send WhatsApp Invitation')
+                        ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
-                        ->modalHeading(fn (Invitee $record): string => 'Send message to ' . $record->name)
-                        ->modalSubmitActionLabel('Send / Record')
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
+                        ->modalHeading(fn (Invitee $record): string => 'Send WhatsApp invitation to '.$record->name)
+                        ->modalDescription('Uses the active WhatsApp invitation template selected in Event Settings. Previously sent invitations will not be resent.')
+                        ->modalSubmitActionLabel('Queue WhatsApp Invitation')
+                        ->requiresConfirmation()
                         ->form([
-                            Forms\Components\Select::make('channel')
-                                ->label('Channel')
-                                ->options([
-                                    'sms' => 'SMS',
-                                    'whatsapp' => 'WhatsApp',
-                                ])
-                                ->default('sms')
-                                ->live()
-                                ->required(),
-
-                            Forms\Components\Select::make('template_type')
-                                ->label('Message Type')
-                                ->options([
-                                    'invitation' => 'Invitation',
-                                    'contribution' => 'Contribution Card',
-                                    'rsvp_pending_reminder' => 'RSVP Pending Reminder',
-                                    'attending_reminder' => 'Attending Reminder',
-                                    'event_day_reminder' => 'Event Day Reminder',
-                                    'welcome_checkin' => 'Welcome After Check-in',
-                                    'thank_you' => 'Thank You',
-                                    'custom' => 'Custom',
-                                ])
-                                ->default('invitation')
-                                ->required(),
-
-                            Forms\Components\Select::make('message_template_id')
-                                ->label('Exact WhatsApp Template')
-                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
-                                ->searchable()
-                                ->preload()
-                                ->helperText('For WhatsApp, choose the exact approved Meta template. For SMS, leave this empty.'),
-
-                            Forms\Components\Placeholder::make('template_note')
-                                ->label('Template Source')
-                                ->content('For WhatsApp, the selected exact template is used. For SMS, the active template for the selected type is used.'),
+                            Forms\Components\Placeholder::make('whatsapp_template_preview')
+                                ->label('Configured Template')
+                                ->content(fn (Invitee $record): string => app(\App\Services\InviteeInvitationService::class)->preview($record, 'whatsapp')),
                         ])
-                        ->action(function (Invitee $record, array $data): void {
-                            $result = $this->sendInviteeMessageUsingTemplate(
-                                invitee: $record,
-                                channel: $data['channel'],
-                                templateType: $data['template_type'],
-                                messageTemplateId: ($data['channel'] ?? null) === 'whatsapp' && filled($data['message_template_id'] ?? null)
-                                    ? (int) $data['message_template_id']
-                                    : null,
-                            );
+                        ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'whatsapp')),
 
-                            AuditLogService::record(
-                                action: 'invitee.message_'.$result['status'],
-                                subject: $record,
-                                eventId: $record->event_id,
-                                description: ucfirst((string) $data['channel']).' message action was processed for the invitee.',
-                                metadata: [
-                                    'channel' => $data['channel'],
-                                    'template_type' => $data['template_type'],
-                                    'status' => $result['status'] ?? null,
-                                    'message_template_id' => $data['message_template_id'] ?? null,
-                                ],
-                            );
-
-                            $notification = $this->brandedNotification()
-                                ->title('eLive Card • ' . $result['title'])
-                                ->body($result['body'])
-                                ->persistent();
-
-                            match ($result['type']) {
-                                'success' => $notification->success(),
-                                'danger' => $notification->danger(),
-                                'warning' => $notification->warning(),
-                                default => $notification->info(),
-                            };
-
-                            $notification->send();
-                        })
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code)),
+                    Tables\Actions\Action::make('send_sms_invitation')
+                        ->label('Send SMS Invitation')
+                        ->icon('heroicon-o-envelope')
+                        ->color('primary')
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
+                        ->modalHeading(fn (Invitee $record): string => 'Send SMS invitation to '.$record->name)
+                        ->modalDescription('Uses the active SMS Invitation template. Already sent or queued invitations are skipped.')
+                        ->modalSubmitActionLabel('Queue SMS Invitation')
+                        ->requiresConfirmation()
+                        ->form([
+                            Forms\Components\Placeholder::make('sms_invitation_preview')
+                                ->label('Personalized SMS Preview')
+                                ->content(fn (Invitee $record): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(
+                                    '<div style="white-space:pre-wrap;word-break:break-word;font-size:0.875rem;">'
+                                    .e(app(\App\Services\InviteeInvitationService::class)->preview($record, 'sms'))
+                                    .'</div>'
+                                )),
+                        ])
+                        ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'sms')),
 
                     Tables\Actions\Action::make('mark_attending')
                         ->label('Mark Attending')
@@ -2333,97 +2266,27 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\BulkAction::make('send_selected_message')
-                        ->label('Send Message to Selected')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->icon('heroicon-o-paper-airplane')
+                    Tables\Actions\BulkAction::make('send_selected_whatsapp_invitations')
+                        ->label('Send WhatsApp Invitations to Selected')
+                        ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->modalHeading('Send WhatsApp invitations to selected invitees')
+                        ->modalDescription('Uses the event default WhatsApp invitation template. Existing claims and submitted invitations are skipped.')
                         ->requiresConfirmation()
-                        ->modalHeading('Send message to selected invitees')
-                        ->modalDescription('Choose the channel and, for WhatsApp, the exact Meta template.')
-                        ->form([
-                            Forms\Components\Select::make('channel')
-                                ->label('Channel')
-                                ->options([
-                                    'sms' => 'SMS',
-                                    'whatsapp' => 'WhatsApp',
-                                ])
-                                ->default('sms')
-                                ->required(),
-
-                            Forms\Components\Select::make('template_type')
-                                ->label('Message Type')
-                                ->options([
-                                    'invitation' => 'Invitation',
-                                    'contribution' => 'Contribution Card',
-                                    'rsvp_pending_reminder' => 'RSVP Pending Reminder',
-                                    'attending_reminder' => 'Attending Reminder',
-                                    'event_day_reminder' => 'Event Day Reminder',
-                                    'welcome_checkin' => 'Welcome After Check-in',
-                                    'thank_you' => 'Thank You',
-                                    'custom' => 'Custom',
-                                ])
-                                ->default('invitation')
-                                ->required(),
-
-                            Forms\Components\Select::make('message_template_id')
-                                ->label('Exact WhatsApp Template')
-                                ->options(fn (): array => $this->whatsappMessageTemplateOptions())
-                                ->searchable()
-                                ->preload()
-                                ->helperText('For WhatsApp bulk sending, choose the exact Meta template. For SMS, leave this empty.'),
-                        ])
                         ->deselectRecordsAfterCompletion()
-                        ->action(function (Collection $records, array $data): void {
-                            $sent = 0;
-                            $skipped = 0;
-                            $failed = 0;
+                        ->action(fn (Collection $records) => $this->processSelectedInvitations($records, 'whatsapp')),
 
-                            foreach ($records as $record) {
-                                if (! $record instanceof Invitee) {
-                                    $skipped++;
-                                    continue;
-                                }
-
-                                $result = $this->sendInviteeMessageUsingTemplate(
-                                    invitee: $record,
-                                    channel: $data['channel'],
-                                    templateType: $data['template_type'],
-                                    notifySkipped: false,
-                                    messageTemplateId: ($data['channel'] ?? null) === 'whatsapp' && filled($data['message_template_id'] ?? null)
-                                        ? (int) $data['message_template_id']
-                                        : null,
-                                );
-
-                                if (in_array($result['status'], ['queued', 'sent', 'logged'], true)) {
-                                    $sent++;
-                                } elseif ($result['status'] === 'skipped') {
-                                    $skipped++;
-                                } else {
-                                    $failed++;
-                                }
-                            }
-
-                            AuditLogService::system(
-                                action: 'selected_messages_processed',
-                                description: 'Messages to selected invitees were processed.',
-                                eventId: $this->getOwnerRecord()->id,
-                                metadata: [
-                                    'channel' => $data['channel'],
-                                    'template_type' => $data['template_type'],
-                                    'sent_or_recorded' => $sent,
-                                    'skipped' => $skipped,
-                                    'failed' => $failed,
-                                ],
-                            );
-
-                            $this->brandedNotification()
-                                ->title('eLive Card • Selected messages processed')
-                                ->body("Queued/sent/recorded: {$sent}. Skipped: {$skipped}. Failed: {$failed}.")
-                                ->color($failed > 0 ? 'warning' : 'success')
-                                ->persistent()
-                                ->send();
-                        }),
+                    Tables\Actions\BulkAction::make('send_selected_sms_invitations')
+                        ->label('Send SMS Invitations to Selected')
+                        ->icon('heroicon-o-envelope')
+                        ->color('primary')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->modalHeading('Send SMS invitations to selected invitees')
+                        ->modalDescription('Uses the active SMS Invitation template. Already sent and queued invitations are skipped.')
+                        ->requiresConfirmation()
+                        ->deselectRecordsAfterCompletion()
+                        ->action(fn (Collection $records) => $this->processSelectedInvitations($records, 'sms')),
                 ]),
             ]);
     }
@@ -2871,6 +2734,66 @@ class InviteesRelationManager extends RelationManager
             ->title('eLive Card • ' . $actionTitle)
             ->body($body)
             ->color($failed > 0 ? 'warning' : 'success')
+            ->persistent()
+            ->send();
+    }
+
+    protected function processInviteeInvitation(Invitee $record, string $channel): void
+    {
+        abort_unless($this->canSendMessagesForOwner(), 403);
+
+        $result = app(\App\Services\InviteeInvitationService::class)
+            ->send($this->getOwnerRecord(), $record, $channel);
+
+        AuditLogService::record(
+            action: 'invitee.invitation_'.$result['status'],
+            subject: $record,
+            eventId: $record->event_id,
+            description: ucfirst($channel).' invitation action processed.',
+            metadata: ['channel' => $channel, 'status' => $result['status']],
+        );
+
+        $notification = $this->brandedNotification()
+            ->title('eLive Card • '.ucfirst($channel).' Invitation')
+            ->body($result['message']);
+
+        match ($result['status']) {
+            'queued' => $notification->success(),
+            'skipped' => $notification->warning(),
+            default => $notification->danger(),
+        };
+
+        $notification->send();
+    }
+
+    protected function processSelectedInvitations(Collection $records, string $channel): void
+    {
+        abort_unless($this->canSendMessagesForOwner(), 403);
+
+        $counts = ['queued' => 0, 'skipped' => 0, 'failed' => 0];
+
+        foreach ($records as $record) {
+            if (! $record instanceof Invitee) {
+                $counts['skipped']++;
+                continue;
+            }
+
+            $result = app(\App\Services\InviteeInvitationService::class)
+                ->send($this->getOwnerRecord(), $record, $channel);
+            $counts[$result['status']]++;
+        }
+
+        AuditLogService::system(
+            action: 'selected_invitations_processed',
+            description: 'Selected '.strtoupper($channel).' invitations processed.',
+            eventId: $this->getOwnerRecord()->id,
+            metadata: ['channel' => $channel] + $counts,
+        );
+
+        $this->brandedNotification()
+            ->title('eLive Card • '.strtoupper($channel).' invitations processed')
+            ->body("Queued: {$counts['queued']}. Skipped: {$counts['skipped']}. Failed: {$counts['failed']}.")
+            ->color($counts['failed'] > 0 ? 'warning' : 'success')
             ->persistent()
             ->send();
     }
