@@ -59,5 +59,13 @@ class InviteesLivewireMenuSmokeTest extends TestCase
             ->assertSuccessful()
             ->mountTableAction('send_whatsapp_invitation', $invitee)
             ->assertHasNoTableActionErrors();
+
+        Livewire::test(InviteesRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => ManageEventSection::class,
+        ])
+            ->assertSuccessful()
+            ->mountTableAction('force_resend_sms_invitation', $invitee)
+            ->assertHasNoTableActionErrors();
     }
 }

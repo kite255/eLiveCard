@@ -28,6 +28,7 @@ class SendInvitationSmsJob implements ShouldQueue
         public int $eventId,
         public int $inviteeId,
         public ?string $customMessage = null,
+        public bool $forceResend = false,
     ) {
         $this->onQueue(self::QUEUE);
     }
@@ -148,7 +149,11 @@ class SendInvitationSmsJob implements ShouldQueue
             return;
         }
 
-        if ($this->alreadySuccessfullySent($invitee)) {
+        if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+            return;
+        }
+
+        if (! $this->forceResend && $this->alreadySuccessfullySent($invitee)) {
             AuditLogService::record(
                 action: 'invitation_sms.duplicate_prevented',
                 subject: $invitee,
