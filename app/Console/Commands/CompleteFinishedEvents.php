@@ -4,7 +4,6 @@ namespace App\Console\Commands;
 
 use App\Models\Event;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class CompleteFinishedEvents extends Command
@@ -56,34 +55,21 @@ class CompleteFinishedEvents extends Command
         return self::SUCCESS;
     }
 
-    private function resolveEventEndDateTime(Event $event): ?Carbon
+    private function resolveEventEndDateTime(Event $event): ?\Illuminate\Support\Carbon
     {
         if (! $event->event_date) {
             return null;
         }
 
-        $endsAt = $event->event_date->copy();
-
+        // Share the overnight end-time rule with the Event display status.
         if ($event->end_time) {
-            $endsAt->setTime(
-                $event->end_time->hour,
-                $event->end_time->minute,
-                $event->end_time->second
-            );
-
-            return $endsAt;
+            return $event->ends_at;
         }
 
-        if ($event->start_time) {
-            $endsAt->setTime(
-                $event->start_time->hour,
-                $event->start_time->minute,
-                $event->start_time->second
-            );
+        $endsAt = $event->starts_at;
 
-            return $endsAt->addHours(6);
-        }
-
-        return $endsAt->endOfDay();
+        return $event->start_time
+            ? $endsAt?->addHours(6)
+            : $event->event_date->copy()->endOfDay();
     }
 }

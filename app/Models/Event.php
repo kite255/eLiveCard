@@ -329,20 +329,34 @@ class Event extends Model
     public function scopeActive(Builder $query): Builder
     {
         $today = now()->toDateString();
+        $yesterday = now()->subDay()->toDateString();
         $currentTime = now()->format('H:i:s');
 
         return $query
             ->where('status', self::STATUS_ACTIVE)
-            ->whereDate('event_date', $today)
-            ->where(function (Builder $query) use ($currentTime): void {
+            ->where(function (Builder $query) use ($today, $yesterday, $currentTime): void {
                 $query
-                    ->whereNull('start_time')
-                    ->orWhereTime('start_time', '<=', $currentTime);
-            })
-            ->where(function (Builder $query) use ($currentTime): void {
-                $query
-                    ->whereNull('end_time')
-                    ->orWhereTime('end_time', '>=', $currentTime);
+                    ->where(function (Builder $query) use ($today, $currentTime): void {
+                        $query
+                            ->whereDate('event_date', $today)
+                            ->where(function (Builder $query) use ($currentTime): void {
+                                $query->whereNull('start_time')
+                                    ->orWhereTime('start_time', '<=', $currentTime);
+                            })
+                            ->where(function (Builder $query) use ($currentTime): void {
+                                $query->whereNull('end_time')
+                                    ->orWhereTime('end_time', '>=', $currentTime)
+                                    ->orWhereColumn('end_time', '<=', 'start_time');
+                            });
+                    })
+                    ->orWhere(function (Builder $query) use ($yesterday, $currentTime): void {
+                        $query
+                            ->whereDate('event_date', $yesterday)
+                            ->whereNotNull('start_time')
+                            ->whereNotNull('end_time')
+                            ->whereColumn('end_time', '<=', 'start_time')
+                            ->whereTime('end_time', '>=', $currentTime);
+                    });
             });
     }
 
@@ -379,21 +393,38 @@ class Event extends Model
     public function scopeCompleted(Builder $query): Builder
     {
         $today = now()->toDateString();
+        $yesterday = now()->subDay()->toDateString();
         $currentTime = now()->format('H:i:s');
 
-        return $query->where(function (Builder $query) use ($today, $currentTime): void {
+        return $query->where(function (Builder $query) use ($today, $yesterday, $currentTime): void {
             $query
                 ->where('status', self::STATUS_COMPLETED)
-                ->orWhere(function (Builder $query) use ($today, $currentTime): void {
+                ->orWhere(function (Builder $query) use ($today, $yesterday, $currentTime): void {
                     $query
                         ->where('status', self::STATUS_ACTIVE)
-                        ->where(function (Builder $query) use ($today, $currentTime): void {
+                        ->where(function (Builder $query) use ($today, $yesterday, $currentTime): void {
                             $query
-                                ->whereDate('event_date', '<', $today)
+                                ->whereDate('event_date', '<', $yesterday)
+                                ->orWhere(function (Builder $query) use ($yesterday, $currentTime): void {
+                                    $query
+                                        ->whereDate('event_date', $yesterday)
+                                        ->where(function (Builder $query) use ($currentTime): void {
+                                            $query
+                                                ->whereNull('start_time')
+                                                ->orWhereNull('end_time')
+                                                ->orWhereColumn('end_time', '>', 'start_time')
+                                                ->orWhereTime('end_time', '<', $currentTime);
+                                        });
+                                })
                                 ->orWhere(function (Builder $query) use ($today, $currentTime): void {
                                     $query
                                         ->whereDate('event_date', $today)
                                         ->whereNotNull('end_time')
+                                        ->where(function (Builder $query) use ($currentTime): void {
+                                            $query
+                                                ->whereNull('start_time')
+                                                ->orWhereColumn('end_time', '>', 'start_time');
+                                        })
                                         ->whereTime('end_time', '<', $currentTime);
                                 });
                         });
@@ -671,6 +702,12 @@ class Event extends Model
                 $this->end_time->minute,
                 $this->end_time->second
             );
+
+            // An event starting in the evening and ending at midnight (or
+            // earlier on the clock) ends the following calendar day.
+            if ($this->start_time && $endsAt->lessThanOrEqualTo($this->starts_at)) {
+                $endsAt->addDay();
+            }
         }
 
         return $endsAt;
