@@ -701,6 +701,22 @@
     color: #f8fafc;
 }
 
+.dark .fi-no-notification:has(.fi-color-success) {
+    border-top-color: #16a34a;
+}
+
+.dark .fi-no-notification:has(.fi-color-warning) {
+    border-top-color: var(--elive-orange);
+}
+
+.dark .fi-no-notification:has(.fi-color-danger) {
+    border-top-color: #dc2626;
+}
+
+.dark .fi-no-notification:has(.fi-color-info) {
+    border-top-color: #2563eb;
+}
+
 .dark .fi-no-notification-title {
     color: #f8fafc;
 }
