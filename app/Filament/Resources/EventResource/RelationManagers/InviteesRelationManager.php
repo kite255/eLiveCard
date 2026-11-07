@@ -922,7 +922,7 @@ class InviteesRelationManager extends RelationManager
                                 report($generationException);
 
                                 $this->brandedNotification()
-                                    ->title('eLive Card • Invitee saved')
+                                    ->title('eLive Card • Invitee saved: '.$invitee->name)
                                     ->body('The invitee was saved successfully, but card generation could not be started automatically. Use Generate / Regenerate Card from the invitee menu.')
                                     ->warning()
                                     ->persistent()
@@ -932,7 +932,7 @@ class InviteesRelationManager extends RelationManager
                             }
 
                             $this->brandedNotification()
-                                ->title('eLive Card • Invitee added')
+                                ->title('eLive Card • Invitee added: '.$invitee->name)
                                 ->body('The invitee was saved successfully. Serial number, QR code, private link, and card generation have been started automatically.')
                                 ->success()
                                 ->send();
@@ -1517,7 +1517,7 @@ class InviteesRelationManager extends RelationManager
                             }
 
                             $this->brandedNotification()
-                                ->title('eLive Card • Invitee updated successfully')
+                                ->title('eLive Card • Invitee updated: '.$record->name)
                                 ->body($shouldRegenerateCard
                                     ? 'Card-related details changed, so card regeneration has started automatically.'
                                     : 'Invitee details updated. Card regeneration was not needed.')
@@ -1536,7 +1536,7 @@ class InviteesRelationManager extends RelationManager
                         ->action(function (Invitee $record): void {
                             if ($record->latestGeneratedCard?->status === GeneratedCard::STATUS_GENERATING) {
                                 $this->brandedNotification()
-                                    ->title('eLive Card • Card is already generating')
+                                    ->title('eLive Card • Card is already generating: '.$record->name)
                                     ->warning()
                                     ->send();
 
@@ -1556,7 +1556,7 @@ class InviteesRelationManager extends RelationManager
                             );
 
                             $this->brandedNotification()
-                                ->title('eLive Card • Card generation started')
+                                ->title('eLive Card • Card generation started: '.$record->name)
                                 ->body('Click Refresh Status after a few seconds to update the Card Gen column from Generating to Generated.')
                                 ->success()
                                 ->send();
@@ -1587,7 +1587,7 @@ class InviteesRelationManager extends RelationManager
                             );
 
                             $this->brandedNotification()
-                                ->title('eLive Card • Card generation restarted')
+                                ->title('eLive Card • Card generation restarted: '.$record->name)
                                 ->body('Click Refresh Status after a few seconds to update the Card Gen column.')
                                 ->success()
                                 ->send();
@@ -1605,7 +1605,7 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-link')
                         ->action(function ($record) {
                             $this->brandedNotification()
-                                ->title('eLive Card • Private invitee link')
+                                ->title('eLive Card • Private link: '.$record->name)
                                 ->body(route('invitee.page', $record->short_code))
                                 ->success()
                                 ->persistent()
@@ -2919,7 +2919,7 @@ class InviteesRelationManager extends RelationManager
         );
 
         $this->brandedNotification()
-            ->title('eLive Card • SMS invitations processed')
+            ->title('eLive Card • Bulk SMS: '.array_sum($counts).' invitees processed')
             ->body("Queued: {$counts['queued']}. Skipped: {$counts['skipped']}. Excluded: {$counts['not_eligible']}. Failed: {$counts['failed']}. Queued messages are not delivery confirmations.")
             ->color($counts['failed'] > 0 ? 'warning' : 'success')
             ->persistent()->send();
@@ -2941,7 +2941,7 @@ class InviteesRelationManager extends RelationManager
         );
 
         $notification = $this->brandedNotification()
-            ->title('eLive Card • '.ucfirst($channel).' Invitation')
+            ->title('eLive Card • '.strtoupper($channel).' invitation: '.$record->name)
             ->body($result['message']);
 
         match ($result['status']) {
@@ -2978,7 +2978,7 @@ class InviteesRelationManager extends RelationManager
         );
 
         $this->brandedNotification()
-            ->title('eLive Card • '.strtoupper($channel).' invitations processed')
+            ->title('eLive Card • '.strtoupper($channel).' bulk invitations: '.$records->count().' selected')
             ->body("Queued: {$counts['queued']}. Skipped: {$counts['skipped']}. Failed: {$counts['failed']}.")
             ->color($counts['failed'] > 0 ? 'warning' : 'success')
             ->persistent()
@@ -4371,7 +4371,7 @@ class InviteesRelationManager extends RelationManager
         );
 
         $this->brandedNotification()
-            ->title('eLive Card • Excel import completed')
+            ->title('eLive Card • Excel import: '.($created + $skipped).' rows processed')
             ->body($message)
             ->color($skipped > 0 ? 'warning' : 'success')
             ->persistent()
