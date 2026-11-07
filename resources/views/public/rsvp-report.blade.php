@@ -419,6 +419,15 @@
                 min-width: 490px;
             }
 
+            .mobile-table-wrap .mobile-row-number {
+                width: 6%;
+                text-align: center;
+                font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+                padding-left: 3px;
+                padding-right: 3px;
+            }
+
             .mobile-table-wrap .reply-value {
                 max-width: 120px;
                 font-size: 10px;
@@ -863,11 +872,12 @@
                 <table aria-label="Compact invitee RSVP, channel, reply and response time report">
                     <thead>
                         <tr>
-                            <th style="width:26%">Invitee</th>
-                            <th style="width:18%">RSVP</th>
-                            <th style="width:23%">CHANNEL</th>
+                            <th scope="col" class="mobile-row-number">#</th>
+                            <th style="width:24%">Invitee</th>
+                            <th style="width:17%">RSVP</th>
+                            <th style="width:22%">CHANNEL</th>
                             <th style="width:19%"><span class="reply-column-label"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg> Reply</span></th>
-                            <th style="width:14%">Time</th>
+                            <th style="width:12%">Time</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -881,6 +891,7 @@
                                 };
                             @endphp
                             <tr>
+                                <td class="mobile-row-number">{{ $invitees->firstItem() + $loop->index }}</td>
                                 <td>
                                     <div class="name">{{ $invitee->name }}</div>
                                     <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
@@ -896,7 +907,7 @@
                                 <td class="response-time">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M H:i') ?? '—' }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="5">No invitees match the selected filters.</td></tr>
+                            <tr><td colspan="6">No invitees match the selected filters.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

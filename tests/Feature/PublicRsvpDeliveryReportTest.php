@@ -172,6 +172,36 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Reply');
     }
 
+    public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
+    {
+        $event = $this->reportEvent('Numbered Mobile Report');
+        $type = $this->reportCardType($event);
+
+        for ($number = 1; $number <= 51; $number++) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => sprintf('Numbered Guest %03d', $number),
+                'phone' => sprintf('25570002%04d', $number),
+                'rsvp_status' => 'pending',
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+
+        $this->get($url)
+            ->assertOk()
+            ->assertSee('<th scope="col" class="mobile-row-number">#</th>', false)
+            ->assertSee('<td class="mobile-row-number">1</td>', false)
+            ->assertSee('<td class="mobile-row-number">50</td>', false)
+            ->assertDontSee('<td class="mobile-row-number">51</td>', false);
+
+        $this->get($url . '?page=2')
+            ->assertOk()
+            ->assertSee('<td class="mobile-row-number">51</td>', false)
+            ->assertDontSee('<td class="mobile-row-number">1</td>', false);
+    }
+
     public function test_rsvp_filters_and_search_are_event_scoped(): void
     {
         $event = $this->reportEvent('Filtered Event');
