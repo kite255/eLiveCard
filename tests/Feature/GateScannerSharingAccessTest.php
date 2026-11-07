@@ -13,6 +13,7 @@ class GateScannerSharingAccessTest extends TestCase
 
     public function test_shared_scanner_link_requires_login_and_event_assignment(): void
     {
+        $this->withoutVite();
         $owner = User::factory()->create(['role' => User::ROLE_EVENT_ADMIN]);
         $officer = User::factory()->create(['role' => User::ROLE_CHECK_IN_OFFICER]);
         $stranger = User::factory()->create(['role' => User::ROLE_CHECK_IN_OFFICER]);
