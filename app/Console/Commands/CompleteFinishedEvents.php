@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Event;
+use App\Services\AuditLogService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -31,6 +32,19 @@ class CompleteFinishedEvents extends Command
                     $event->update([
                         'status' => Event::STATUS_COMPLETED,
                     ]);
+
+                    AuditLogService::record(
+                        action: 'event.automatically_completed',
+                        subject: $event,
+                        eventId: $event->getKey(),
+                        description: 'Event completed by the scheduled end-time command.',
+                        oldValues: ['status' => Event::STATUS_ACTIVE],
+                        newValues: ['status' => Event::STATUS_COMPLETED],
+                        metadata: [
+                            'source' => 'artisan_events_complete_finished',
+                            'scheduled_end' => $endsAt->toDateTimeString(),
+                        ],
+                    );
 
                     $completedCount++;
 
