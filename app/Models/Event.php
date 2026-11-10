@@ -1110,19 +1110,19 @@ class Event extends Model
     public function isRsvpPendingReminderDue(?string $currentTime = null): bool
     {
         return $this->canAutoSendRsvpPendingReminder()
-            && $this->effective_rsvp_pending_reminder_time === ($currentTime ?? now()->format('H:i'));
+            && $this->effective_rsvp_pending_reminder_time <= ($currentTime ?? now()->format('H:i'));
     }
 
     public function isOneDayReminderDue(?string $currentTime = null): bool
     {
         return $this->canAutoSendOneDayReminder()
-            && $this->effective_one_day_reminder_time === ($currentTime ?? now()->format('H:i'));
+            && $this->effective_one_day_reminder_time <= ($currentTime ?? now()->format('H:i'));
     }
 
     public function isEventDayReminderDue(?string $currentTime = null): bool
     {
         return $this->canAutoSendEventDayReminder()
-            && $this->effective_event_day_reminder_time === ($currentTime ?? now()->format('H:i'));
+            && $this->effective_event_day_reminder_time <= ($currentTime ?? now()->format('H:i'));
     }
 
     /*
