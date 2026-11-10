@@ -9,6 +9,17 @@
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript" defer></script>
 
     <style>
+        .gate-tabs { display:flex; gap:8px; overflow-x:auto; margin:16px 0; }
+        .gate-tab { border:1px solid #CBD5E1; border-radius:10px; background:#FFF; padding:12px 14px; cursor:pointer; white-space:nowrap; font-weight:600; color:#213B73; }
+        .gate-tab.active { background:#213B73; color:#FFF; }
+        [hidden] { display:none !important; }
+        .gate-roster-controls { display:flex; gap:10px; flex-wrap:wrap; margin:16px 0; }
+        .gate-roster-controls input { flex:1 1 220px; min-width:0; padding:11px; border:1px solid #CBD5E1; border-radius:8px; }
+        .gate-roster-controls select { padding:11px; border:1px solid #CBD5E1; border-radius:8px; }
+        .gate-table-scroll { overflow-x:auto; }
+        .gate-table { width:100%; border-collapse:collapse; min-width:550px; }
+        .gate-table td,.gate-table th { padding:12px 8px; border-bottom:1px solid #E5E7EB; text-align:left; }
+        .gate-roster-footer { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; margin-top:14px; }
         :root {
             --blue: #213B73;
             --orange: #FD9618;
@@ -1008,6 +1019,12 @@
         </div>
     </div>
 
+    <nav class="gate-tabs" aria-label="Gate scanner sections">
+        <button type="button" class="gate-tab active" data-tab="scan" onclick="switchGateTab('scan')">Scan</button>
+        <button type="button" class="gate-tab" data-tab="attendees" onclick="switchGateTab('attendees')">All Attendees</button>
+        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">My Recent Scans</button>
+    </nav>
+    <section id="gateTabScan">
     <div class="grid">
         <div class="panel">
             <h2 class="panel-title">QR Scanner</h2>
@@ -1086,26 +1103,37 @@
         </div>
     </div>
 
-    <div class="panel footer-panel">
-        <h2 class="panel-title">Recent Check-ins</h2>
-
-        <div id="recentCheckInsList" class="recent-list">
-            @forelse($recentCheckIns as $invitee)
-                <div class="recent-item">
-                    <div class="recent-name">{{ $invitee->name }}</div>
-                    <div class="recent-meta">
-                        {{ $invitee->serial_number ?? 'No Serial' }}
-                        · {{ $invitee->checked_in_count ?? 1 }} guest(s)
-                        @if($invitee->checked_in_at)
-                            · {{ $invitee->checked_in_at->format('d M Y H:i') }}
-                        @endif
-                    </div>
-                </div>
-            @empty
-                <div id="recentCheckInsEmpty" class="recent-meta">No check-ins yet.</div>
-            @endforelse
+    </section>
+    <section id="gateTabAttendees" hidden>
+        <div class="panel">
+            <h2 class="panel-title">All Event Attendees</h2>
+            <div class="gate-roster-controls">
+                <input id="rosterSearch" type="search" placeholder="Search name, phone or serial" autocomplete="off">
+                <select id="rosterStatus" aria-label="Filter attendance status">
+                    <option value="all">All statuses</option>
+                    <option value="not_checked_in">Not Checked In</option>
+                    <option value="partial">Partially Checked In</option>
+                    <option value="checked_in">Checked In</option>
+                </select>
+                <button type="button" class="btn-primary" onclick="loadGateRoster(1)">Search</button>
+            </div>
+            <div class="gate-table-scroll"><table class="gate-table">
+                <thead><tr><th>Name</th><th>Card Type</th><th>Admitted</th><th>Status</th><th>Time</th></tr></thead>
+                <tbody id="rosterRows"><tr><td colspan="5">Select this tab to load attendees.</td></tr></tbody>
+            </table></div>
+            <div class="gate-roster-footer"><span id="rosterCount"></span>
+                <button type="button" id="rosterPrevious" class="btn-light" onclick="loadGateRoster(rosterPage-1)">Previous</button>
+                <button type="button" id="rosterNext" class="btn-light" onclick="loadGateRoster(rosterPage+1)">Next</button>
+            </div>
         </div>
+    </section>
+    <section id="gateTabRecent" hidden>
+    <div class="panel footer-panel">
+        <h2 class="panel-title">My Recent Scans</h2>
+
+        <div id="recentCheckInsList" class="recent-list"><div class="recent-meta">Open this tab to load your scans.</div></div>
     </div>
+    </section>
 </div>
 
 
@@ -1224,6 +1252,52 @@
 
     const verifyUrl = @json(route('gate.check-in.verify', $event));
     const confirmUrl = @json(route('gate.check-in.confirm', $event));
+    const attendeesUrl = @json(route('gate.check-in.attendees', $event));
+    let rosterPage = 1;
+    let rosterLastPage = 1;
+
+    function switchGateTab(tab) {
+        ['scan', 'attendees', 'recent'].forEach(key => {
+            document.getElementById('gateTab' + key.charAt(0).toUpperCase() + key.slice(1)).hidden = key !== tab;
+            document.querySelector('[data-tab="' + key + '"]').classList.toggle('active', key === tab);
+        });
+        if (tab !== 'scan') stopScanner();
+        if (tab === 'attendees' || tab === 'recent') loadGateRoster(tab === 'attendees' ? rosterPage : 1);
+    }
+
+    async function loadGateRoster(page = 1) {
+        if (page < 1 || page > rosterLastPage && rosterLastPage > 0) return;
+        const params = new URLSearchParams({
+            page: String(page),
+            search: document.getElementById('rosterSearch').value,
+            status: document.getElementById('rosterStatus').value,
+        });
+        try {
+            const response = await fetch(attendeesUrl + '?' + params.toString(), {
+                credentials: 'same-origin', headers: {Accept: 'application/json'}
+            });
+            if (!response.ok) throw new Error('Could not load attendee records.');
+            const data = await response.json();
+            rosterPage = data.current_page;
+            rosterLastPage = data.last_page;
+            document.getElementById('rosterCount').textContent = data.total + ' attendees · Page ' + rosterPage + ' / ' + rosterLastPage;
+            document.getElementById('rosterPrevious').disabled = rosterPage <= 1;
+            document.getElementById('rosterNext').disabled = rosterPage >= rosterLastPage;
+            document.getElementById('rosterRows').innerHTML = data.data.length ? data.data.map(a =>
+                '<tr><td>' + escapeHtml(a.name) + '</td><td>' + escapeHtml(a.card_type) +
+                '</td><td>' + a.checked_in_count + '/' + a.allowed_guests +
+                '</td><td>' + escapeHtml(a.status) + '</td><td>' + escapeHtml(a.checked_in_at || '-') + '</td></tr>'
+            ).join('') : '<tr><td colspan="5">No matching attendees found.</td></tr>';
+            document.getElementById('recentCheckInsList').innerHTML = data.recent.length
+                ? data.recent.map(a => '<div class="recent-item"><div class="recent-name">' + escapeHtml(a.name) +
+                    '</div><div class="recent-meta">' + escapeHtml(a.card_type) + ' · ' + a.guests +
+                    ' admitted · ' + escapeHtml(a.time || '-') + '</div></div>').join('')
+                : '<div class="recent-meta">No successful scans by you yet.</div>';
+        } catch (error) {
+            document.getElementById('rosterRows').innerHTML = '<tr><td colspan="5">Could not load attendees. Retry.</td></tr>';
+        }
+    }
+
     const csrfToken = @json(csrf_token());
 
     function escapeHtml(value) {
@@ -1414,6 +1488,11 @@
         hideStickyCheckInBar();
     }
 
+    function hasCardField(invitee, key) {
+        const keys = invitee?.visible_card_fields || [];
+        return keys.includes(key) || (key === 'allowed_guests' && keys.includes('guest_count'));
+    }
+
     function showResult(type, title, message, invitee = null) {
         const box = document.getElementById('resultBox');
         const titleEl = document.getElementById('resultTitle');
@@ -1443,17 +1522,17 @@
 
         infoEl.innerHTML = `
             <div class="info-row"><span>Name</span><span>${escapeHtml(invitee.name)}</span></div>
-            <div class="info-row"><span>Phone</span><span>${escapeHtml(invitee.phone)}</span></div>
-            <div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>
+
+            ${hasCardField(invitee, 'serial_number') ? `<div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>` : ''}
             <div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>
-            <div class="info-row"><span>RSVP Status</span><span>${escapeHtml(invitee.rsvp_status || 'pending')}</span></div>
-            <div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>
-            <div class="info-row"><span>Confirmed Guests</span><span>${escapeHtml(invitee.confirmed_guests ?? '-')}</span></div>
-            <div class="info-row"><span>Gate Limit</span><span>${escapeHtml(invitee.gate_limit ?? invitee.allowed_guests)}</span></div>
+
+            ${hasCardField(invitee, 'allowed_guests') ? `<div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>` : ''}
+
+
             <div class="info-row"><span>Total Admitted</span><span>${escapeHtml(invitee.checked_in_count)}</span></div>
             <div class="info-row"><span>Remaining Guests</span><span>${escapeHtml(invitee.remaining_guests)}</span></div>
-            <div class="info-row"><span>Table</span><span>${escapeHtml(invitee.table_number)}</span></div>
-            <div class="info-row"><span>Category</span><span>${escapeHtml(invitee.category)}</span></div>
+            ${hasCardField(invitee, 'table_number') ? `<div class="info-row"><span>Table</span><span>${escapeHtml(invitee.table_number)}</span></div>` : ''}
+            ${hasCardField(invitee, 'category') ? `<div class="info-row"><span>Category</span><span>${escapeHtml(invitee.category)}</span></div>` : ''}
         `;
 
         if (type === 'success' && remainingGuests > 0) {
@@ -1499,8 +1578,13 @@
         document.getElementById('popupCardType').innerText =
             details.card_type || invitee.card_type || 'N/A';
 
-        document.getElementById('popupTableNumber').innerText =
-            details.table_number || invitee.table_number || 'N/A';
+        const setOptionalPopupField = (id, key, value) => {
+            const element = document.getElementById(id);
+            if (!element) return;
+            element.closest('.popup-info').hidden = !hasCardField(invitee, key);
+            element.innerText = value || 'N/A';
+        };
+        setOptionalPopupField('popupTableNumber', 'table_number', details.table_number || invitee.table_number);
 
         const totalCheckedIn =
             details.total_checked_in ?? invitee.checked_in_count ?? 0;
@@ -1541,11 +1625,9 @@
         document.getElementById('popupRemaining').innerText =
             details.remaining_guests ?? invitee.remaining_guests ?? 0;
 
-        document.getElementById('popupCategory').innerText =
-            details.category || invitee.category || 'N/A';
+        setOptionalPopupField('popupCategory', 'category', details.category || invitee.category);
 
-        document.getElementById('popupSerialNumber').innerText =
-            details.serial_number || invitee.serial_number || 'N/A';
+        setOptionalPopupField('popupSerialNumber', 'serial_number', details.serial_number || invitee.serial_number);
 
         const checkedInTime =
             details.checked_in_time ||
@@ -1708,11 +1790,6 @@
                     data.message || rsvpGateMessage(invitee),
                     invitee
                 );
-
-                document.getElementById('resultBox')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'nearest',
-                });
 
                 return;
             }
