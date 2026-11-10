@@ -38,6 +38,83 @@ class GateCheckInController extends Controller
     }
 
     /**
+     * Paginated attendee roster and the current officer's recent admissions.
+     * Query is always scoped to the authorized event.
+     */
+    public function attendees(Request $request, Event $event): JsonResponse
+    {
+        $this->authorizeGateAccess($event);
+
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:all,checked_in,partial,not_checked_in'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $query = Invitee::query()->with('cardType')->where('event_id', $event->id);
+        $search = trim($validated['search'] ?? '');
+        if ($search !== '') {
+            $query->where(function ($q) use ($search): void {
+                $q->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('phone', 'like', '%'.$search.'%')
+                    ->orWhere('serial_number', 'like', '%'.$search.'%');
+            });
+        }
+
+        $status = $validated['status'] ?? 'all';
+        if ($status === 'not_checked_in') {
+            $query->where(function ($q): void {
+                $q->whereNull('checked_in_count')->orWhere('checked_in_count', 0);
+            });
+        } elseif ($status === 'partial') {
+            $query->where('checked_in_count', '>', 0)
+                ->whereColumn('checked_in_count', '<', 'allowed_guests');
+        } elseif ($status === 'checked_in') {
+            $query->where('checked_in_count', '>', 0)
+                ->whereColumn('checked_in_count', '>=', 'allowed_guests');
+        }
+
+        $page = $query->orderBy('name')->orderBy('id')->paginate(25);
+        $items = $page->getCollection()->map(function (Invitee $invitee): array {
+            $allowed = $this->allowedGuests($invitee);
+            $checked = max(0, (int) $invitee->checked_in_count);
+
+            return [
+                'id' => $invitee->id,
+                'name' => $invitee->name,
+                'serial_number' => $invitee->serial_number,
+                'card_type' => $invitee->cardType?->name ?? 'N/A',
+                'allowed_guests' => $allowed,
+                'checked_in_count' => $checked,
+                'status' => $checked <= 0 ? 'Not Checked In'
+                    : ($checked >= $allowed ? 'Checked In' : 'Partially Checked In'),
+                'checked_in_at' => $invitee->checked_in_at?->format('d M Y, H:i'),
+            ];
+        });
+
+        $recent = CheckIn::query()
+            ->with(['invitee.cardType'])
+            ->where('event_id', $event->id)
+            ->where('checked_in_by', $request->user()->id)
+            ->where('status', CheckIn::STATUS_SUCCESS)
+            ->latest('id')->limit(10)->get()
+            ->map(fn (CheckIn $record): array => [
+                'name' => $record->invitee?->name ?? 'Invitee',
+                'card_type' => $record->invitee?->cardType?->name ?? 'N/A',
+                'guests' => $record->guests_checked_in,
+                'time' => $record->checked_in_at?->format('d M Y, H:i'),
+            ]);
+
+        return response()->json([
+            'data' => $items->values(),
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+            'total' => $page->total(),
+            'recent' => $recent->values(),
+        ]);
+    }
+
+    /**
      * Event-specific, shareable scanner URL. The ID uniquely selects the event
      * and the slug makes the link understandable to gate officers.
      */
@@ -605,7 +682,10 @@ class GateCheckInController extends Controller
         int $checkedInCount,
         int $remainingGuests
     ): array {
+        $visibleFields = $this->visibleCardFields($invitee);
+
         return [
+            'visible_card_fields' => $visibleFields,
             'id' => $invitee->id,
             'name' => $invitee->name,
             'phone' => $invitee->phone,
@@ -629,6 +709,19 @@ class GateCheckInController extends Controller
                 ? ($invitee->check_in_status ?? null)
                 : null,
         ];
+    }
+
+    /**
+     * Read visible placeholders from the latest successfully generated card.
+     * No generated template means optional card fields are not displayed.
+     */
+    private function visibleCardFields(Invitee $invitee): array
+    {
+        $generated = $invitee->latestSuccessfulGeneratedCard()
+            ->with('cardTemplate.visiblePlaceholders')->first();
+
+        return $generated?->cardTemplate?->visiblePlaceholders
+            ?->pluck('placeholder_key')->values()->all() ?? [];
     }
 
     private function formatStatus(?string $status): string
