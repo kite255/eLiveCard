@@ -1262,6 +1262,7 @@
             document.querySelector('[data-tab="' + key + '"]').classList.toggle('active', key === tab);
         });
         if (tab !== 'scan') { clearSelection(); stopScanner(); }
+        if (tab === 'scan') startScanner();
         if (tab === 'attendees' || tab === 'recent') loadGateRoster(tab === 'attendees' ? rosterPage : 1);
     }
 
