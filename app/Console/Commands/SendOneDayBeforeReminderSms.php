@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Event;
 use App\Models\Invitee;
+use App\Models\SmsLog;
 use App\Services\ReminderSmsService;
 use Illuminate\Console\Command;
 
@@ -21,10 +22,7 @@ class SendOneDayBeforeReminderSms extends Command
         $force = (bool) $this->option('force');
 
         $events = Event::query()
-            ->whereIn('status', [
-                Event::STATUS_DRAFT,
-                Event::STATUS_ACTIVE,
-            ])
+            ->where('status', Event::STATUS_ACTIVE)
             ->where('auto_sms_reminders_enabled', true)
             ->where('auto_one_day_reminder_enabled', true)
             ->whereDate('event_date', $targetDate)
@@ -47,10 +45,12 @@ class SendOneDayBeforeReminderSms extends Command
                 ->where('rsvp_status', Invitee::RSVP_STATUS_ATTENDING)
                 ->whereNotNull('phone')
                 ->where('phone', '!=', '')
-                ->where(function ($query) {
-                    $query
-                        ->whereNull('reminder_sms_status')
-                        ->orWhere('reminder_sms_status', '!=', Invitee::SMS_STATUS_SENT);
+                // Track each reminder type independently: invitee-level status is shared
+                // by multiple reminder types and must not suppress a different message.
+                // Any prior attempt is excluded to prevent unintended duplicate SMS
+                // when a provider response is lost. Failed attempts require manual retry.
+                ->whereDoesntHave('smsLogs', function ($query): void {
+                    $query->where('sms_type', SmsLog::TYPE_ATTENDING_REMINDER);
                 })
                 ->get();
 
@@ -62,7 +62,7 @@ class SendOneDayBeforeReminderSms extends Command
                 continue;
             }
 
-            $result = $reminderSmsService->sendBulkAttendingReminders($invitees);
+            $result = $reminderSmsService->sendBulkAttendingReminders($invitees, SmsLog::SOURCE_AUTOMATIC);
 
             $sent = (int) ($result['sent'] ?? 0);
             $failed = (int) ($result['failed'] ?? 0);
