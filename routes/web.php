@@ -367,6 +367,10 @@ Route::middleware(['auth'])->group(function () {
     | depending on GateCheckInController::verify().
     |
     */
+    Route::get('/gate/events/{event}/attendees', [GateCheckInController::class, 'attendees'])
+        ->whereNumber('event')
+        ->name('gate.check-in.attendees');
+
     Route::get(
         '/gate/events/{event}/check-in',
         [GateCheckInController::class, 'show']
