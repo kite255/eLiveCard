@@ -1261,7 +1261,7 @@
             document.getElementById('gateTab' + key.charAt(0).toUpperCase() + key.slice(1)).hidden = key !== tab;
             document.querySelector('[data-tab="' + key + '"]').classList.toggle('active', key === tab);
         });
-        if (tab !== 'scan') stopScanner();
+        if (tab !== 'scan') { clearSelection(); stopScanner(); }
         if (tab === 'attendees' || tab === 'recent') loadGateRoster(tab === 'attendees' ? rosterPage : 1);
     }
 
@@ -1463,7 +1463,7 @@
         summaryEl.innerText = `Remaining: ${remaining} • Total admitted: ${checkedIn}/${gateLimit}`;
         selectEl.innerHTML = '';
 
-        for (let count = 1; count <= remaining; count++) {
+        for (let count = 1; count <= Math.min(remaining, 1); count++) {
             const option = document.createElement('option');
             option.value = String(count);
             option.textContent = count === 1 ? '1 guest' : `${count} guests`;
@@ -1524,7 +1524,7 @@
             <div class="info-row"><span>Name</span><span>${escapeHtml(invitee.name)}</span></div>
 
             ${hasCardField(invitee, 'serial_number') ? `<div class="info-row"><span>Serial</span><span>${escapeHtml(invitee.serial_number)}</span></div>` : ''}
-            <div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>
+            ${hasCardField(invitee, 'card_type') ? `<div class="info-row"><span>Card Type</span><span>${escapeHtml(invitee.card_type)}</span></div>` : ''}
 
             ${hasCardField(invitee, 'allowed_guests') ? `<div class="info-row"><span>Allowed Guests</span><span>${escapeHtml(invitee.allowed_guests)}</span></div>` : ''}
 
@@ -1575,6 +1575,8 @@
         document.getElementById('popupInviteeName').innerText =
             details.invitee_name || invitee.name || '-';
 
+        document.getElementById('popupCardType').closest('.popup-info').hidden =
+            !hasCardField(invitee, 'card_type');
         document.getElementById('popupCardType').innerText =
             details.card_type || invitee.card_type || 'N/A';
 
