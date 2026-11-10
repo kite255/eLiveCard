@@ -287,7 +287,7 @@ class GateCheckInController extends Controller
 
         $validated = $request->validate([
             'invitee_id' => ['required', 'integer'],
-            'guest_count' => ['required', 'integer', 'min:1'],
+            'guest_count' => ['required', 'integer', 'in:1'],
             'checkin_method' => [
                 'nullable',
                 'string',
