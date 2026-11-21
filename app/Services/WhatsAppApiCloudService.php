@@ -6,6 +6,7 @@ use App\Models\GeneratedCard;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
 use App\Models\ContributionRecipient;
+use App\Support\WhatsAppPhone;
 use Carbon\Carbon;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Arr;
@@ -809,42 +810,13 @@ class WhatsAppApiCloudService
     protected function normalizePhone(
         string $phone
     ): string {
-        $phone = preg_replace(
-            '/\D+/',
-            '',
-            $phone
-        ) ?: '';
+        $normalized = WhatsAppPhone::normalize($phone);
 
-        if ($phone === '') {
-            throw new RuntimeException(
-                'The WhatsApp phone number is empty or invalid.'
-            );
+        if ($normalized === null) {
+            throw new RuntimeException('Enter a Tanzanian mobile number or a WhatsApp number with its country code.');
         }
 
-        if (str_starts_with($phone, '0')) {
-            $phone = '255'.substr(
-                $phone,
-                1
-            );
-        } elseif (
-            ! str_starts_with($phone, '255')
-            && strlen($phone) === 9
-        ) {
-            $phone = '255'.$phone;
-        }
-
-        if (
-            ! preg_match(
-                '/^[1-9][0-9]{7,14}$/',
-                $phone
-            )
-        ) {
-            throw new RuntimeException(
-                'The WhatsApp phone number must be in international format.'
-            );
-        }
-
-        return $phone;
+        return ltrim($normalized, '+');
     }
 
     protected function resolveCardImageUrl(

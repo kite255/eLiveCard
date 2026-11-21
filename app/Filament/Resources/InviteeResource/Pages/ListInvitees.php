@@ -46,7 +46,7 @@ class ListInvitees extends ListRecords
                             'text/csv',
                         ])
                         ->required()
-                        ->helperText('Required headings: name, phone, card_type. Optional: allowed_guests, email, category, table_number.'),
+                        ->helperText('Required headings: name, phone, card_type. Format the phone column as text and include the country code for international WhatsApp numbers. Optional: allowed_guests, email, category, table_number.'),
                 ])
                 ->modalHeading('Import Invitees from Excel')
                 ->modalDescription('Valid rows are imported even if other rows contain errors.')

@@ -7,6 +7,7 @@ use App\Models\ContributionRecipient;
 use App\Services\AuditLogService;
 use App\Services\RsvpService;
 use App\Services\WhatsAppApiCloudService;
+use App\Support\WhatsAppPhone;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -313,7 +314,7 @@ class WhatsAppWebhookController extends Controller
         RsvpService $rsvpService,
         WhatsAppApiCloudService $whatsAppService
     ): void {
-        $fromPhone = $this->normalizePhone(
+        $fromPhone = $this->normalizeProviderPhone(
             (string) ($message['from'] ?? '')
         );
 
@@ -854,10 +855,8 @@ class WhatsAppWebhookController extends Controller
     }
 
     protected function findContributionRecipientForIncomingMessage(
-        string $phone
+        string $normalizedPhone
     ): ?ContributionRecipient {
-        $normalizedPhone = $this->normalizePhone($phone);
-
         if ($normalizedPhone === '') {
             return null;
         }
@@ -1017,11 +1016,8 @@ class WhatsAppWebhookController extends Controller
     }
 
     protected function findInviteeByPhone(
-        string $phone
+        string $normalizedPhone
     ): ?Invitee {
-        $normalizedPhone =
-            $this->normalizePhone($phone);
-
         if ($normalizedPhone === '') {
             return null;
         }
@@ -1054,13 +1050,7 @@ class WhatsAppWebhookController extends Controller
         Invitee $invitee,
         string $incomingPhone
     ): bool {
-        $storedPhone = $this->normalizePhone(
-            (string) $invitee->phone
-        );
-
-        $incomingPhone = $this->normalizePhone(
-            $incomingPhone
-        );
+        $storedPhone = ltrim(WhatsAppPhone::normalize($invitee->phone) ?? '', '+');
 
         if (
             $storedPhone === ''
@@ -1174,7 +1164,7 @@ class WhatsAppWebhookController extends Controller
             (string) ($status['id'] ?? '')
         );
 
-        $recipient = $this->normalizePhone(
+        $recipient = $this->normalizeProviderPhone(
             (string) (
                 $status['recipient_id']
                 ?? ''
@@ -1351,37 +1341,10 @@ class WhatsAppWebhookController extends Controller
         }
     }
 
-    protected function normalizePhone(
-        string $phone
-    ): string {
-        $phone = preg_replace(
-            '/\D+/',
-            '',
-            $phone
-        ) ?: '';
-
-        if ($phone === '') {
-            return '';
-        }
-
-        if (str_starts_with($phone, '0')) {
-            return '255'.substr(
-                $phone,
-                1
-            );
-        }
-
-        if (
-            ! str_starts_with(
-                $phone,
-                '255'
-            )
-            && strlen($phone) === 9
-        ) {
-            return '255'.$phone;
-        }
-
-        return $phone;
+    protected function normalizeProviderPhone(string $phone): string
+    {
+        // Meta sends the country code as part of the number, even without a leading plus sign.
+        return ltrim(WhatsAppPhone::normalize('+'.ltrim($phone, '+')) ?? '', '+');
     }
 
     protected function hasValidSignature(

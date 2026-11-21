@@ -1588,6 +1588,7 @@ class SmsService
 
     public function formatPhone(?string $phone): string
     {
+        $hasCountryCode = str_starts_with(ltrim((string) $phone), '+');
         $phone = preg_replace('/\D+/', '', (string) $phone);
 
         if (blank($phone)) {
@@ -1606,7 +1607,7 @@ class SmsService
             $phone = '255' . substr($phone, 1);
         }
 
-        if (strlen($phone) === 9 && preg_match('/^[67]/', $phone)) {
+        if (! $hasCountryCode && strlen($phone) === 9 && preg_match('/^[67]/', $phone)) {
             $phone = '255' . $phone;
         }
 
