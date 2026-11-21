@@ -78,6 +78,14 @@ class InviteeDedicatedInvitationActionsTest extends TestCase
         Queue::assertNotPushed(SendInvitationWhatsAppJob::class);
     }
 
+    public function test_sms_rejects_an_international_number_that_resembles_a_tanzanian_local_number(): void
+    {
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('Invalid Tanzania phone number');
+
+        app(SmsService::class)->formatPhone('+676771234');
+    }
+
     public function test_single_sms_submit_is_immediate_and_does_not_enqueue(): void
     {
         Queue::fake();

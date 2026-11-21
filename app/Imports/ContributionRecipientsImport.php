@@ -4,6 +4,7 @@ namespace App\Imports;
 
 use App\Models\ContributionCampaign;
 use App\Models\ContributionRecipient;
+use App\Support\WhatsAppPhone;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 use Maatwebsite\Excel\Concerns\ToCollection;
@@ -38,10 +39,10 @@ class ContributionRecipientsImport implements ToCollection, WithHeadingRow
                 continue;
             }
 
-            $normalizedPhone = self::normalizePhone($phone);
+            $normalizedPhone = WhatsAppPhone::normalize($phone);
 
             if (! $normalizedPhone) {
-                $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' is invalid. Use a valid Tanzania phone number.";
+                $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' is invalid. Enter a Tanzanian mobile number or a WhatsApp number with its country code.";
                 continue;
             }
 
@@ -62,18 +63,5 @@ class ContributionRecipientsImport implements ToCollection, WithHeadingRow
                 'import_file' => $this->errors,
             ]);
         }
-    }
-
-    public static function normalizePhone(string $phone): ?string
-    {
-        $digits = preg_replace('/\D+/', '', $phone);
-
-        if (str_starts_with($digits, '0')) {
-            $digits = '255'.substr($digits, 1);
-        } elseif (strlen($digits) === 9) {
-            $digits = '255'.$digits;
-        }
-
-        return preg_match('/^255[67]\d{8}$/', $digits) ? $digits : null;
     }
 }

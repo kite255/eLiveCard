@@ -54,4 +54,33 @@ class InviteesImportTest extends TestCase
         $this->assertSame(1, $import->importedCount);
         $this->assertContains('Row 3: Name is required.', $import->errors);
     }
+
+    public function test_it_imports_an_international_whatsapp_number_with_its_country_code(): void
+    {
+        $event = Event::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'title' => 'Wedding Event',
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+
+        CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Family',
+            'allowed_people' => 4,
+            'is_active' => true,
+        ]);
+
+        $import = new InviteesImport($event->id);
+        $import->collection(new Collection([
+            new Collection([
+                'name' => 'Kenyan Guest',
+                'phone' => '+254 712 345 678',
+                'card_type' => 'Family',
+            ]),
+        ]));
+
+        $this->assertSame(1, $import->importedCount);
+        $this->assertSame('+254712345678', Invitee::query()->sole()->phone);
+    }
 }

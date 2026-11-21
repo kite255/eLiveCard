@@ -76,4 +76,44 @@ class InviteesLivewireMenuSmokeTest extends TestCase
             ->mountTableAction('refresh_sms_delivery', $invitee)
             ->assertHasNoTableActionErrors();
     }
+
+    public function test_add_manually_saves_an_international_number_for_whatsapp(): void
+    {
+        $user = User::factory()->create([
+            'role' => User::ROLE_SUPER_ADMIN,
+            'is_active' => true,
+        ]);
+        $event = Event::query()->create([
+            'user_id' => $user->id,
+            'title' => 'International Invitee Event',
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        $cardType = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Single',
+            'allowed_guests' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(InviteesRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => ManageEventSection::class,
+        ])
+            ->callTableAction('add_manual_invitee', data: [
+                'name' => 'International Guest',
+                'phone' => '+254 712 345 678',
+                'card_type_id' => $cardType->id,
+                'allowed_guests' => 1,
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $this->assertDatabaseHas('invitees', [
+            'event_id' => $event->id,
+            'name' => 'International Guest',
+            'phone' => '+254712345678',
+        ]);
+    }
 }
