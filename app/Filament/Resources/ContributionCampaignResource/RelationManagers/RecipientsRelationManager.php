@@ -8,6 +8,7 @@ use App\Exports\ContributionRecipientsSampleExport;
 use App\Imports\ContributionRecipientsImport;
 use App\Models\ContributionRecipient;
 use App\Services\ContributionCardDownloadService;
+use App\Support\WhatsAppPhone;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -45,16 +46,16 @@ class RecipientsRelationManager extends RelationManager
                 ->label('Full Name')->required()->maxLength(255),
             Forms\Components\TextInput::make('phone')
                 ->label('Phone Number')->tel()->required()->maxLength(32)
-                ->helperText('Tanzania formats such as 0712345678 or 255712345678 are accepted.')
+                ->helperText('Use 0712345678 or include the country code for international WhatsApp numbers, for example +254712345678.')
                 ->rule(function (): \Closure {
                     return function (string $attribute, mixed $value, \Closure $fail): void {
-                        if (! ContributionRecipientsImport::normalizePhone((string) $value)) {
-                            $fail('Enter a valid Tanzania phone number.');
+                        if (! WhatsAppPhone::normalize((string) $value)) {
+                            $fail('Enter a Tanzanian mobile number or a WhatsApp number with its country code.');
                         }
                     };
                 })
                 ->dehydrateStateUsing(function (?string $state): string {
-                    return ContributionRecipientsImport::normalizePhone((string) $state)
+                    return WhatsAppPhone::normalize($state)
                         ?? (string) $state;
                 }),
         ])->columns(2);
@@ -125,7 +126,7 @@ class RecipientsRelationManager extends RelationManager
                                 'application/vnd.ms-excel',
                                 'text/csv', 'application/csv', 'text/plain',
                             ])->maxSize(10240)
-                            ->helperText('Required headings: name and phone. Other columns are ignored.'),
+                            ->helperText('Required headings: name and phone. Format the phone column as text and include the country code for international WhatsApp numbers.'),
                     ])
                     ->action(function (array $data): void {
                         $file = $data['file'] ?? null;

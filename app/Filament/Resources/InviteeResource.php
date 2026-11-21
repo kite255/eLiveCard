@@ -18,6 +18,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use App\Support\WhatsAppPhone;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -287,7 +288,13 @@ class InviteeResource extends Resource
                             ->required()
                             ->maxLength(20)
                             ->placeholder('Example: 255745939140')
-                            ->helperText('Phone number is required. The same phone number can be used by more than one invitee.'),
+                            ->helperText('Use 0712345678 or include the country code for international WhatsApp numbers, for example +254712345678. Phone numbers may be shared.')
+                            ->rule(fn (): \Closure => function (string $attribute, mixed $value, \Closure $fail): void {
+                                if (WhatsAppPhone::normalize((string) $value) === null) {
+                                    $fail('Enter a Tanzanian mobile number or a WhatsApp number with its country code.');
+                                }
+                            })
+                            ->dehydrateStateUsing(fn (?string $state): ?string => WhatsAppPhone::normalize($state)),
 
                         Forms\Components\TextInput::make('email')
                             ->label('Email')
