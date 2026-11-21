@@ -6,6 +6,7 @@ use App\Jobs\GenerateInviteeCardJob;
 use App\Models\CardType;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
+use App\Support\WhatsAppPhone;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -57,10 +58,10 @@ class InviteesImport implements SkipsEmptyRows, ToCollection, WithHeadingRow
                 continue;
             }
 
-            $normalizedPhone = $this->normalizeTanzaniaPhone($phone);
+            $normalizedPhone = WhatsAppPhone::normalize($phone);
 
             if (! $normalizedPhone) {
-                $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' is invalid. Use a valid Tanzania phone number.";
+                $this->errors[] = "Row {$rowNumber}: Phone number '{$phone}' is invalid. Enter a Tanzanian mobile number or a WhatsApp number with its country code.";
                 continue;
             }
 
@@ -248,37 +249,6 @@ class InviteesImport implements SkipsEmptyRows, ToCollection, WithHeadingRow
         $name = preg_replace('/\s+/', ' ', $name);
 
         return Str::lower($name);
-    }
-
-    private function normalizeTanzaniaPhone(?string $phone): ?string
-    {
-        if (! $phone) {
-            return null;
-        }
-
-        $phone = preg_replace('/\D+/', '', $phone);
-
-        if (! $phone) {
-            return null;
-        }
-
-        if (str_starts_with($phone, '00255')) {
-            $phone = '255' . substr($phone, 5);
-        }
-
-        if (str_starts_with($phone, '0') && strlen($phone) === 10) {
-            $phone = '255' . substr($phone, 1);
-        }
-
-        if (strlen($phone) === 9 && preg_match('/^[67]/', $phone)) {
-            $phone = '255' . $phone;
-        }
-
-        if (! preg_match('/^255[67]\d{8}$/', $phone)) {
-            return null;
-        }
-
-        return $phone;
     }
 
     private function generateUniqueSerialNumber(): string

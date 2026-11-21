@@ -97,7 +97,7 @@ class InvitationWhatsAppTest extends TestCase
         );
     }
 
-    public function test_it_sends_an_invitation_card_template_and_tracks_delivery_and_reply(): void
+    public function test_it_sends_an_international_invitation_and_tracks_delivery_and_reply(): void
     {
         Storage::fake('public');
         Storage::disk('public')->put('cards/lucas.jpg', 'image');
@@ -148,7 +148,7 @@ class InvitationWhatsAppTest extends TestCase
             'event_id' => $event->id,
             'card_type_id' => $cardType->id,
             'name' => 'Kitenken Lucas',
-            'phone' => '255754123456',
+            'phone' => '+676771234',
             'short_code' => 'ABC123',
         ]);
         GeneratedCard::query()->create([
@@ -163,7 +163,8 @@ class InvitationWhatsAppTest extends TestCase
         app(WhatsAppApiCloudService::class)->sendInvitation($invitee);
 
         Http::assertSent(fn (Request $request): bool =>
-            data_get($request->data(), 'template.name') === 'event_invitation_en'
+            data_get($request->data(), 'to') === '676771234'
+            && data_get($request->data(), 'template.name') === 'event_invitation_en'
             && data_get($request->data(), 'template.components.0.type') === 'header'
             && data_get($request->data(), 'template.components.1.parameters.0.text') === 'Kitenken Lucas'
             && data_get($request->data(), 'template.components.2.parameters.0.text') === 'ABC123'
@@ -178,7 +179,7 @@ class InvitationWhatsAppTest extends TestCase
                         'metadata' => ['phone_number_id' => '123456'],
                         'statuses' => [[
                             'id' => 'wamid.invitation.test',
-                            'recipient_id' => '255754123456',
+                            'recipient_id' => '676771234',
                             'status' => 'delivered',
                             'timestamp' => (string) now()->timestamp,
                         ]],
@@ -195,11 +196,14 @@ class InvitationWhatsAppTest extends TestCase
                     'value' => [
                         'metadata' => ['phone_number_id' => '123456'],
                         'messages' => [[
-                            'from' => '255754123456',
+                            'from' => '676771234',
                             'id' => 'wamid.invitation.reply',
                             'timestamp' => (string) now()->timestamp,
-                            'type' => 'text',
-                            'text' => ['body' => 'Thank you, I will attend.'],
+                            'type' => 'button',
+                            'button' => [
+                                'payload' => 'rsvp_attending:ABC123',
+                                'text' => 'I will attend',
+                            ],
                         ]],
                     ],
                 ]],
@@ -209,7 +213,8 @@ class InvitationWhatsAppTest extends TestCase
         $this->assertDatabaseHas('invitees', [
             'id' => $invitee->id,
             'whatsapp_status' => 'delivered',
-            'last_reply_message' => 'Thank you, I will attend.',
+            'rsvp_status' => Invitee::RSVP_ATTENDING,
+            'last_reply_message' => 'I will attend',
         ]);
     }
 }

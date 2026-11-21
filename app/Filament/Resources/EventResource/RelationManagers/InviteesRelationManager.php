@@ -20,6 +20,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables;
 use Filament\Tables\Table;
+use App\Support\WhatsAppPhone;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -198,7 +199,7 @@ class InviteesRelationManager extends RelationManager
                             ->required()
                             ->maxLength(30)
                             ->placeholder('Example: 0711111111')
-                            ->helperText('Accepted formats: 0711111111, 711111111, +255711111111, or 255711111111. The same phone number may be used by multiple invitees.'),
+                            ->helperText('Use 0712345678 or include the country code for international WhatsApp numbers, for example +254712345678. Phone numbers may be shared.'),
 
                         Forms\Components\TextInput::make('email')
                             ->label('Email')
@@ -811,7 +812,7 @@ class InviteesRelationManager extends RelationManager
                                     ->required()
                                     ->maxLength(30)
                                     ->placeholder('0712 345 678')
-                                    ->helperText('Tanzania mobile number; shared phone numbers are allowed.'),
+                                    ->helperText('Use 0712345678 or include the country code for international WhatsApp numbers, for example +254712345678.'),
 
                                 Forms\Components\TextInput::make('email')
                                     ->label('Email')
@@ -971,7 +972,7 @@ class InviteesRelationManager extends RelationManager
                                 'application/octet-stream',
                             ])
                             ->maxSize(10240)
-                            ->helperText('Required: name, phone, card_type. Optional: allowed_guests, email, category, table_number.'),
+                            ->helperText('Required: name, phone, card_type. Format the phone column as text and include the country code for international WhatsApp numbers. Optional: allowed_guests, email, category, table_number.'),
                     ])
                     ->action(function (array $data): void {
                         $this->importInviteesFromExcel($data['excel_file']);
@@ -1437,11 +1438,11 @@ class InviteesRelationManager extends RelationManager
                         ->action(function (Invitee $record, array $data): void {
                             $this->validateNoDuplicateInviteeName($data['name'] ?? null, $record->id);
 
-                            $data['phone'] = $this->normalizePhone($data['phone'] ?? null);
+                            $data['phone'] = WhatsAppPhone::normalize($data['phone'] ?? null);
 
                             if (! $data['phone']) {
                                 throw ValidationException::withMessages([
-                                    'phone' => 'Invalid Tanzania phone number.',
+                                    'phone' => 'Enter a Tanzanian mobile number or a WhatsApp number with its country code.',
                                 ]);
                             }
 
@@ -2043,7 +2044,7 @@ class InviteesRelationManager extends RelationManager
                                     $issues[] = 'private link missing';
                                 }
 
-                                if (blank($this->normalizePhone($record->phone))) {
+                                if (blank(WhatsAppPhone::normalize($record->phone))) {
                                     $invalidPhone++;
                                     $issues[] = 'invalid phone';
                                 }
@@ -2489,8 +2490,8 @@ class InviteesRelationManager extends RelationManager
 
         $candidates = [$digits];
 
-        if (str_starts_with($digits, '00255')) {
-            $candidates[] = '255'.substr($digits, 5);
+        if (str_starts_with($digits, '00')) {
+            $candidates[] = substr($digits, 2);
         }
 
         if (str_starts_with($digits, '0') && strlen($digits) >= 10) {
@@ -2762,7 +2763,7 @@ class InviteesRelationManager extends RelationManager
                 continue;
             }
 
-            if ($channel === 'whatsapp' && blank($this->normalizePhone($invitee->phone))) {
+            if ($channel === 'whatsapp' && blank(WhatsAppPhone::normalize($invitee->phone))) {
                 $skipped++;
 
                 continue;
@@ -3249,12 +3250,12 @@ class InviteesRelationManager extends RelationManager
             ];
         }
 
-        if (blank($this->normalizePhone($invitee->phone))) {
+        if (blank(WhatsAppPhone::normalize($invitee->phone))) {
             return [
                 'status' => 'failed',
                 'type' => 'danger',
                 'title' => 'Invalid phone number',
-                'body' => 'This invitee has an invalid Tanzania phone number.',
+                'body' => 'Enter a Tanzanian mobile number or a WhatsApp number with its country code.',
             ];
         }
 
@@ -3490,7 +3491,7 @@ class InviteesRelationManager extends RelationManager
             ];
         }
 
-        $phone = $this->normalizePhone($invitee->phone);
+        $phone = WhatsAppPhone::normalize($invitee->phone);
 
         if (blank($phone)) {
             return [
@@ -3538,7 +3539,7 @@ class InviteesRelationManager extends RelationManager
         try {
             $payload = $this->buildWhatsappCloudPayload(
                 invitee: $invitee,
-                phone: $phone,
+                phone: ltrim($phone, '+'),
                 message: $message,
                 template: $template,
                 templateType: $templateType,
@@ -4103,8 +4104,8 @@ class InviteesRelationManager extends RelationManager
             'invitee_id' => $invitee->id,
             'channel' => $channel,
             'type' => $messageType,
-            'recipient' => $this->normalizePhone($invitee->phone) ?: $invitee->phone,
-            'phone' => $this->normalizePhone($invitee->phone) ?: $invitee->phone,
+            'recipient' => WhatsAppPhone::normalize($invitee->phone) ?: $invitee->phone,
+            'phone' => WhatsAppPhone::normalize($invitee->phone) ?: $invitee->phone,
             'message' => $message,
             'body' => $message,
             'status' => $status,
@@ -4246,7 +4247,7 @@ class InviteesRelationManager extends RelationManager
 
             $name = trim((string) ($data['name'] ?? ''));
             $rawPhone = trim((string) ($data['phone'] ?? ''));
-            $phone = $this->normalizePhone($rawPhone);
+            $phone = WhatsAppPhone::normalize($rawPhone);
             $cardTypeName = trim((string) ($data['card_type'] ?? ''));
             $allowedGuestsValue = trim((string) ($data['allowed_guests'] ?? ''));
 
@@ -4268,7 +4269,7 @@ class InviteesRelationManager extends RelationManager
 
             if (blank($phone)) {
                 $skipped++;
-                $errors[] = "Row {$rowNumber}: phone '{$rawPhone}' is invalid.";
+                $errors[] = "Row {$rowNumber}: phone '{$rawPhone}' is invalid. Include the country code for international WhatsApp numbers.";
                 continue;
             }
 
@@ -4515,11 +4516,11 @@ class InviteesRelationManager extends RelationManager
             ]);
         }
 
-        $data['phone'] = $this->normalizePhone($data['phone'] ?? null);
+        $data['phone'] = WhatsAppPhone::normalize($data['phone'] ?? null);
 
         if (! $data['phone']) {
             throw ValidationException::withMessages([
-                'phone' => 'Invalid Tanzania phone number.',
+                'phone' => 'Enter a Tanzanian mobile number or a WhatsApp number with its country code.',
             ]);
         }
 
@@ -4650,36 +4651,5 @@ class InviteesRelationManager extends RelationManager
         } while (Invitee::where('short_code', $shortCode)->exists());
 
         return $shortCode;
-    }
-
-    protected function normalizePhone(?string $phone): ?string
-    {
-        if (blank($phone)) {
-            return null;
-        }
-
-        $phone = preg_replace('/\D+/', '', $phone);
-
-        if (blank($phone)) {
-            return null;
-        }
-
-        if (str_starts_with($phone, '00255')) {
-            $phone = '255' . substr($phone, 5);
-        }
-
-        if (str_starts_with($phone, '0') && strlen($phone) === 10) {
-            $phone = '255' . substr($phone, 1);
-        }
-
-        if (strlen($phone) === 9 && preg_match('/^[67]/', $phone)) {
-            $phone = '255' . $phone;
-        }
-
-        if (! preg_match('/^255[67]\d{8}$/', $phone)) {
-            return null;
-        }
-
-        return $phone;
     }
 }
