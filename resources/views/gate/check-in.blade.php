@@ -1026,7 +1026,7 @@
     <nav class="gate-tabs" aria-label="Gate scanner sections">
         <button type="button" class="gate-tab active" data-tab="scan" onclick="switchGateTab('scan')">Scan</button>
         <button type="button" class="gate-tab" data-tab="attendees" onclick="switchGateTab('attendees')">All Attendees</button>
-        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">{{ (($usingSharedLink ?? false) && auth()->guest()) ? 'Recent Shared Scans' : 'My Recent Scans' }}</button>
+        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">{{ ($usingSharedLink ?? false) ? 'Recent Event Scans' : 'My Recent Scans' }}</button>
     </nav>
     <section id="gateTabScan">
     <div class="grid">
@@ -1133,7 +1133,7 @@
     </section>
     <section id="gateTabRecent" hidden>
     <div class="panel footer-panel">
-        <h2 class="panel-title">{{ (($usingSharedLink ?? false) && auth()->guest()) ? 'Recent Shared Scans' : 'My Recent Scans' }}</h2>
+        <h2 class="panel-title">{{ ($usingSharedLink ?? false) ? 'Recent Event Scans' : 'My Recent Scans' }}</h2>
 
         <div id="recentCheckInsList" class="recent-list"><div class="recent-meta">Open this tab to load recent scans.</div></div>
     </div>

@@ -8,6 +8,7 @@ use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -83,9 +84,26 @@ class GateScannerSharingAccessTest extends TestCase
             ->assertJsonMissingPath('invitee.phone');
         $this->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 2])
             ->assertUnprocessable();
-        $this->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 1])
+        $this->actingAs($owner)->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 1])
             ->assertOk()->assertJsonPath('invitee.remaining_guests', 0);
         $this->assertSame(4, (int) $invitee->fresh()->checked_in_count);
+        $this->postJson(route('gate.check-in.confirm', $otherEvent), [
+            'invitee_id' => $otherInvitee->id,
+            'guest_count' => 1,
+        ])->assertOk();
+
+        $this->getJson(route('gate.check-in.attendees', $event))
+            ->assertOk()->assertJsonCount(1, 'recent')->assertJsonPath('recent.0.guests', 1);
+        $this->getJson($url.'/attendees')
+            ->assertOk()->assertJsonCount(2, 'recent');
+        Auth::forgetGuards();
+        $this->getJson($url.'/attendees')
+            ->assertOk()
+            ->assertJsonCount(2, 'recent')
+            ->assertJsonPath('recent.0.guests', 1)
+            ->assertJsonPath('recent.1.guests', 3)
+            ->assertJsonMissing(['name' => 'Other Guest']);
+        $this->get($url)->assertOk()->assertSee('Recent Event Scans');
 
         $event->disableGateShare();
         $this->get($url)->assertNotFound();

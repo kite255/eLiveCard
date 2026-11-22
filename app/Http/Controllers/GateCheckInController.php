@@ -39,7 +39,7 @@ class GateCheckInController extends Controller
     }
 
     /**
-     * Paginated attendee roster and the current officer's recent admissions.
+     * Paginated attendee roster and recent admissions for the scanner.
      * Query is always scoped to the authorized event.
      */
     public function attendees(Request $request, Event $event): JsonResponse
@@ -96,7 +96,8 @@ class GateCheckInController extends Controller
         $recent = CheckIn::query()
             ->with(['invitee.cardType'])
             ->where('event_id', $event->id)
-            ->where('checked_in_by', $request->user()?->id)
+            ->when(! $request->routeIs('gate.share.*'), fn ($query) =>
+                $query->where('checked_in_by', $request->user()->id))
             ->where('status', CheckIn::STATUS_SUCCESS)
             ->latest('id')->limit(10)->get()
             ->map(fn (CheckIn $record): array => [
