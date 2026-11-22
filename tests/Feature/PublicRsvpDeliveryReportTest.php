@@ -8,7 +8,9 @@ use App\Models\Invitee;
 use App\Models\MessageLog;
 use App\Models\SmsLog;
 use App\Models\User;
+use App\Services\SmsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PublicRsvpDeliveryReportTest extends TestCase
@@ -122,6 +124,56 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('07 Nov 2026 19:44')
             ->assertSee('07 Nov 2026 19:45')
             ->assertDontSee('07 Nov 2026 20:11');
+    }
+
+    public function test_shared_rsvp_link_shows_receipt_availability_and_updates_after_sync(): void
+    {
+        $event = $this->reportEvent('Invitation Delivery Report');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'RSVP Guest',
+            'phone' => '255700000013',
+        ]);
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'phone' => $invitee->phone,
+            'sms_type' => SmsLog::TYPE_INVITATION_CARD,
+            'message' => 'Invitation',
+            'status' => 'sent',
+            'provider_status' => 'delivery_report_unavailable',
+            'provider_message_id' => 'private-test-reference',
+            'error_message' => 'Private provider error',
+        ]);
+
+        $url = $event->generateRsvpShareLink();
+        $unconfirmed = $this->get($url.'?sms_delivery=submitted')
+            ->assertOk()
+            ->assertSee('RSVP Guest')
+            ->assertSee('Delivery report unavailable')
+            ->assertDontSee('Private provider error')
+            ->assertDontSee('private-test-reference');
+        $this->assertSame(2, substr_count($unconfirmed->getContent(), 'Delivery report unavailable'));
+
+        config([
+            'services.sms.base_url' => 'https://sms.example.test',
+            'services.elive_sms.api_key' => 'test-key',
+            'services.elive_sms.api_secret' => 'test-secret',
+        ]);
+        Http::preventStrayRequests();
+        Http::fake(['*/deliver/private-test-reference' => Http::response(['data' => [[
+            'status' => 'Delivered',
+            'mobile' => $invitee->phone,
+            'deliveredAt' => '2026-11-22 16:45:00',
+        ]]])]);
+        $this->assertTrue(app(SmsService::class)->refreshDeliveryReport('private-test-reference')['success']);
+
+        $this->get($url.'?sms_delivery=delivered')
+            ->assertOk()
+            ->assertSee('RSVP Guest')
+            ->assertSee('22 Nov 2026 16:45')
+            ->assertDontSee('Delivery report unavailable');
     }
 
     public function test_shared_rsvp_omits_missing_status_timestamps(): void

@@ -961,22 +961,31 @@ class SmsService
         }
 
         if (! is_array($reports) || $reports === []) {
-            $providerStatus = $data['status']
-                ?? $data['provider_status']
+            $reports = [];
+            $providerStatus = $data['provider_status']
                 ?? $data['messageStatus']
                 ?? $data['message_status']
+                ?? $data['status']
                 ?? null;
 
-            if (filled($providerStatus)) {
-                $reports = [[
-                    'status' => $providerStatus,
-                    'message' => $data['message'] ?? null,
-                ]];
+            // A generic request success does not confirm delivery of the SMS.
+            if (is_string($providerStatus) && ! in_array(strtolower(trim($providerStatus)), ['', 'success', 'ok'], true)) {
+                $reports = [array_merge($data, ['status' => $providerStatus])];
             }
         }
 
+        $reports = array_filter($reports ?? [], static fn ($report): bool => is_array($report) && $report !== []);
+
+        if ($reports === []) {
+            $reportResponse['success'] = false;
+            $reportResponse['message'] = 'The provider returned no SMS delivery receipt.';
+            $this->markDeliveryReportUnavailable($shootId, $reportResponse['message'], $reportResponse);
+
+            return $reportResponse;
+        }
+
         foreach ($reports as $report) {
-            $this->updateDeliveryReportLogs($shootId, is_array($report) ? $report : []);
+            $this->updateDeliveryReportLogs($shootId, $report);
         }
 
         return $reportResponse;
@@ -1069,10 +1078,10 @@ class SmsService
             /*
              * Keep the display status honest:
              * - If the SMS is still sent/queued/sending/unknown, keep or set it to sent.
-             * - Never mark it as failed because only the report lookup failed.
+             * - Keep a previously confirmed terminal result if only the lookup failed.
              */
             if (in_array('status', $columns, true)) {
-                $update['status'] = DB::raw("CASE WHEN status IN ('delivered', 'failed', 'undelivered', 'expired', 'rejected') THEN status ELSE 'sent' END");
+                $update['status'] = 'sent';
             }
 
             $safeUpdate = Arr::only($update, $columns);
@@ -1093,6 +1102,13 @@ class SmsService
 
                     if (in_array('shoot_id', $columns, true)) {
                         $query->orWhere('shoot_id', $shootId);
+                    }
+                })
+                ->where(function ($query) use ($columns): void {
+                    if (in_array('status', $columns, true)) {
+                        $query->whereNull('status')->orWhereNotIn('status', [
+                            'delivered', 'read', 'failed', 'undelivered', 'expired', 'rejected',
+                        ]);
                     }
                 })
                 ->update($safeUpdate);
@@ -1152,7 +1168,7 @@ class SmsService
         ];
 
         if ($status === 'sent') {
-            $update['sent_at'] = DB::raw('COALESCE(sent_at, NOW())');
+            $update['sent_at'] = DB::raw('COALESCE(sent_at, CURRENT_TIMESTAMP)');
             $update['delivered_at'] = null;
             $update['failed_at'] = null;
             $update['error_message'] = null;
@@ -1332,9 +1348,9 @@ class SmsService
     protected function providerReportTime(array $report): ?Carbon
     {
         $time = $report['deliveryTime']
-            ?? $report['sentAt']
             ?? $report['deliveredAt']
             ?? $report['deliveryAt']
+            ?? $report['sentAt']
             ?? $report['updatedAt']
             ?? null;
 

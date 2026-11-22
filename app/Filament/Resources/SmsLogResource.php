@@ -4,14 +4,13 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SmsLogResource\Pages;
 use App\Models\SmsLog;
+use App\Services\SmsService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class SmsLogResource extends Resource
@@ -185,10 +184,10 @@ class SmsLogResource extends Resource
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('status')
-                    ->label('Provider Status')
+                    ->label('Delivery Status')
                     ->badge()
                     ->sortable()
-                    ->formatStateUsing(fn (?string $state): string => self::formatStatus($state))
+                    ->formatStateUsing(fn (?string $state): string => self::formatDeliveryStatus($state))
                     ->color(fn (?string $state): string => self::statusColor($state))
                     ->description(fn (SmsLog $record): ?string => $record->provider_status
                         ? 'Provider: ' . self::formatStatus($record->provider_status)
@@ -279,7 +278,7 @@ class SmsLogResource extends Resource
                     ->preload(),
 
                 Tables\Filters\SelectFilter::make('status')
-                    ->label('Provider Status')
+                    ->label('Delivery Status')
                     ->options(self::statusOptions()),
             ])
             ->actions([
@@ -343,109 +342,29 @@ class SmsLogResource extends Resource
             return;
         }
 
-        $baseUrl = rtrim((string) config('services.elive_sms.base_url'), '/');
-        $apiKey = config('services.elive_sms.api_key');
-        $apiSecret = config('services.elive_sms.api_secret');
+        $result = app(SmsService::class)->refreshDeliveryReport((string) $record->provider_message_id);
 
-        if (! $baseUrl || ! $apiKey || ! $apiSecret) {
-            if ($notify) {
-                Notification::make()
-                    ->title('SMS provider config missing')
-                    ->body('Set ELIVE_SMS_BASE_URL, ELIVE_SMS_API_KEY, and ELIVE_SMS_API_SECRET in .env.')
-                    ->danger()
-                    ->send();
-            }
-
+        if (! $notify) {
             return;
         }
 
-        $url = $baseUrl . '/delivery/' . $record->provider_message_id;
-
-        $response = Http::withHeaders([
-            'api_key' => $apiKey,
-            'api_secret' => $apiSecret,
-            'Accept' => 'application/json',
-        ])->timeout(30)->get($url);
-
-        $payload = $response->json();
-
-        if (! $response->successful()) {
-            $record->update([
-                'provider_status' => 'report_failed',
-                'provider_response' => $payload,
-                'error_message' => data_get($payload, 'message', 'Failed to fetch SMS delivery report.'),
-            ]);
-
-            if ($notify) {
-                Notification::make()
-                    ->title('Delivery report failed')
-                    ->body($record->error_message)
-                    ->danger()
-                    ->send();
-            }
-
-            return;
-        }
-
-        $reports = collect(data_get($payload, 'data', []));
-
-        $report = $reports->firstWhere('mobile', $record->phone)
-            ?? $reports->firstWhere('phone', $record->phone)
-            ?? $reports->first();
-
-        if (! $report) {
-            $record->update([
-                'provider_status' => 'unknown',
-                'provider_response' => $payload,
-                'error_message' => data_get($payload, 'message', 'Delivery report returned no data.'),
-            ]);
-
-            if ($notify) {
-                Notification::make()
-                    ->title('No delivery data found')
-                    ->body('The provider returned a successful response, but no report data was found for this SMS.')
-                    ->warning()
-                    ->send();
-            }
-
-            return;
-        }
-
-        $providerStatus = (string) data_get($report, 'status', 'unknown');
-        $status = self::normalizeProviderStatus($providerStatus);
-        $sentAt = self::parseProviderDate(data_get($report, 'sentAt'));
-
-        $updates = [
-            'status' => $status,
-            'provider_status' => $providerStatus,
-            'provider_response' => $payload,
-            'error_message' => data_get($report, 'explanation'),
-        ];
-
-        if ($sentAt && blank($record->sent_at)) {
-            $updates['sent_at'] = $sentAt;
-        }
-
-        if ($status === 'delivered') {
-            $updates['delivered_at'] = now();
-            $updates['failed_at'] = null;
-        }
-
-        if (in_array($status, ['failed', 'undelivered', 'expired', 'rejected'], true)) {
-            $updates['failed_at'] = now();
-            $updates['delivered_at'] = null;
-            $updates['error_message'] = data_get($report, 'explanation') ?: 'SMS was not delivered.';
-        }
-
-        $record->update($updates);
-
-        if ($notify) {
+        if (! ($result['success'] ?? false)) {
             Notification::make()
-                ->title('Delivery report updated')
-                ->body('Provider status: ' . self::formatStatus($providerStatus))
-                ->success()
+                ->title('Delivery report unavailable')
+                ->body($result['message'] ?? 'The provider did not return a delivery result.')
+                ->warning()
                 ->send();
+
+            return;
         }
+
+        $record->refresh();
+
+        Notification::make()
+            ->title('Delivery report checked')
+            ->body('Delivery status: '.self::formatDeliveryStatus($record->status))
+            ->success()
+            ->send();
     }
 
     protected static function normalizeProviderStatus(?string $status): string
@@ -469,17 +388,11 @@ class SmsLogResource extends Resource
         };
     }
 
-    protected static function parseProviderDate(mixed $value): ?Carbon
+    protected static function formatDeliveryStatus(?string $state): string
     {
-        if (! $value) {
-            return null;
-        }
-
-        try {
-            return Carbon::parse($value);
-        } catch (\Throwable) {
-            return null;
-        }
+        return $state === SmsLog::STATUS_SENT
+            ? 'Sent · Awaiting delivery'
+            : self::formatStatus($state);
     }
 
     protected static function statusOptions(): array
@@ -488,7 +401,7 @@ class SmsLogResource extends Resource
             'pending' => 'Pending',
             'queued' => 'Queued',
             'sending' => 'Sending',
-            'sent' => 'Sent',
+            'sent' => 'Sent · Awaiting delivery',
             'delivered' => 'Delivered',
             'failed' => 'Failed',
             'undelivered' => 'Undelivered',
