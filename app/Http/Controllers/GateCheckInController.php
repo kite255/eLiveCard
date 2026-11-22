@@ -116,6 +116,44 @@ class GateCheckInController extends Controller
         ]);
     }
 
+    public function scans(Request $request, Event $event): JsonResponse
+    {
+        $this->authorizeGateAccess($event);
+
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $search = mb_strtolower(trim($validated['search'] ?? ''));
+        $query = CheckIn::query()
+            ->with('invitee.cardType')
+            ->where('event_id', $event->id)
+            ->where('status', CheckIn::STATUS_SUCCESS);
+
+        if ($search !== '') {
+            $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search).'%';
+            $query->whereHas('invitee', fn ($invitees) => $invitees
+                ->whereRaw("LOWER(name) LIKE ? ESCAPE '!'", [$pattern])
+                ->orWhereRaw("LOWER(serial_number) LIKE ? ESCAPE '!'", [$pattern]));
+        }
+
+        $page = $query->latest('id')->paginate(25);
+
+        return response()->json([
+            'data' => $page->getCollection()->map(fn (CheckIn $scan): array => [
+                'name' => $scan->invitee?->name ?? 'Invitee',
+                'serial_number' => $scan->invitee?->serial_number,
+                'card_type' => $scan->invitee?->cardType?->name,
+                'guests' => $scan->guests_checked_in,
+                'time' => $scan->checked_in_at?->format('d M Y, H:i'),
+            ]),
+            'current_page' => $page->currentPage(),
+            'last_page' => $page->lastPage(),
+            'total' => $page->total(),
+        ]);
+    }
+
     /**
      * Event-specific, shareable scanner URL. The ID uniquely selects the event
      * and the slug makes the link understandable to gate officers.
