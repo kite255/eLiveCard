@@ -113,7 +113,9 @@ class InvitationWhatsAppTest extends TestCase
         ]);
 
         Http::fake([
-            '*' => Http::response(['messages' => [['id' => 'wamid.invitation.test']]], 200),
+            '*' => Http::sequence()
+                ->push(['messages' => [['id' => 'wamid.invitation.test']]], 200)
+                ->push(['messages' => [['id' => 'wamid.invitation.resend']]], 200),
         ]);
 
         $event = Event::query()->create([
@@ -215,6 +217,36 @@ class InvitationWhatsAppTest extends TestCase
             'whatsapp_status' => 'delivered',
             'rsvp_status' => Invitee::RSVP_ATTENDING,
             'last_reply_message' => 'I will attend',
+        ]);
+
+        app(WhatsAppApiCloudService::class)->sendInvitation($invitee->refresh());
+
+        $this->postJson('/api/whatsapp/webhook', [
+            'object' => 'whatsapp_business_account',
+            'entry' => [[
+                'changes' => [[
+                    'field' => 'messages',
+                    'value' => [
+                        'metadata' => ['phone_number_id' => '123456'],
+                        'statuses' => [[
+                            'id' => 'wamid.invitation.test',
+                            'recipient_id' => '676771234',
+                            'status' => 'read',
+                            'timestamp' => (string) now()->timestamp,
+                        ]],
+                    ],
+                ]],
+            ]],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('message_logs', [
+            'provider_message_id' => 'wamid.invitation.test',
+            'status' => 'read',
+        ]);
+        $this->assertDatabaseHas('invitees', [
+            'id' => $invitee->id,
+            'whatsapp_message_id' => 'wamid.invitation.resend',
+            'whatsapp_status' => 'submitted',
         ]);
     }
 }

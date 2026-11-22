@@ -250,7 +250,7 @@
         $invitees = $this->invitees;
         $event = $record;
 
-        $canSendMessages = auth()->user()?->canSendMessages() ?? false;
+        $canSendMessages = $this->canResendInvitations();
 
         $formatStatus = fn (?string $value): string =>
             $value ? str($value)->replace('_', ' ')->title()->toString() : 'Not Sent';
@@ -816,7 +816,7 @@
                                             type="button"
                                             class="rsvp-action"
                                             style="color:#213B73;"
-                                            onclick="return confirm('Resend the SMS invitation to this invitee?')"
+                                            wire:confirm="Resend the SMS invitation? The invitee may receive another copy and an additional charge may apply."
                                             wire:click="resendSmsInvitation({{ $invitee->id }})"
                                             wire:loading.attr="disabled"
                                             wire:target="resendSmsInvitation({{ $invitee->id }})"
@@ -829,7 +829,7 @@
                                             type="button"
                                             class="rsvp-action"
                                             style="color:#15803D;"
-                                            onclick="return confirm('Resend the WhatsApp invitation to this invitee?')"
+                                            wire:confirm="Resend the WhatsApp invitation? The invitee may receive another copy and an additional charge may apply."
                                             wire:click="resendWhatsAppInvitation({{ $invitee->id }})"
                                             wire:loading.attr="disabled"
                                             wire:target="resendWhatsAppInvitation({{ $invitee->id }})"

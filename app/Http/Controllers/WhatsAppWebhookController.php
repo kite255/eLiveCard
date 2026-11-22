@@ -1895,6 +1895,11 @@ class WhatsAppWebhookController extends Controller
         ?string $error,
         Carbon $timestamp,
     ): void {
+        // Older receipts still update their message log, but cannot replace the current send.
+        if (filled($invitee->whatsapp_message_id) && $invitee->whatsapp_message_id !== $messageId) {
+            return;
+        }
+
         $currentStatus =
             $this->normalizeWhatsappStatus(
                 (string) (

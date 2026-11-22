@@ -177,8 +177,15 @@ class InviteeInvitationService
      *
      * A provider submission is not a delivery receipt.
      */
-    public function sendImmediately(Event $event, Invitee $invitee, string $channel): array
+    public function sendImmediately(Event $event, Invitee $invitee, string $channel, ?string $resendReason = null): array
     {
+        if ($resendReason !== null) {
+            $resendReason = trim($resendReason);
+            if (mb_strlen($resendReason) < 10 || mb_strlen($resendReason) > 500) {
+                return $this->result('failed', 'Provide a reason between 10 and 500 characters.');
+            }
+        }
+
         if ((int) $invitee->event_id !== (int) $event->id
             || $invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
             return $this->result('skipped', 'The invitee must have an active invitation for this event.');
@@ -195,22 +202,43 @@ class InviteeInvitationService
 
         try {
             return Cache::lock('direct-invitation-'.$channel.'-'.$event->id.'-'.$invitee->id, 90)
-                ->block(1, function () use ($event, $invitee, $template, $channel): array {
+                ->block(1, function () use ($event, $invitee, $template, $channel, $resendReason): array {
                     $invitee->refresh()->loadMissing(['event', 'cardType']);
 
-                    if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
+                    if ((int) $invitee->event_id !== (int) $event->id || $invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
                         return $this->result('skipped', 'Invitation card is no longer active.');
                     }
 
+                    if (blank($invitee->phone) || blank($invitee->short_code)) {
+                        return $this->result('failed', 'A phone number and private invitation link are required.');
+                    }
+
                     if ($channel === MessageTemplate::CHANNEL_SMS) {
-                        $reason = app(SmsInvitationRecipientsService::class)->exclusionReason($invitee);
-                        if ($reason !== null) {
-                            return $this->result('skipped', $reason);
+                        $sms = app(SmsService::class);
+                        if ($resendReason === null) {
+                            $exclusion = app(SmsInvitationRecipientsService::class)->exclusionReason($invitee);
+                            if ($exclusion !== null) {
+                                return $this->result('skipped', $exclusion);
+                            }
+                        } else {
+                            if ($this->smsInvitationInFlight($invitee)) {
+                                return $this->result('skipped', 'An invitation SMS is already queued or processing.');
+                            }
+
+                            try {
+                                $sms->formatPhone($invitee->phone);
+                            } catch (\Exception) {
+                                return $this->result('failed', 'SMS invitations require a valid Tanzanian mobile number.');
+                            }
                         }
 
                         $message = EliveMessagePlaceholders::render((string) $template->content, $invitee);
                         if (trim($message) === '' || preg_match('/#[A-Z_]+#/', $message)) {
                             return $this->result('failed', 'SMS template has an empty message or unresolved placeholders.');
+                        }
+
+                        if ($resendReason !== null) {
+                            $this->recordResend($invitee, $channel, $resendReason);
                         }
 
                         // Set in-flight state before contacting the provider to block repeated clicks.
@@ -222,7 +250,7 @@ class InviteeInvitationService
                         ])->save();
 
                         try {
-                            $response = app(SmsService::class)->sendInvitation($invitee, $message);
+                            $response = $sms->sendInvitation($invitee, $message);
                             if (! ($response['success'] ?? false)) {
                                 return $this->result('failed', 'SMS provider did not accept the invitation.');
                             }
@@ -244,7 +272,7 @@ class InviteeInvitationService
                         return $this->result('failed', 'WhatsApp invitation tracking is unavailable.');
                     }
 
-                    if ($invitee->messageLogs()
+                    if ($resendReason === null && $invitee->messageLogs()
                         ->where('event_id', $event->id)
                         ->where('channel', 'whatsapp')
                         ->where('type', MessageTemplate::TYPE_INVITATION)
@@ -253,33 +281,63 @@ class InviteeInvitationService
                         return $this->result('skipped', 'This WhatsApp invitation was already submitted.');
                     }
 
-                    $claimed = DB::table('whatsapp_template_sends')->insertOrIgnore([
+                    $claimKey = [
                         'event_id' => $event->id,
                         'invitee_id' => $invitee->id,
                         'message_template_id' => $template->id,
-                        'status' => 'pending',
+                    ];
+                    // A queued worker only processes pending claims.
+                    $claimStatus = $resendReason === null ? 'pending' : 'sending';
+                    $now = now();
+
+                    if ($resendReason !== null && DB::table('whatsapp_template_sends as sends')
+                        ->join('message_templates as templates', 'templates.id', '=', 'sends.message_template_id')
+                        ->where('sends.invitee_id', $invitee->id)
+                        ->where('sends.event_id', $event->id)
+                        ->where('templates.type', MessageTemplate::TYPE_INVITATION)
+                        ->whereIn('sends.status', ['pending', 'sending'])
+                        ->exists()) {
+                        return $this->result('skipped', 'A WhatsApp invitation is already queued or processing.');
+                    }
+
+                    $claimed = DB::table('whatsapp_template_sends')->insertOrIgnore($claimKey + [
+                        'status' => $claimStatus,
                         'attempts' => 1,
-                        'last_attempt_at' => now(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
+                        'last_attempt_at' => $now,
+                        'created_at' => $now,
+                        'updated_at' => $now,
                     ]);
+
+                    if ($claimed !== 1 && $resendReason !== null) {
+                        $claimed = DB::table('whatsapp_template_sends')
+                            ->where($claimKey)
+                            ->whereIn('status', ['submitted', 'failed'])
+                            ->update([
+                                'status' => $claimStatus,
+                                'attempts' => DB::raw('attempts + 1'),
+                                'last_attempt_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                    }
 
                     if ($claimed !== 1) {
                         return $this->result('skipped', 'WhatsApp invitation has already been requested. Check its status before retrying.');
                     }
 
+                    if ($resendReason !== null) {
+                        $this->recordResend($invitee, $channel, $resendReason);
+                    }
+
                     try {
-                        $response = app(WhatsAppApiCloudService::class)->sendInvitation(
+                        app(WhatsAppApiCloudService::class)->sendInvitation(
                             invitee: $invitee,
                             languageCode: (string) ($template->whatsapp_language_code ?: 'en'),
                             messageTemplateId: (int) $template->id,
                         );
 
                         DB::table('whatsapp_template_sends')
-                            ->where('event_id', $event->id)
-                            ->where('invitee_id', $invitee->id)
-                            ->where('message_template_id', $template->id)
-                            ->where('status', 'pending')
+                            ->where($claimKey)
+                            ->where('status', $claimStatus)
                             ->update(['status' => 'submitted', 'last_error' => null, 'updated_at' => now()]);
 
                         return $this->result('submitted', 'WhatsApp accepted the invitation. Delivery/read confirmation may arrive later.');
@@ -287,10 +345,8 @@ class InviteeInvitationService
                         report($exception);
 
                         DB::table('whatsapp_template_sends')
-                            ->where('event_id', $event->id)
-                            ->where('invitee_id', $invitee->id)
-                            ->where('message_template_id', $template->id)
-                            ->where('status', 'pending')
+                            ->where($claimKey)
+                            ->where('status', $claimStatus)
                             ->update([
                                 'status' => 'failed',
                                 'last_error' => mb_substr($exception->getMessage(), 0, 1000),
@@ -387,6 +443,31 @@ class InviteeInvitationService
 
                 return $this->result('queued', 'Force resend queued. This may incur another SMS charge and does not confirm delivery.');
             });
+    }
+
+    private function smsInvitationInFlight(Invitee $invitee): bool
+    {
+        $inFlight = ['queued', 'pending', 'sending', 'processing'];
+
+        return ($invitee->last_message_channel === 'sms' && in_array($invitee->last_message_status, $inFlight, true))
+            || in_array($invitee->invitation_sms_status, ['queued', 'sending', 'processing'], true)
+            || (Schema::hasTable('sms_logs') && DB::table('sms_logs')
+                ->where('event_id', $invitee->event_id)
+                ->where('invitee_id', $invitee->id)
+                ->whereIn('sms_type', ['invitation', 'invitation_card'])
+                ->whereIn('status', $inFlight)
+                ->exists());
+    }
+
+    private function recordResend(Invitee $invitee, string $channel, string $reason): void
+    {
+        AuditLogService::record(
+            action: 'invitation_'.$channel.'.force_resend_requested',
+            subject: $invitee,
+            eventId: $invitee->event_id,
+            description: 'An authorized user requested an explicit invitation resend.',
+            metadata: ['channel' => $channel, 'reason' => $reason, 'recipient_id' => $invitee->id],
+        );
     }
 
     private function result(string $status, string $message): array

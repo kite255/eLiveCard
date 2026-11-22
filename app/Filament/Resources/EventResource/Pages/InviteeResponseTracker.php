@@ -6,7 +6,7 @@ use App\Filament\Resources\EventResource;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Services\InviteeConversationService;
-use App\Services\SmsService;
+use App\Services\InviteeInvitationService;
 use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
@@ -447,151 +447,45 @@ class InviteeResponseTracker extends Page
 
     public function resendSmsInvitation(int $inviteeId): void
     {
-        $invitee = $this->findInviteeForCurrentEvent($inviteeId);
-
-        if (blank($invitee->phone)) {
-            Notification::make()
-                ->title('SMS not sent')
-                ->body('This invitee does not have a phone number.')
-                ->danger()
-                ->send();
-
-            return;
-        }
-
-        $messageType = $this->resendMessageTypeForSms($invitee);
-        $message = $this->buildResendMessage($invitee, $messageType);
-        $reference = $messageType . '_' . $invitee->id . '_' . now()->format('YmdHis');
-
-        try {
-            $providerResponse = app(SmsService::class)->send(
-                $invitee->phone,
-                $message,
-                $reference
-            );
-
-            app(InviteeConversationService::class)
-                ->saveOutgoingSmsReply(
-                    invitee: $invitee,
-                    message: $message,
-                    status: 'sent'
-                );
-
-            $invitee->forceFill([
-                'last_sms_sent_at' => now(),
-                'sms_sent_at' => $invitee->sms_sent_at ?? now(),
-                'sms_status' => 'sent',
-                'sms_error' => null,
-                'last_sms_error' => null,
-                'invitation_sms_status' => $messageType === 'invitation_card'
-                    ? 'sent'
-                    : ($invitee->invitation_sms_status ?? 'sent'),
-                'invitation_sms_sent_at' => $messageType === 'invitation_card'
-                    ? now()
-                    : ($invitee->invitation_sms_sent_at ?? null),
-                'last_message_channel' => 'sms',
-                'last_message_status' => 'sent',
-                'last_message_error' => null,
-            ])->save();
-
-            $this->loadInviteeFormDefaults();
-            $this->dispatch('$refresh');
-
-            Notification::make()
-                ->title($messageType === 'rsvp_reminder' ? 'Reminder SMS sent' : 'Invitation SMS sent')
-                ->body('SMS sent to ' . $invitee->name . '.')
-                ->success()
-                ->send();
-        } catch (Throwable $exception) {
-            report($exception);
-
-            $invitee->forceFill([
-                'sms_status' => 'failed',
-                'last_message_channel' => 'sms',
-                'last_message_status' => 'failed',
-                'sms_error' => $exception->getMessage(),
-                'last_sms_error' => $exception->getMessage(),
-                'last_message_error' => $exception->getMessage(),
-            ])->save();
-
-            $this->dispatch('$refresh');
-
-            Notification::make()
-                ->title('SMS failed')
-                ->body($exception->getMessage())
-                ->danger()
-                ->send();
-        }
+        $this->resendInvitation($inviteeId, 'sms');
     }
 
     public function resendWhatsAppInvitation(int $inviteeId): void
     {
+        $this->resendInvitation($inviteeId, 'whatsapp');
+    }
+
+    public function canResendInvitations(): bool
+    {
+        $user = auth()->user();
+
+        return $user && $user->canSendMessages() && $user->canAccessEvent($this->record);
+    }
+
+    protected function resendInvitation(int $inviteeId, string $channel): void
+    {
+        abort_unless($this->canResendInvitations(), 403);
+
         $invitee = $this->findInviteeForCurrentEvent($inviteeId);
+        $result = app(InviteeInvitationService::class)->sendImmediately(
+            $this->record,
+            $invitee,
+            $channel,
+            'Manual resend from the Invitee Response Tracker.',
+        );
 
-        if (blank($invitee->phone)) {
-            Notification::make()
-                ->title('WhatsApp not sent')
-                ->body('This invitee does not have a phone number.')
-                ->danger()
-                ->send();
+        $label = $channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
+        $notification = Notification::make()
+            ->title($label.' resend to '.$invitee->name)
+            ->body($result['message']);
 
-            return;
-        }
+        match ($result['status']) {
+            'submitted' => $notification->success(),
+            'logged', 'skipped' => $notification->warning(),
+            default => $notification->danger(),
+        };
 
-        $messageType = $this->resendMessageTypeForWhatsApp($invitee);
-        $message = $this->buildResendMessage($invitee, $messageType);
-
-        try {
-            /*
-             |--------------------------------------------------------------------------
-             | WhatsApp sending
-             |--------------------------------------------------------------------------
-             |
-             | This tracker safely records the WhatsApp resend action. If you already
-             | have a real WhatsApp sending service/job in the project, connect it here.
-             | The notification still responds immediately, so the button never appears dead.
-             |
-             */
-
-            app(InviteeConversationService::class)
-                ->saveOutgoingWhatsAppReply(
-                    invitee: $invitee,
-                    message: $message,
-                    status: 'sent'
-                );
-
-            $invitee->forceFill([
-                'last_whatsapp_sent_at' => now(),
-                'last_message_channel' => 'whatsapp',
-                'last_message_status' => 'sent',
-                'last_message_error' => null,
-            ])->save();
-
-            $this->loadInviteeFormDefaults();
-            $this->dispatch('$refresh');
-
-            Notification::make()
-                ->title($messageType === 'rsvp_reminder' ? 'WhatsApp reminder recorded' : 'WhatsApp invitation recorded')
-                ->body('The WhatsApp resend action was recorded for ' . $invitee->name . '.')
-                ->success()
-                ->send();
-        } catch (Throwable $exception) {
-            report($exception);
-
-            $invitee->forceFill([
-                'last_message_channel' => 'whatsapp',
-                'last_message_status' => 'failed',
-                'last_message_error' => $exception->getMessage(),
-            ])->save();
-
-            $this->dispatch('$refresh');
-
-            Notification::make()
-                ->title('WhatsApp failed')
-                ->body($exception->getMessage())
-                ->danger()
-                ->send();
-        }
+        $notification->send();
     }
 
     public function exportResponses(): StreamedResponse
@@ -668,42 +562,6 @@ class InviteeResponseTracker extends Page
             ->with(['event', 'cardType'])
             ->where('event_id', $this->record->id)
             ->findOrFail($inviteeId);
-    }
-
-    protected function resendMessageTypeForSms(Invitee $invitee): string
-    {
-        $alreadySent = filled($invitee->last_sms_sent_at)
-            || filled($invitee->sms_sent_at)
-            || filled($invitee->invitation_sms_sent_at)
-            || filled($invitee->sms_message_id)
-            || in_array($invitee->sms_status, ['queued', 'sending', 'sent', 'delivered'], true)
-            || in_array($invitee->invitation_sms_status, ['queued', 'sending', 'sent', 'delivered'], true);
-
-        return $alreadySent ? 'rsvp_reminder' : 'invitation_card';
-    }
-
-    protected function resendMessageTypeForWhatsApp(Invitee $invitee): string
-    {
-        $alreadySent = filled($invitee->last_whatsapp_sent_at)
-            || filled($invitee->whatsapp_message_id)
-            || $invitee->last_message_channel === 'whatsapp';
-
-        return $alreadySent ? 'rsvp_reminder' : 'invitation_card';
-    }
-
-    protected function buildResendMessage(Invitee $invitee, string $messageType): string
-    {
-        $event = $invitee->event ?? $this->record;
-        $eventName = $event->name ?? $event->title ?? 'tukio';
-        $privateLink = filled($invitee->short_code)
-            ? url('/i/' . $invitee->short_code)
-            : '';
-
-        if ($messageType === 'rsvp_reminder') {
-            return trim("Ndugu {$invitee->name}, tafadhali thibitisha kuhudhuria {$eventName}. Fungua kadi yako hapa: {$privateLink}");
-        }
-
-        return trim("Ndugu {$invitee->name}, umealikwa kwenye {$eventName}. Fungua kadi yako hapa: {$privateLink}");
     }
 
     public function updateRsvp(int $inviteeId): void
