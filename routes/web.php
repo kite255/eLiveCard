@@ -42,6 +42,7 @@ Route::prefix('g/{event:gate_share_token}')
     ->group(function (): void {
         Route::get('/', [GateCheckInController::class, 'show'])->name('show');
         Route::get('/attendees', [GateCheckInController::class, 'attendees'])->name('attendees');
+        Route::get('/scans', [GateCheckInController::class, 'scans'])->name('scans');
         Route::post('/verify', [GateCheckInController::class, 'verify'])->name('verify');
         Route::post('/confirm', [GateCheckInController::class, 'confirm'])->name('confirm');
     });

@@ -1026,7 +1026,7 @@
     <nav class="gate-tabs" aria-label="Gate scanner sections">
         <button type="button" class="gate-tab active" data-tab="scan" onclick="switchGateTab('scan')">Scan</button>
         <button type="button" class="gate-tab" data-tab="attendees" onclick="switchGateTab('attendees')">All Attendees</button>
-        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">{{ (($usingSharedLink ?? false) && auth()->guest()) ? 'Recent Shared Scans' : 'My Recent Scans' }}</button>
+        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">{{ ($usingSharedLink ?? false) ? 'All Scans' : 'My Recent Scans' }}</button>
     </nav>
     <section id="gateTabScan">
     <div class="grid">
@@ -1133,9 +1133,23 @@
     </section>
     <section id="gateTabRecent" hidden>
     <div class="panel footer-panel">
-        <h2 class="panel-title">{{ (($usingSharedLink ?? false) && auth()->guest()) ? 'Recent Shared Scans' : 'My Recent Scans' }}</h2>
+        <h2 class="panel-title">{{ ($usingSharedLink ?? false) ? 'All Scans' : 'My Recent Scans' }}</h2>
 
-        <div id="recentCheckInsList" class="recent-list"><div class="recent-meta">Open this tab to load recent scans.</div></div>
+        @if ($usingSharedLink ?? false)
+            <form class="gate-roster-controls" onsubmit="event.preventDefault(); loadGateScans(1)">
+                <input id="scanSearch" type="search" maxlength="100"
+                    aria-label="Search scans by name or card serial" placeholder="Search name or card serial">
+                <button type="submit" class="btn-primary">Search</button>
+            </form>
+            <div id="gateScanRows" class="recent-list"></div>
+            <div class="gate-roster-footer">
+                <span id="scanCount" aria-live="polite"></span>
+                <button type="button" id="scanPrevious" class="btn-light" onclick="loadGateScans(scanPage - 1)" disabled>Previous</button>
+                <button type="button" id="scanNext" class="btn-light" onclick="loadGateScans(scanPage + 1)" disabled>Next</button>
+            </div>
+        @else
+            <div id="recentCheckInsList" class="recent-list"><div class="recent-meta">Open this tab to load recent scans.</div></div>
+        @endif
     </div>
     </section>
 </div>
@@ -1257,12 +1271,16 @@
     @php
         $scannerRoute = ($usingSharedLink ?? false) ? 'gate.share.' : 'gate.check-in.';
         $scannerEvent = ($usingSharedLink ?? false) ? $event->gate_share_token : $event->getKey();
+        $scanHistoryUrl = ($usingSharedLink ?? false) ? route('gate.share.scans', ['event' => $scannerEvent]) : null;
     @endphp
     const verifyUrl = @json(route($scannerRoute.'verify', ['event' => $scannerEvent]));
     const confirmUrl = @json(route($scannerRoute.'confirm', ['event' => $scannerEvent]));
     const attendeesUrl = @json(route($scannerRoute.'attendees', ['event' => $scannerEvent]));
     let rosterPage = 1;
     let rosterLastPage = 1;
+    const scanHistoryUrl = @json($scanHistoryUrl);
+    let scanPage = 1;
+    let scanRequest = null;
 
     function switchGateTab(tab) {
         ['scan', 'attendees', 'recent'].forEach(key => {
@@ -1271,7 +1289,11 @@
         });
         if (tab !== 'scan') { clearSelection(); stopScanner(); }
         if (tab === 'scan') startScanner();
-        if (tab === 'attendees' || tab === 'recent') loadGateRoster(tab === 'attendees' ? rosterPage : 1);
+        if (tab === 'attendees') loadGateRoster(rosterPage);
+        if (tab === 'recent') {
+            if (scanHistoryUrl) loadGateScans(scanPage);
+            else loadGateRoster(1);
+        }
     }
 
     async function loadGateRoster(page = 1) {
@@ -1297,13 +1319,64 @@
                 '</td><td>' + a.checked_in_count + '/' + a.allowed_guests +
                 '</td><td>' + escapeHtml(a.status) + '</td><td>' + escapeHtml(a.checked_in_at || '-') + '</td></tr>'
             ).join('') : '<tr><td colspan="5">No matching attendees found.</td></tr>';
-            document.getElementById('recentCheckInsList').innerHTML = data.recent.length
+            const recentList = document.getElementById('recentCheckInsList');
+            if (!recentList) return;
+
+            recentList.innerHTML = data.recent.length
                 ? data.recent.map(a => '<div class="recent-item"><div class="recent-name">' + escapeHtml(a.name) +
                     '</div><div class="recent-meta">' + escapeHtml(a.card_type) + ' · ' + a.guests +
                     ' admitted · ' + escapeHtml(a.time || '-') + '</div></div>').join('')
                 : '<div class="recent-meta">No successful scans yet.</div>';
         } catch (error) {
             document.getElementById('rosterRows').innerHTML = '<tr><td colspan="5">Could not load attendees. Retry.</td></tr>';
+        }
+    }
+
+    async function loadGateScans(page) {
+        if (!scanHistoryUrl || page < 1) return;
+
+        scanRequest?.abort();
+        const request = new AbortController();
+        scanRequest = request;
+
+        const rows = document.getElementById('gateScanRows');
+        const count = document.getElementById('scanCount');
+        const previous = document.getElementById('scanPrevious');
+        const next = document.getElementById('scanNext');
+        const search = document.getElementById('scanSearch').value.trim();
+        const params = new URLSearchParams({page: String(page), search});
+
+        previous.disabled = next.disabled = true;
+        count.textContent = 'Loading scans…';
+
+        try {
+            const response = await fetch(scanHistoryUrl + '?' + params.toString(), {
+                credentials: 'same-origin',
+                headers: {Accept: 'application/json'},
+                signal: request.signal,
+            });
+            if (!response.ok) throw new Error('Could not load scans.');
+
+            const data = await response.json();
+            if (request.signal.aborted) return;
+            scanPage = data.current_page;
+            previous.disabled = scanPage <= 1;
+            next.disabled = scanPage >= data.last_page;
+            count.textContent = data.total + ' scans · Page ' + scanPage + ' / ' + data.last_page;
+            rows.innerHTML = data.data.length
+                ? data.data.map(scan => `
+                    <div class="recent-item">
+                        <div class="recent-name">${escapeHtml(scan.name)}</div>
+                        <div class="recent-meta">
+                            ${escapeHtml(scan.serial_number)} · ${escapeHtml(scan.card_type)} ·
+                            ${escapeHtml(scan.guests)} admitted · ${escapeHtml(scan.time)}
+                        </div>
+                    </div>`).join('')
+                : '<div class="recent-meta">' + (search ? 'No matching scans found.' : 'No successful scans yet.') + '</div>';
+        } catch (error) {
+            if (request.signal.aborted) return;
+            rows.innerHTML = '';
+            count.textContent = 'Could not load scans. Try searching again.';
         }
     }
 

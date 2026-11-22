@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\EventResource\Pages\ViewEvent;
 use App\Models\CardType;
+use App\Models\CheckIn;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -83,11 +85,53 @@ class GateScannerSharingAccessTest extends TestCase
             ->assertJsonMissingPath('invitee.phone');
         $this->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 2])
             ->assertUnprocessable();
-        $this->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 1])
+        $this->actingAs($owner)->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 1])
             ->assertOk()->assertJsonPath('invitee.remaining_guests', 0);
         $this->assertSame(4, (int) $invitee->fresh()->checked_in_count);
+        $this->postJson(route('gate.check-in.confirm', $otherEvent), [
+            'invitee_id' => $otherInvitee->id,
+            'guest_count' => 1,
+        ])->assertOk();
+
+        $this->getJson(route('gate.check-in.attendees', $event))
+            ->assertOk()->assertJsonCount(1, 'recent')->assertJsonPath('recent.0.guests', 1);
+        $this->getJson($url.'/attendees')
+            ->assertOk()->assertJsonCount(2, 'recent');
+        Auth::forgetGuards();
+        $this->getJson($url.'/attendees')
+            ->assertOk()
+            ->assertJsonCount(2, 'recent')
+            ->assertJsonPath('recent.0.guests', 1)
+            ->assertJsonPath('recent.1.guests', 3)
+            ->assertJsonMissing(['name' => 'Other Guest']);
+        $this->get($url)->assertOk();
+
+        for ($index = 0; $index < 25; $index++) {
+            CheckIn::query()->create(['event_id' => $event->id, 'invitee_id' => $invitee->id]);
+        }
+        CheckIn::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'status' => CheckIn::STATUS_FAILED,
+        ]);
+
+        $this->getJson($url.'/scans')
+            ->assertOk()
+            ->assertJsonCount(25, 'data')
+            ->assertJsonPath('total', 27)
+            ->assertJsonPath('last_page', 2)
+            ->assertJsonMissing(['name' => 'Other Guest']);
+        $this->getJson($url.'/scans?page=2&search=group+guest')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.1.guests', 3);
+        $this->getJson($url.'/scans?'.http_build_query(['search' => $invitee->serial_number]))
+            ->assertOk()->assertJsonPath('total', 27);
+        $this->getJson($url.'/scans?search=%25')->assertOk()->assertJsonPath('total', 0);
+        $this->get($url)->assertOk()->assertSee('All Scans')->assertSee('Search scans by name or card serial');
 
         $event->disableGateShare();
+        $this->getJson($url.'/scans')->assertNotFound();
         $this->get($url)->assertNotFound();
         $this->postJson($url.'/confirm', ['invitee_id' => $invitee->id, 'guest_count' => 1])
             ->assertNotFound();
