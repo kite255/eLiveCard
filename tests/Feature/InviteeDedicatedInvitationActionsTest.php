@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\EventResource\Pages\InviteeResponseTracker;
 use App\Jobs\SendInvitationSmsJob;
 use App\Jobs\SendInvitationWhatsAppJob;
 use App\Models\CardType;
@@ -15,6 +16,7 @@ use App\Services\WhatsAppApiCloudService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class InviteeDedicatedInvitationActionsTest extends TestCase
@@ -155,6 +157,98 @@ class InviteeDedicatedInvitationActionsTest extends TestCase
         ]);
         $this->assertSame('skipped', $service->sendImmediately($event, $invitee->fresh(), 'whatsapp')['status']);
         Queue::assertNothingPushed();
+    }
+
+    public function test_explicit_whatsapp_resend_reuses_the_invitation_template_without_queueing(): void
+    {
+        Queue::fake();
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $template = $this->template($event, 'whatsapp');
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+
+        $gateway = \Mockery::mock(WhatsAppApiCloudService::class);
+        $gateway->shouldReceive('sendInvitation')->twice()
+            ->withArgs(fn (Invitee $recipient, string $language, int $templateId) =>
+                $recipient->id === $invitee->id && $language === 'sw' && $templateId === $template->id)
+            ->andReturn(['messages' => [['id' => 'wamid.invitation']]]);
+        app()->instance(WhatsAppApiCloudService::class, $gateway);
+
+        $service = app(InviteeInvitationService::class);
+        $this->assertSame('submitted', $service->sendImmediately($event, $invitee, 'whatsapp')['status']);
+        $this->assertSame('submitted', $service->sendImmediately($event, $invitee, 'whatsapp', 'Guest requested another copy.')['status']);
+        $this->assertDatabaseHas('whatsapp_template_sends', [
+            'invitee_id' => $invitee->id,
+            'message_template_id' => $template->id,
+            'status' => 'submitted',
+            'attempts' => 2,
+        ]);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'invitation_whatsapp.force_resend_requested']);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_whatsapp_resend_skips_a_queued_invitation(): void
+    {
+        Queue::fake();
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $template = $this->template($event, 'whatsapp');
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+        $gateway = \Mockery::mock(WhatsAppApiCloudService::class);
+        $gateway->shouldNotReceive('sendInvitation');
+        app()->instance(WhatsAppApiCloudService::class, $gateway);
+
+        $service = app(InviteeInvitationService::class);
+        $this->assertSame('queued', $service->send($event, $invitee, 'whatsapp')['status']);
+        $this->assertSame('skipped', $service->sendImmediately($event, $invitee, 'whatsapp', 'Guest requested another copy.')['status']);
+        Queue::assertPushed(SendInvitationWhatsAppJob::class, 1);
+    }
+
+    public function test_explicit_sms_resend_submits_a_delivered_invitation_without_queueing(): void
+    {
+        Queue::fake();
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $invitee->forceFill(['invitation_sms_status' => 'delivered', 'sms_status' => 'delivered'])->save();
+        $this->template($event, 'sms');
+
+        $gateway = \Mockery::mock(SmsService::class)->makePartial();
+        $gateway->shouldReceive('sendInvitation')->once()
+            ->withArgs(fn (Invitee $recipient, string $message) =>
+                $recipient->id === $invitee->id && str_contains($message, 'Asha Mgeni'))
+            ->andReturn(['success' => true, 'driver' => 'http']);
+        app()->instance(SmsService::class, $gateway);
+
+        $service = app(InviteeInvitationService::class);
+        $this->assertSame('skipped', $service->sendImmediately($event, $invitee, 'sms')['status']);
+        $this->assertSame('submitted', $service->sendImmediately($event, $invitee, 'sms', 'Guest requested another copy.')['status']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'invitation_sms.force_resend_requested']);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_response_tracker_resends_whatsapp_through_the_gateway(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN, 'is_active' => true]);
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $template = $this->template($event, 'whatsapp');
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+
+        $gateway = \Mockery::mock(WhatsAppApiCloudService::class);
+        $gateway->shouldReceive('sendInvitation')->once()
+            ->andReturn(['messages' => [['id' => 'wamid.tracker']]]);
+        app()->instance(WhatsAppApiCloudService::class, $gateway);
+
+        $this->actingAs($user);
+
+        Livewire::test(InviteeResponseTracker::class, ['record' => $event])
+            ->call('resendWhatsAppInvitation', $invitee->id)
+            ->assertStatus(200);
+
+        $this->assertDatabaseHas('whatsapp_template_sends', [
+            'invitee_id' => $invitee->id,
+            'status' => 'submitted',
+        ]);
     }
 
     public function test_immediate_whatsapp_failure_marks_claim_failed_without_queueing(): void

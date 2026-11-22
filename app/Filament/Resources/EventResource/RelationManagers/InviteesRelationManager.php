@@ -1654,53 +1654,9 @@ class InviteesRelationManager extends RelationManager
                         ])
                         ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'sms')),
 
-                    Tables\Actions\Action::make('force_resend_sms_invitation')
-                        ->label('Force Resend SMS')
-                        ->icon('heroicon-o-arrow-path')
-                        ->color('warning')
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
-                            && filled($record->phone) && filled($record->short_code))
-                        ->modalHeading(fn (Invitee $record): string => 'Force resend SMS to '.$record->name)
-                        ->modalDescription('This explicitly bypasses previous SENT/DELIVERED status. The invitee may receive a duplicate SMS and your account may be charged again. Pending SMS requests cannot be overridden.')
-                        ->modalSubmitActionLabel('Confirm Force Resend SMS')
-                        ->requiresConfirmation()
-                        ->form([
-                            Forms\Components\Placeholder::make('force_sms_preview')
-                                ->label('SMS Preview')
-                                ->content(fn (Invitee $record): string => app(\App\Services\InviteeInvitationService::class)->preview($record, 'sms')),
-                            Forms\Components\Textarea::make('reason')
-                                ->label('Reason for force resend')
-                                ->helperText('Required for audit. Explain why the invitation should be sent again.')
-                                ->minLength(10)
-                                ->maxLength(500)
-                                ->required(),
-                            Forms\Components\Checkbox::make('acknowledge_duplicate')
-                                ->label('I understand the SMS may be received twice and incur an additional charge.')
-                                ->accepted()
-                                ->required(),
-                        ])
-                        ->action(function (Invitee $record, array $data): void {
-                            abort_unless($this->canSendMessagesForOwner(), 403);
-                            if (! ($data['acknowledge_duplicate'] ?? false)) {
-                                throw ValidationException::withMessages([
-                                    'acknowledge_duplicate' => 'Acknowledge the duplicate-message risk.',
-                                ]);
-                            }
+                    $this->resendInvitationAction('sms'),
 
-                            $result = app(\App\Services\InviteeInvitationService::class)
-                                ->forceResendSms($this->getOwnerRecord(), $record, (string) ($data['reason'] ?? ''));
-
-                            $notice = $this->brandedNotification()
-                                ->title('eLive Card • Force Resend SMS')
-                                ->body($result['message']);
-
-                            match ($result['status']) {
-                                'queued' => $notice->success(),
-                                'skipped' => $notice->warning(),
-                                default => $notice->danger(),
-                            };
-                            $notice->send();
-                        }),
+                    $this->resendInvitationAction('whatsapp'),
 
                     Tables\Actions\Action::make('refresh_sms_delivery')
                         ->label('Refresh SMS Delivery Status')
@@ -2926,12 +2882,44 @@ class InviteesRelationManager extends RelationManager
             ->persistent()->send();
     }
 
-    protected function processInviteeInvitation(Invitee $record, string $channel): void
+    protected function resendInvitationAction(string $channel): Tables\Actions\Action
+    {
+        $label = $channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
+
+        return Tables\Actions\Action::make('force_resend_'.$channel.'_invitation')
+            ->label('Resend '.$label.' Invitation')
+            ->icon('heroicon-o-arrow-path')
+            ->color('warning')
+            ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
+                && $record->card_status === Invitee::CARD_STATUS_ACTIVE
+                && filled($record->phone) && filled($record->short_code))
+            ->modalHeading(fn (Invitee $record): string => 'Resend '.$label.' invitation to '.$record->name)
+            ->modalDescription('Sends another copy of the invitation immediately. The invitee may receive it twice and your account may be charged again.')
+            ->modalSubmitActionLabel('Resend '.$label.' Now')
+            ->requiresConfirmation()
+            ->form([
+                Forms\Components\Placeholder::make('resend_preview')
+                    ->label('Invitation Preview')
+                    ->content(fn (Invitee $record): string => app(\App\Services\InviteeInvitationService::class)->preview($record, $channel)),
+                Forms\Components\Textarea::make('reason')
+                    ->label('Reason for resending')
+                    ->minLength(10)
+                    ->maxLength(500)
+                    ->required(),
+                Forms\Components\Checkbox::make('acknowledge_duplicate')
+                    ->label('I understand the invitee may receive another copy and an additional charge may apply.')
+                    ->accepted()
+                    ->required(),
+            ])
+            ->action(fn (Invitee $record, array $data) => $this->processInviteeInvitation($record, $channel, $data['reason']));
+    }
+
+    protected function processInviteeInvitation(Invitee $record, string $channel, ?string $resendReason = null): void
     {
         abort_unless($this->canSendMessagesForOwner(), 403);
 
         $result = app(\App\Services\InviteeInvitationService::class)
-            ->sendImmediately($this->getOwnerRecord(), $record, $channel);
+            ->sendImmediately($this->getOwnerRecord(), $record, $channel, $resendReason);
 
         AuditLogService::record(
             action: 'invitee.invitation_'.$result['status'],
