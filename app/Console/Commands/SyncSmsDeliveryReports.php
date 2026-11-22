@@ -52,7 +52,8 @@ class SyncSmsDeliveryReports extends Command
                             '<=',
                             now()->subMinutes(5),
                         );
-                });
+                })->orderByRaw('CASE WHEN delivery_report_checked_at IS NULL THEN 0 ELSE 1 END')
+                    ->orderBy('delivery_report_checked_at');
             }
         }
 

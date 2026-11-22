@@ -1,0 +1,100 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Filament\Resources\SmsLogResource;
+use App\Models\Event;
+use App\Models\SmsLog;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+class SmsDeliveryReceiptRefreshTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_manual_refresh_uses_configured_endpoint_and_distinguishes_submission_from_delivery(): void
+    {
+        $log = $this->sentSms();
+        $url = 'https://sms.example.test/api/v1/vendor/message/deliver/test-shoot';
+        Http::fake([$url => Http::sequence()
+            ->push(['data' => [['status' => 'Operator Submitted', 'statusCode' => 'ACK', 'mobile' => $log->phone]]])
+            ->push(['data' => [['status' => 'Delivered', 'mobile' => $log->phone, 'sentAt' => '2026-11-22 16:32:00', 'deliveredAt' => '2026-11-22 16:45:00']]])
+            ->push(['message' => 'Report unavailable'], 404)]);
+
+        SmsLogResource::refreshDeliveryReport($log, notify: false);
+        $this->assertSame('sent', $log->fresh()->status);
+        $this->assertSame('Operator Submitted', $log->fresh()->provider_status);
+        $this->assertNull($log->fresh()->delivered_at);
+
+        SmsLogResource::refreshDeliveryReport($log, notify: false);
+        $this->assertSame('delivered', $log->fresh()->status);
+        $this->assertSame('16:45:00', $log->fresh()->delivered_at?->format('H:i:s'));
+
+        SmsLogResource::refreshDeliveryReport($log, notify: false);
+        $this->assertSame('delivered', $log->fresh()->status);
+        $this->assertSame('Delivered', $log->fresh()->provider_status);
+        Http::assertSentCount(3);
+    }
+
+    public function test_a_success_envelope_without_a_message_receipt_does_not_confirm_delivery(): void
+    {
+        $log = $this->sentSms();
+        Http::fake(['*/deliver/test-shoot' => Http::response(['status' => 'success', 'data' => []])]);
+
+        SmsLogResource::refreshDeliveryReport($log, notify: false);
+
+        $this->assertSame('sent', $log->fresh()->status);
+        $this->assertNull($log->fresh()->delivered_at);
+        $this->assertNotNull($log->fresh()->delivery_report_checked_at);
+    }
+
+    public function test_sync_checks_unqueried_receipts_before_retrying_older_messages(): void
+    {
+        $oldLog = $this->sentSms();
+        $oldLog->update(['delivery_report_checked_at' => now()->subMinutes(10)]);
+        $newLog = $oldLog->replicate();
+        $newLog->fill(['provider_message_id' => 'new-shoot', 'delivery_report_checked_at' => null])->save();
+
+        Http::fake(['*/deliver/new-shoot' => Http::response(['data' => [[
+            'status' => 'Failed',
+            'mobile' => $newLog->phone,
+            'explanation' => 'Absent Subscriber For SM',
+        ]]])]);
+
+        $this->artisan('sms:sync-delivery-reports', ['--limit' => 1])->assertSuccessful();
+        $this->assertSame('sent', $oldLog->fresh()->status);
+        $this->assertSame('failed', $newLog->fresh()->status);
+        $this->assertSame('Absent Subscriber For SM', $newLog->fresh()->error_message);
+        Http::assertSentCount(1);
+    }
+
+    private function sentSms(): SmsLog
+    {
+        config([
+            'services.sms.base_url' => 'https://sms.example.test',
+            'services.elive_sms.base_url' => 'https://sms.example.test/api/v1/vendor/message',
+            'services.elive_sms.api_key' => 'test-key',
+            'services.elive_sms.api_secret' => 'test-secret',
+            'services.elive_sms.delivery_report_path' => '/deliver/{shootId}',
+        ]);
+        Http::preventStrayRequests();
+
+        $event = Event::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'title' => 'SMS Test',
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+
+        return SmsLog::query()->create([
+            'event_id' => $event->id,
+            'phone' => '255700000001',
+            'sms_type' => SmsLog::TYPE_INVITATION,
+            'message' => 'Invitation',
+            'status' => SmsLog::STATUS_SENT,
+            'provider_message_id' => 'test-shoot',
+        ]);
+    }
+}
