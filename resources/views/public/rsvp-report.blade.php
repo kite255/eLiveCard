@@ -892,7 +892,7 @@
                     <option value="">All SMS delivery statuses</option>
                     <option value="not_sent" @selected($smsDelivery === 'not_sent')>Not Sent</option>
                     <option value="queued" @selected($smsDelivery === 'queued')>Queued</option>
-                    <option value="submitted" @selected($smsDelivery === 'submitted')>Submitted</option>
+                    <option value="submitted" @selected($smsDelivery === 'submitted')>Submitted · Awaiting delivery</option>
                     <option value="delivered" @selected($smsDelivery === 'delivered')>Delivered</option>
                     <option value="failed" @selected($smsDelivery === 'failed')>Failed</option>
                     <option value="logged_only" @selected($smsDelivery === 'logged_only')>Logged Only</option>
@@ -1026,7 +1026,15 @@
                                 </td>
 
                                 <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['whatsapp'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['whatsapp'] ?? 'Not Sent' }}</span>@if ($deliveryTimes[$invitee->id]['whatsapp'] ?? null)<div class="subtle">At {{ $deliveryTimes[$invitee->id]['whatsapp'] }}</div>@endif</td>
-                                <td><span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span>@if ($deliveryTimes[$invitee->id]['sms'] ?? null)<div class="subtle">At {{ $deliveryTimes[$invitee->id]['sms'] }}</div>@endif</td>
+                                <td>
+                                    <span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span>
+                                    @if ($smsDeliveryNotes[$invitee->id] ?? null)
+                                        <div class="subtle">{{ $smsDeliveryNotes[$invitee->id] }}</div>
+                                    @endif
+                                    @if ($deliveryTimes[$invitee->id]['sms'] ?? null)
+                                        <div class="subtle">At {{ $deliveryTimes[$invitee->id]['sms'] }}</div>
+                                    @endif
+                                </td>
 
                                 <td>
                                     <div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div>
@@ -1083,6 +1091,9 @@
                                     SMS
                                 </div>
                                 <span class="delivery-status {{ strtolower($deliveryStatuses[$invitee->id]['sms'] ?? 'not sent') }}">{{ $deliveryStatuses[$invitee->id]['sms'] ?? 'Not Sent' }}</span>
+                                @if ($smsDeliveryNotes[$invitee->id] ?? null)
+                                    <span class="mobile-channel-time">{{ $smsDeliveryNotes[$invitee->id] }}</span>
+                                @endif
                                 @if ($smsTime)
                                     <time class="mobile-channel-time">{{ \Illuminate\Support\Carbon::createFromFormat('d M Y H:i', $smsTime)->format('d M Y') }}<br>{{ \Illuminate\Support\Carbon::createFromFormat('d M Y H:i', $smsTime)->format('H:i') }}</time>
                                 @endif

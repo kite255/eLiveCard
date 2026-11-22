@@ -160,6 +160,7 @@ class PublicRsvpReportController extends Controller
         $inviteeIds = $invitees->getCollection()->pluck('id')->all();
         $deliveryStatuses = [];
         $deliveryTimes = [];
+        $smsDeliveryNotes = [];
 
         foreach ($inviteeIds as $id) {
             $deliveryTimes[$id] = ['whatsapp' => null, 'sms' => null];
@@ -200,7 +201,7 @@ class PublicRsvpReportController extends Controller
                 ->where('type', 'invitation')
                 ->orderByDesc('id')
                 ->get(array_merge(['invitee_id', 'status'], array_values(array_intersect(
-                    ['sent_at', 'delivered_at', 'read_at', 'failed_at'],
+                    ['sent_at', 'delivered_at', 'read_at', 'failed_at', 'provider_status'],
                     Schema::getColumnListing('message_logs')
                 ))))
                 ->unique('invitee_id');
@@ -209,6 +210,7 @@ class PublicRsvpReportController extends Controller
                 $deliveryStatuses[$log->invitee_id]['sms'] =
                     $this->deliveryLabel($log->status);
                 $deliveryTimes[$log->invitee_id]['sms'] = $this->deliveryTime($log);
+                $smsDeliveryNotes[$log->invitee_id] = $this->smsDeliveryNote($log);
             }
         }
 
@@ -218,13 +220,14 @@ class PublicRsvpReportController extends Controller
                 ->whereIn('invitee_id', $inviteeIds)
                 ->whereIn('sms_type', ['invitation', 'invitation_card'])
                 ->orderByDesc('id')
-                ->get(['invitee_id', 'status', 'sent_at', 'delivered_at', 'failed_at'])
+                ->get(['invitee_id', 'status', 'sent_at', 'delivered_at', 'failed_at', 'provider_status'])
                 ->unique('invitee_id');
 
             foreach ($latestSms as $log) {
                 $deliveryStatuses[$log->invitee_id]['sms'] =
                     $this->deliveryLabel($log->status);
                 $deliveryTimes[$log->invitee_id]['sms'] = $this->deliveryTime($log);
+                $smsDeliveryNotes[$log->invitee_id] = $this->smsDeliveryNote($log);
             }
         }
 
@@ -334,6 +337,7 @@ class PublicRsvpReportController extends Controller
             'visibleFields' => $visibleFields,
             'deliveryStatuses' => $deliveryStatuses,
             'deliveryTimes' => $deliveryTimes,
+            'smsDeliveryNotes' => $smsDeliveryNotes,
         ]);
     }
 
@@ -414,6 +418,22 @@ class PublicRsvpReportController extends Controller
             'submitted', 'accepted', 'sent', 'success' => 'Submitted',
             'logged' => 'Logged Only',
             default => 'Unknown',
+        };
+    }
+
+    private function smsDeliveryNote(object $log): ?string
+    {
+        if ($this->deliveryLabel($log->status) === 'Submitted') {
+            return in_array(strtolower(trim($log->provider_status ?? '')), [
+                'delivery_report_unavailable', 'report_failed',
+            ], true) ? 'Delivery report unavailable' : 'Awaiting delivery';
+        }
+
+        return match (strtolower(trim((string) $log->status))) {
+            'undelivered' => 'Undelivered',
+            'expired' => 'Expired',
+            'rejected' => 'Rejected',
+            default => null,
         };
     }
 
