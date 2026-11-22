@@ -34,6 +34,7 @@ class GateCheckInController extends Controller
         return view('gate.check-in', [
             'event' => $event,
             'recentCheckIns' => $recentCheckIns,
+            'usingSharedLink' => request()->routeIs('gate.share.*'),
         ]);
     }
 
@@ -95,7 +96,7 @@ class GateCheckInController extends Controller
         $recent = CheckIn::query()
             ->with(['invitee.cardType'])
             ->where('event_id', $event->id)
-            ->where('checked_in_by', $request->user()->id)
+            ->where('checked_in_by', $request->user()?->id)
             ->where('status', CheckIn::STATUS_SUCCESS)
             ->latest('id')->limit(10)->get()
             ->map(fn (CheckIn $record): array => [
@@ -171,10 +172,12 @@ class GateCheckInController extends Controller
         $invitee = $this->findInvitee($event, $searchValue);
 
         if (! $invitee) {
-            $otherEventInvitee = $this->findInviteeInAnotherEvent(
-                currentEvent: $event,
-                searchValue: $searchValue,
-            );
+            $otherEventInvitee = $request->routeIs('gate.share.*')
+                ? null
+                : $this->findInviteeInAnotherEvent(
+                    currentEvent: $event,
+                    searchValue: $searchValue,
+                );
 
             if ($otherEventInvitee) {
                 return response()->json([
@@ -287,7 +290,7 @@ class GateCheckInController extends Controller
 
         $validated = $request->validate([
             'invitee_id' => ['required', 'integer'],
-            'guest_count' => ['required', 'integer', 'in:1'],
+            'guest_count' => ['required', 'integer', 'min:1'],
             'checkin_method' => [
                 'nullable',
                 'string',
@@ -688,9 +691,11 @@ class GateCheckInController extends Controller
             'visible_card_fields' => $visibleFields,
             'id' => $invitee->id,
             'name' => $invitee->name,
-            'phone' => $invitee->phone,
             'serial_number' => $invitee->serial_number,
-            'short_code' => $invitee->short_code,
+            ...(! request()->routeIs('gate.share.*') ? [
+                'phone' => $invitee->phone,
+                'short_code' => $invitee->short_code,
+            ] : []),
             'card_type' => $invitee->cardType?->name ?? 'N/A',
             'card_status' => $this->formatStatus($invitee->card_status ?? 'active'),
             'rsvp_status' => $invitee->rsvp_status ?? 'pending',
@@ -738,12 +743,12 @@ class GateCheckInController extends Controller
     {
         return Schema::hasColumn('invitees', $column);
     }
-    /**
-     * Gate links are shareable, not bearer credentials: each scanner must
-     * authenticate and be explicitly authorized for this event.
-     */
     private function authorizeGateAccess(Event $event): void
     {
+        if (request()->routeIs('gate.share.*')) {
+            return;
+        }
+
         abort_unless(
             $event->canBeCheckedInBy(auth()->user()),
             403,

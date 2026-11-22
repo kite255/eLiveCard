@@ -16,6 +16,8 @@ use Throwable;
 
 class Event extends Model
 {
+    protected $hidden = ['gate_share_token'];
+
     protected $fillable = [
         'user_id',
         'title',
@@ -637,6 +639,27 @@ class Event extends Model
         return method_exists($user, 'canViewReports')
             ? (bool) $user->canViewReports()
             : true;
+    }
+
+    public function gateShareUrl(): ?string
+    {
+        return $this->gate_share_token
+            ? route('gate.share.show', ['event' => $this->gate_share_token])
+            : null;
+    }
+
+    public function enableGateShare(): void
+    {
+        static::query()->whereKey($this->getKey())
+            ->whereNull('gate_share_token')
+            ->update(['gate_share_token' => bin2hex(random_bytes(12))]);
+
+        $this->refresh();
+    }
+
+    public function disableGateShare(): void
+    {
+        $this->forceFill(['gate_share_token' => null])->save();
     }
 
     public function canBeCheckedInBy(?User $user): bool

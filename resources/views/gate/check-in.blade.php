@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <title>Gate Check-in - {{ $event->title ?? $event->name ?? 'Event' }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    @if ($usingSharedLink ?? false)
+        <meta name="referrer" content="no-referrer">
+        <meta name="robots" content="noindex, nofollow">
+    @endif
     <meta name="theme-color" content="#213B73">
 
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" type="text/javascript" defer></script>
@@ -1022,7 +1026,7 @@
     <nav class="gate-tabs" aria-label="Gate scanner sections">
         <button type="button" class="gate-tab active" data-tab="scan" onclick="switchGateTab('scan')">Scan</button>
         <button type="button" class="gate-tab" data-tab="attendees" onclick="switchGateTab('attendees')">All Attendees</button>
-        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">My Recent Scans</button>
+        <button type="button" class="gate-tab" data-tab="recent" onclick="switchGateTab('recent')">{{ (($usingSharedLink ?? false) && auth()->guest()) ? 'Recent Shared Scans' : 'My Recent Scans' }}</button>
     </nav>
     <section id="gateTabScan">
     <div class="grid">
@@ -1129,9 +1133,9 @@
     </section>
     <section id="gateTabRecent" hidden>
     <div class="panel footer-panel">
-        <h2 class="panel-title">My Recent Scans</h2>
+        <h2 class="panel-title">{{ (($usingSharedLink ?? false) && auth()->guest()) ? 'Recent Shared Scans' : 'My Recent Scans' }}</h2>
 
-        <div id="recentCheckInsList" class="recent-list"><div class="recent-meta">Open this tab to load your scans.</div></div>
+        <div id="recentCheckInsList" class="recent-list"><div class="recent-meta">Open this tab to load recent scans.</div></div>
     </div>
     </section>
 </div>
@@ -1250,9 +1254,13 @@
     let scanLocked = false;
     let scannerRestartTimer = null;
 
-    const verifyUrl = @json(route('gate.check-in.verify', $event));
-    const confirmUrl = @json(route('gate.check-in.confirm', $event));
-    const attendeesUrl = @json(route('gate.check-in.attendees', $event));
+    @php
+        $scannerRoute = ($usingSharedLink ?? false) ? 'gate.share.' : 'gate.check-in.';
+        $scannerEvent = ($usingSharedLink ?? false) ? $event->gate_share_token : $event->getKey();
+    @endphp
+    const verifyUrl = @json(route($scannerRoute.'verify', ['event' => $scannerEvent]));
+    const confirmUrl = @json(route($scannerRoute.'confirm', ['event' => $scannerEvent]));
+    const attendeesUrl = @json(route($scannerRoute.'attendees', ['event' => $scannerEvent]));
     let rosterPage = 1;
     let rosterLastPage = 1;
 
@@ -1293,7 +1301,7 @@
                 ? data.recent.map(a => '<div class="recent-item"><div class="recent-name">' + escapeHtml(a.name) +
                     '</div><div class="recent-meta">' + escapeHtml(a.card_type) + ' · ' + a.guests +
                     ' admitted · ' + escapeHtml(a.time || '-') + '</div></div>').join('')
-                : '<div class="recent-meta">No successful scans by you yet.</div>';
+                : '<div class="recent-meta">No successful scans yet.</div>';
         } catch (error) {
             document.getElementById('rosterRows').innerHTML = '<tr><td colspan="5">Could not load attendees. Retry.</td></tr>';
         }
@@ -1464,7 +1472,7 @@
         summaryEl.innerText = `Remaining: ${remaining} • Total admitted: ${checkedIn}/${gateLimit}`;
         selectEl.innerHTML = '';
 
-        for (let count = 1; count <= Math.min(remaining, 1); count++) {
+        for (let count = 1; count <= remaining; count++) {
             const option = document.createElement('option');
             option.value = String(count);
             option.textContent = count === 1 ? '1 guest' : `${count} guests`;
