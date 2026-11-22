@@ -9,6 +9,7 @@ use App\Models\CardType;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
+use App\Models\SmsLog;
 use App\Models\User;
 use App\Services\InviteeInvitationService;
 use App\Services\SmsService;
@@ -224,6 +225,41 @@ class InviteeDedicatedInvitationActionsTest extends TestCase
         $this->assertSame('submitted', $service->sendImmediately($event, $invitee, 'sms', 'Guest requested another copy.')['status']);
         $this->assertDatabaseHas('audit_logs', ['action' => 'invitation_sms.force_resend_requested']);
         Queue::assertNothingPushed();
+    }
+
+    public function test_response_tracker_shows_the_latest_invitation_sms_receipt_instead_of_the_stored_invitee_status(): void
+    {
+        $event = $this->event();
+        $invitee = $this->invitee($event);
+        $invitee->forceFill(['sms_status' => 'sent', 'sms_sent_at' => now()])->save();
+        $log = $invitee->smsLogs()->create([
+            'event_id' => $event->id,
+            'phone' => $invitee->phone,
+            'sms_type' => SmsLog::TYPE_INVITATION_CARD,
+            'message' => 'Invitation',
+            'status' => 'sent',
+            'provider_status' => 'delivery_report_unavailable',
+        ]);
+        $invitee->smsLogs()->create([
+            'event_id' => $event->id,
+            'phone' => $invitee->phone,
+            'sms_type' => SmsLog::TYPE_EVENT_DAY_REMINDER,
+            'message' => 'Reminder',
+            'status' => 'failed',
+        ]);
+
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_SUPER_ADMIN, 'is_active' => true]));
+        Livewire::test(InviteeResponseTracker::class, ['record' => $event])
+            ->assertSee('Sent · Delivery report unavailable');
+
+        $log->update([
+            'status' => 'delivered',
+            'provider_status' => 'Delivered',
+            'delivered_at' => '2026-11-22 18:41:00',
+        ]);
+        Livewire::test(InviteeResponseTracker::class, ['record' => $event])
+            ->assertSee('22 Nov 18:41')
+            ->assertDontSee('Sent · Delivery report unavailable');
     }
 
     public function test_response_tracker_resends_whatsapp_through_the_gateway(): void

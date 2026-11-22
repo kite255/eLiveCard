@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource;
 use App\Models\Event;
 use App\Models\Invitee;
+use App\Models\SmsLog;
 use App\Services\InviteeConversationService;
 use App\Services\InviteeInvitationService;
 use Filament\Actions;
@@ -121,6 +122,10 @@ class InviteeResponseTracker extends Page
             ->with([
                 'event',
                 'cardType',
+                'smsLogs' => fn ($query) => $query
+                    ->where('event_id', $this->record->id)
+                    ->whereIn('sms_type', [SmsLog::TYPE_INVITATION, SmsLog::TYPE_INVITATION_CARD])
+                    ->latest('id')->limit(1),
                 'conversations' => fn ($query) => $query->latest()->limit(5),
             ])
             ->where('event_id', $this->record->id)
