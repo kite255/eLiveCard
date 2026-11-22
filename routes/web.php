@@ -35,6 +35,17 @@ Route::get('/events/{event}', [PublicEventController::class, 'show'])
     ->whereNumber('event')
     ->name('events.show');
 
+Route::prefix('g/{event:gate_share_token}')
+    ->where(['event' => '[a-f0-9]{24}'])
+    ->name('gate.share.')
+    ->middleware(['throttle:120,1', 'cache.headers:no_store'])
+    ->group(function (): void {
+        Route::get('/', [GateCheckInController::class, 'show'])->name('show');
+        Route::get('/attendees', [GateCheckInController::class, 'attendees'])->name('attendees');
+        Route::post('/verify', [GateCheckInController::class, 'verify'])->name('verify');
+        Route::post('/confirm', [GateCheckInController::class, 'confirm'])->name('confirm');
+    });
+
 Route::view('/about', 'pages.about')
     ->name('about');
 

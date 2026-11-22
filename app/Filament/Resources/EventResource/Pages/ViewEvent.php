@@ -307,6 +307,20 @@ class ViewEvent extends ViewRecord
         return EventResource::getUrl('invitee-responses', ['record' => $this->record]);
     }
 
+    public function enableGateShare(): void
+    {
+        abort_unless(auth()->user()?->canManageEvent($this->record), 403);
+
+        $this->record->enableGateShare();
+    }
+
+    public function disableGateShare(): void
+    {
+        abort_unless(auth()->user()?->canManageEvent($this->record), 403);
+
+        $this->record->disableGateShare();
+    }
+
     public function getGateCheckInUrl(): string
     {
         return route('gate.check-in.entry', [

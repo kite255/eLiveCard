@@ -943,10 +943,10 @@
                     @endif
                 @endif
 
-                @if ($canManageEvent)
+                @if ($canManageEvent && $event->gateShareUrl())
                     <div
                         x-data="{
-                            scannerUrl: @js(route('gate.check-in.named', ['event' => $event->getKey(), 'slug' => \Illuminate\Support\Str::slug($event->title) ?: 'event'])),
+                            scannerUrl: @js($event->gateShareUrl()),
                             copied: false,
                             async copyScanner() {
                                 try {
@@ -957,7 +957,7 @@
                                 }
                             },
                             shareScanner() {
-                                const message = 'eLive Card Gate Scanner - ' + @js($event->title) + '\\n' + this.scannerUrl + '\\nSign in with your assigned gate officer account.';
+                                const message = 'eLive Card Gate Scanner - ' + @js($event->title) + '\\n' + this.scannerUrl;
                                 window.open('https://wa.me/?text=' + encodeURIComponent(message), '_blank', 'noopener,noreferrer');
                             }
                         }"
@@ -971,7 +971,26 @@
                             @svg('heroicon-o-share')
                             Share Scanner
                         </button>
+                        <button
+                            type="button"
+                            class="elive-action-button"
+                            wire:click="disableGateShare"
+                            wire:confirm="Disable this scanner link? Staff using it will lose access."
+                        >
+                            Disable Scanner Link
+                        </button>
                     </div>
+                @elseif ($canManageEvent)
+                    <button
+                        type="button"
+                        class="elive-action-button"
+                        wire:click="enableGateShare"
+                        wire:loading.attr="disabled"
+                        wire:target="enableGateShare"
+                    >
+                        @svg('heroicon-o-link')
+                        Create Staff Scanner Link
+                    </button>
                 @endif
             </div>
         </section>
