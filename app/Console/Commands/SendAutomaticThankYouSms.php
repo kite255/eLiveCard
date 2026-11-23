@@ -62,7 +62,12 @@ class SendAutomaticThankYouSms extends Command
                         ->whereNotNull('phone')
                         ->where('phone', '!=', '');
 
-                    if ($scope === 'checked_in') {
+                    // All active/used invitation cardholders receive the message,
+                    // even if they never RSVP'd or their card was not scanned.
+                    // Keep legacy scopes working for events not yet resaved.
+                    if ($scope === 'all_active') {
+                        // No additional RSVP or attendance filtering.
+                    } elseif ($scope === 'checked_in') {
                         $invitees->where('checked_in_count', '>', 0);
                     } elseif ($scope === 'attending') {
                         $invitees->where('rsvp_status', Invitee::RSVP_ATTENDING);
