@@ -143,14 +143,18 @@
         }
 
         .elive-event-summary {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 24px;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-width: 0;
+            gap: 20px;
             padding: 18px;
         }
 
         .elive-event-main {
             display: flex;
+            align-items: flex-start;
+            width: 100%;
             min-width: 0;
             gap: 18px;
         }
@@ -184,6 +188,8 @@
         }
 
         .elive-event-copy {
+            flex: 1 1 auto;
+            width: 100%;
             min-width: 0;
             padding: 4px 0;
         }
@@ -201,6 +207,7 @@
             font-size: 22px;
             font-weight: 900;
             line-height: 1.25;
+            overflow-wrap: break-word;
         }
 
         .elive-badge {
@@ -260,25 +267,30 @@
 
         .elive-event-meta-item {
             display: inline-flex;
-            align-items: flex-start;
+            align-items: center;
             min-width: 0;
             gap: 6px;
-            overflow-wrap: anywhere;
+            overflow-wrap: break-word;
         }
 
         .elive-event-meta-item svg {
             width: 16px;
             height: 16px;
+            flex: 0 0 16px;
             color: #64748B;
         }
 
         .elive-event-actions {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(140px, 1fr));
-            align-content: center;
+            display: flex;
+            flex-wrap: wrap;
+            align-content: flex-start;
             gap: 10px;
-            padding-left: 22px;
-            border-left: 1px solid #E5E7EB;
+            padding-top: 16px;
+            border-top: 1px solid #E5E7EB;
+        }
+
+        .elive-event-actions > * {
+            flex: 0 1 190px;
         }
 
         .elive-action-button {
@@ -569,15 +581,8 @@
         }
 
         @media (max-width: 1180px) {
-            .elive-event-summary {
-                grid-template-columns: 1fr;
-            }
-
-            .elive-event-actions {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                padding: 16px 0 0;
-                border-top: 1px solid #E5E7EB;
-                border-left: 0;
+            .elive-event-actions > * {
+                flex-basis: min(190px, calc(50% - 5px));
             }
 
             .elive-stats-grid,
@@ -661,6 +666,10 @@
                 gap: 10px;
                 margin-top: 14px;
                 font-size: 12px;
+            }
+
+            .elive-event-actions > * {
+                flex: 1 1 100%;
             }
 
             .elive-event-actions,
