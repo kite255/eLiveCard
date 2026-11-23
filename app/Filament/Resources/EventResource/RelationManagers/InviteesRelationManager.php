@@ -1227,15 +1227,9 @@ class InviteesRelationManager extends RelationManager
                         ->modalDescription('Send a thank-you SMS now. Configure automatic delivery in Event Settings.')
                         ->modalSubmitActionLabel('Send Thank You')
                         ->form([
-                            Forms\Components\Select::make('recipient_scope')
+                            Forms\Components\Placeholder::make('recipient_scope_notice')
                                 ->label('Send To')
-                                ->options([
-                                    'all_active' => 'All Invitees (active cards)',
-                                    'attending' => 'Confirmed Attending',
-                                    'checked_in' => 'Checked-in Guests',
-                                ])
-                                ->default(fn (): string => $this->getOwnerRecord()->manual_thank_you_scope ?: 'all_active')
-                                ->required(),
+                                ->content('All Invitees (active cards)'),
 
                             Forms\Components\Placeholder::make('note')
                                 ->label('Template Source')
@@ -1246,7 +1240,7 @@ class InviteesRelationManager extends RelationManager
                             $this->sendEventMessagesFromToolbar(
                                 channel: 'sms',
                                 templateType: 'thank_you',
-                                recipientScope: $data['recipient_scope'],
+                                recipientScope: 'all_active',
                                 actionTitle: 'Thank you messages processed',
                             );
                         }),
