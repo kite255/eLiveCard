@@ -555,10 +555,11 @@ class EventResource extends Resource
                         Forms\Components\Select::make('auto_thank_you_scope')
                             ->label('Automatic Recipients')
                             ->options([
-                                'checked_in' => 'Checked-in Guests (recommended)',
-                                'attending' => 'Confirmed Attending Guests',
+                                'all_active' => 'All Invitees (active or used cards)',
                             ])
-                            ->default('checked_in')
+                            ->default('all_active')
+                            ->afterStateHydrated(fn (Forms\Components\Select $component) => $component->state('all_active'))
+                            ->helperText('Send to invited cardholders regardless of RSVP or check-in. Used cards count as valid attendees; cancelled cards are excluded.')
                             ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
                             ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic'),
 
@@ -573,7 +574,7 @@ class EventResource extends Resource
 
                         Forms\Components\Placeholder::make('thank_you_notice')
                             ->label('Sending rules')
-                            ->content('Automatic mode requires an active SMS thank_you template and a running Laravel scheduler. Each eligible guest receives at most one automatic attempt. Thank-you messages use SMS only.')
+                            ->content('Automatic mode requires an active SMS thank_you template and a running Laravel scheduler. Each eligible invitee gets at most one automatic attempt. Only active or used cards with a phone number qualify. Review the thank-you message so it does not imply every recipient attended.')
                             ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') === 'automatic')
                             ->columnSpanFull(),
                     ])
