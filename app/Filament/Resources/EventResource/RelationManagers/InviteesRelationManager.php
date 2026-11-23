@@ -1231,6 +1231,25 @@ class InviteesRelationManager extends RelationManager
                                 ->label('Send To')
                                 ->content('All Invitees (active cards)'),
 
+                            Forms\Components\Placeholder::make('thank_you_recipient_preview')
+                                ->label('Recipient Preview')
+                                ->content(function (): string {
+                                    $event = $this->getOwnerRecord();
+                                    $invitees = Invitee::query()
+                                        ->where('event_id', $event->id)
+                                        ->where('card_status', Invitee::CARD_STATUS_ACTIVE)
+                                        ->whereNotNull('phone')->where('phone', '!=', '')
+                                        ->whereNotNull('short_code')->where('short_code', '!=', '')
+                                        ->get(['phone']);
+                                    $unique = $invitees->map(function (Invitee $invitee): string {
+                                        $digits = preg_replace('/\\D+/', '', (string) $invitee->phone);
+                                        return strlen($digits) === 10 && str_starts_with($digits, '0')
+                                            ? '255'.substr($digits, 1)
+                                            : $digits;
+                                    })->filter()->unique()->count();
+                                    return "{$unique} unique phone numbers eligible; {$invitees->count()} active invitee records. One SMS per number in this send. Review the count before confirming.";
+                                }),
+
                             Forms\Components\Placeholder::make('note')
                                 ->label('Template Source')
                                 ->content('Uses the active SMS thank_you template. This action sends immediately.'),
@@ -2705,12 +2724,29 @@ class InviteesRelationManager extends RelationManager
         $skipped = 0;
         $failed = 0;
         $failedExamples = [];
+        $thankYouPhoneKeys = [];
 
         foreach ($invitees as $invitee) {
             if (! $invitee instanceof Invitee) {
                 $skipped++;
 
                 continue;
+            }
+
+            if ($channel === 'sms' && $templateType === 'thank_you') {
+                $digits = preg_replace('/\\D+/', '', (string) $invitee->phone);
+                $phoneKey = strlen($digits) === 10 && str_starts_with($digits, '0')
+                    ? '255'.substr($digits, 1)
+                    : $digits;
+
+                if ($phoneKey === '' || isset($thankYouPhoneKeys[$phoneKey])) {
+                    $skipped++;
+                    continue;
+                }
+
+                // Claim for this bulk action only; prevents two invitee records
+                // sending the same thank-you SMS to the same phone number.
+                $thankYouPhoneKeys[$phoneKey] = true;
             }
 
             if ($channel === 'whatsapp' && blank(WhatsAppPhone::normalize($invitee->phone))) {
