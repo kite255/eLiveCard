@@ -3240,17 +3240,32 @@ class InviteesRelationManager extends RelationManager
             metadata: ['channel' => $channel, 'status' => $result['status']],
         );
 
-        $notification = $this->brandedNotification()
-            ->title('eLive Card • '.strtoupper($channel).' invitation: '.$record->name)
-            ->body($result['message']);
+        $isResend = $resendReason !== null;
+        $status = (string) ($result['status'] ?? 'failed');
+        $label = strtoupper($channel);
+        $statusLabel = match ($status) {
+            'submitted' => 'Submitted — delivery pending',
+            'logged' => 'Logged only — not sent',
+            'queued' => 'Queued — delivery pending',
+            'skipped' => 'Not resent',
+            default => 'Failed',
+        };
 
-        match ($result['status']) {
+        $notification = $this->brandedNotification()
+            ->title('eLive Card • '.$label.' '.($isResend ? 'resend' : 'invitation').': '.$statusLabel)
+            ->body($record->name.' — '.$result['message']);
+
+        match ($status) {
             'submitted' => $notification->success(),
-            'logged', 'skipped' => $notification->warning(),
+            'logged', 'queued', 'skipped' => $notification->warning(),
             default => $notification->danger(),
         };
 
         $notification->send();
+
+        // Re-render the invitee row after a direct send/resend so the delivery
+        // column reflects its latest persisted state, not a stale table value.
+        $this->dispatch('$refresh');
     }
 
     protected function processSelectedInvitations(Collection $records, string $channel): void
