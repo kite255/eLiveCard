@@ -633,6 +633,32 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Uniform Column Guest');
     }
 
+    public function test_mobile_dashboard_has_compact_statistics_and_responsive_auto_filters(): void
+    {
+        $event = $this->reportEvent('Compact Mobile RSVP Dashboard');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Mobile Dashboard Guest',
+            'phone' => '255700001145',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())->assertOk()
+            ->assertSee('class="response-heading-content"', false)
+            ->assertSee('class="filter-actions"', false)
+            ->assertSee('class="button apply-filters"', false)
+            ->assertSee('grid-template-columns: repeat(2, minmax(0, 1fr));', false)
+            ->assertSee('.stats .stat {', false)
+            ->assertSee('padding: 11px 12px;', false)
+            ->assertSee('.rsvp-live-filtering .filters .apply-filters {', false)
+            ->assertSee('.rsvp-live-filtering .filters .filter-actions:has(#rsvp-clear-filters[hidden]) {', false)
+            ->assertSee("document.documentElement.classList.add('rsvp-live-filtering')", false)
+            ->assertSee("select.addEventListener('change'", false)
+            ->assertSee("url.searchParams.delete('page')", false)
+            ->assertSee('Mobile Dashboard Guest');
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
