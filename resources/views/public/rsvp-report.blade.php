@@ -393,6 +393,24 @@
             border-color: transparent;
         }
 
+        .pagination-page,
+        .pagination-current {
+            min-width: 34px;
+            padding-inline: 8px;
+            font-variant-numeric: tabular-nums;
+        }
+        .pagination-current {
+            background: var(--elive-blue);
+            color: #fff;
+            border-color: var(--elive-blue);
+            font-weight: 800;
+        }
+        .pagination-ellipsis {
+            color: var(--muted);
+            font-size: 12px;
+            padding-inline: 2px;
+        }
+
         .pagination-summary {
             text-align: center;
             margin-top: 8px;
@@ -821,18 +839,18 @@
             }
             .desktop-table-wrap table {
                 width: max-content;
-                min-width: 720px;
+                min-width: 640px;
                 table-layout: auto;
             }
             .desktop-table-wrap th,
             .desktop-table-wrap td {
-                padding: 7px 6px;
+                padding: 5px 4px;
                 font-size: 11px;
                 vertical-align: top;
             }
             .desktop-table-wrap th { font-size: 9px; letter-spacing: 0; }
             .desktop-table-wrap .name { min-width: 112px; line-height: 1.3; }
-            .desktop-table-wrap .reply-value { max-width: 145px; line-height: 1.3; }
+            .desktop-table-wrap .reply-value { max-width: 120px; line-height: 1.25; }
             .desktop-table-wrap .response-time { font-size: 10px !important; }
             .desktop-table-wrap .badge { padding: 4px 6px; font-size: 10px; }
             .desktop-table-wrap .invitee-phone { white-space: nowrap; }
@@ -875,7 +893,7 @@
                 min-height: 18px;
             }
             .mobile-channel-entry + .mobile-channel-entry {
-                margin-top: 2px;
+                margin-top: 1px;
             }
             .mobile-channel-name {
                 display: inline-flex;
@@ -903,7 +921,7 @@
                 grid-column: 2;
                 margin: 0;
                 font-size: 9px;
-                line-height: 1.2;
+                line-height: 1.15;
                 color: var(--muted);
                 white-space: nowrap;
             }
@@ -913,6 +931,23 @@
             }
             .desktop-table-wrap .rsvp-status-column {
                 display: none;
+            }
+            .pagination {
+                padding: 10px 8px;
+            }
+            .pagination-controls {
+                gap: 4px;
+                flex-wrap: nowrap;
+            }
+            .pagination-link,
+            .pagination-current {
+                min-height: 32px;
+                padding: 5px 7px;
+                font-size: 11px;
+            }
+            .pagination-summary {
+                font-size: 10px;
+                margin-top: 6px;
             }
         }
 
@@ -1306,7 +1341,34 @@
                             <a class="pagination-link" rel="prev" href="{{ $invitees->previousPageUrl() }}">Previous</a>
                         @endif
 
-                        <span class="pagination-current" aria-current="page">Page {{ $invitees->currentPage() }} of {{ $invitees->lastPage() }}</span>
+                        @php
+                            $currentPage = $invitees->currentPage();
+                            $lastPage = $invitees->lastPage();
+                            $firstPage = max(1, min($currentPage - 1, $lastPage - 2));
+                            $endPage = min($lastPage, $firstPage + 2);
+                        @endphp
+
+                        @if ($firstPage > 1)
+                            <a class="pagination-link pagination-page" href="{{ $invitees->url(1) }}" aria-label="Page 1">1</a>
+                            @if ($firstPage > 2)
+                                <span class="pagination-ellipsis" aria-hidden="true">…</span>
+                            @endif
+                        @endif
+
+                        @for ($page = $firstPage; $page <= $endPage; $page++)
+                            @if ($page === $currentPage)
+                                <span class="pagination-current" aria-current="page" aria-label="Current page {{ $page }}">{{ $page }}</span>
+                            @else
+                                <a class="pagination-link pagination-page" href="{{ $invitees->url($page) }}" aria-label="Page {{ $page }}">{{ $page }}</a>
+                            @endif
+                        @endfor
+
+                        @if ($endPage < $lastPage)
+                            @if ($endPage < $lastPage - 1)
+                                <span class="pagination-ellipsis" aria-hidden="true">…</span>
+                            @endif
+                            <a class="pagination-link pagination-page" href="{{ $invitees->url($lastPage) }}" aria-label="Page {{ $lastPage }}">{{ $lastPage }}</a>
+                        @endif
 
                         @if ($invitees->hasMorePages())
                             <a class="pagination-link" rel="next" href="{{ $invitees->nextPageUrl() }}">Next</a>
