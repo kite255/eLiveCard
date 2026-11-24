@@ -80,7 +80,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('WhatsApp')
             ->assertSee('SMS')
             ->assertSee('Thank you for the invitation.')
-            ->assertDontSee('255700000001');
+            ->assertSee('255700000001');
     }
 
     public function test_shared_rsvp_displays_actual_channel_status_times_on_desktop_and_mobile(): void
@@ -446,7 +446,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'phone' => '255700001234',
         ]);
 
-        $this->get($event->generateRsvpShareLink().'?search=255700001234')
+        $this->get($event->generateRsvpShareLink(showPhone: false).'?search=255700001234')
             ->assertOk()->assertDontSee('Private Phone Guest')
             ->assertSee('No invitees match the selected filters.');
     }
@@ -836,7 +836,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'last_reply_message' => '<script>alert("injected")</script>',
         ]);
 
-        $this->get($event->generateRsvpShareLink())
+        $this->get($event->generateRsvpShareLink(showPhone: false))
             ->assertOk()
             ->assertSee('&lt;script&gt;', false)
             ->assertDontSee('<script>alert("injected")</script>', false)
@@ -864,7 +864,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             }
         });
 
-        $url = $event->generateRsvpShareLink();
+        $url = $event->generateRsvpShareLink(showPhone: false);
         $this->get($url . '?search=ngoyi')
             ->assertOk()
             ->assertSee('Ngoyi Another')
