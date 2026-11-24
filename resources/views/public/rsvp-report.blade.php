@@ -867,7 +867,7 @@
             }
             .desktop-table-wrap th,
             .desktop-table-wrap td {
-                padding: 5px 2px;
+                padding: 5px 6px;
                 font-size: 11px;
                 vertical-align: top;
             }
@@ -892,7 +892,7 @@
             .desktop-sms-channel { display: none; }
             .desktop-reply-heading { display: none; }
             .mobile-reply-heading { display: inline; }
-            .desktop-table-wrap .reply-time-heading { min-width: 88px; white-space: nowrap; }
+            .desktop-table-wrap .reply-time-heading { min-width: 0; white-space: nowrap; }
             .desktop-table-wrap th:first-child,
             .desktop-table-wrap td:first-child {
                 padding-left: 2px;
@@ -902,11 +902,11 @@
             }
             .desktop-table-wrap .mobile-combined-channel-heading {
                 display: table-cell;
-                min-width: 100px;
+                min-width: 0;
             }
             .desktop-table-wrap .mobile-combined-channel {
                 display: table-cell;
-                min-width: 106px;
+                min-width: 0;
             }
             .desktop-table-wrap .guest-count-column {
                 width: 54px;
