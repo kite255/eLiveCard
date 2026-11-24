@@ -154,7 +154,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Delivery report unavailable')
             ->assertDontSee('Private provider error')
             ->assertDontSee('private-test-reference');
-        $this->assertSame(2, substr_count($unconfirmed->getContent(), 'Delivery report unavailable'));
+        $this->assertSame(3, substr_count($unconfirmed->getContent(), 'Delivery report unavailable'));
 
         config([
             'services.sms.base_url' => 'https://sms.example.test',
@@ -257,7 +257,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $html = $response->getContent();
 
-        $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading"'));
+        $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading desktop-channel-heading"'));
         $this->assertSame(1, substr_count($html, 'aria-label="WhatsApp"'));
         $this->assertSame(1, substr_count($html, 'viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title>'));
         $this->assertStringNotContainsString('M8 24l2-5a11', $html);
