@@ -860,16 +860,22 @@
                 text-align: center;
                 white-space: nowrap;
             }
-            .mobile-channel-entry + .mobile-channel-entry {
-                margin-top: 7px;
-                padding-top: 7px;
-                border-top: 1px solid var(--border);
-            }
-            .mobile-channel-name {
+            /* Compact two-line channel statuses on phones; timestamps remain
+               available on the desktop report. */
+            .mobile-channel-entry {
                 display: flex;
                 align-items: center;
-                height: 18px;
-                margin-bottom: 2px;
+                gap: 6px;
+                min-height: 22px;
+            }
+            .mobile-channel-entry + .mobile-channel-entry {
+                margin-top: 4px;
+            }
+            .mobile-channel-name {
+                display: inline-flex;
+                align-items: center;
+                flex: 0 0 16px;
+                height: 16px;
             }
             .mobile-channel-name .channel-icon {
                 width: 16px;
@@ -877,14 +883,14 @@
                 margin: 0;
             }
             .mobile-combined-channel .delivery-status {
+                display: inline;
                 font-size: 11px;
-                display: block;
-                margin-top: 2px;
-                white-space: normal;
+                line-height: 1.3;
+                margin: 0;
+                white-space: nowrap;
             }
             .mobile-combined-channel .subtle {
-                font-size: 10px;
-                overflow-wrap: anywhere;
+                display: none;
             }
         }
 
