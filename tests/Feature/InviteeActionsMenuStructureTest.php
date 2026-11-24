@@ -13,44 +13,56 @@ class InviteeActionsMenuStructureTest extends TestCase
         $end = strpos($source, '->bulkActions([', $start);
         $menu = substr($source, $start, $end - $start);
 
-        $this->assertSame(4, substr_count($menu, '->dropdown(false)'));
-        foreach (['INVITEE & CARDS', 'MESSAGING', 'RSVP ACTIONS', 'CANCEL OR DELETE'] as $groupLabel) {
-            $this->assertStringContainsString("->label('{$groupLabel}')", $menu);
-        }
-        // Nested labeled ActionGroups render as icon-only menu entries in Filament.
-        // Non-dropdown sections must expose individual action labels directly.
-        $this->assertStringNotContainsString("->label('Invitee & Cards')->icon(", $menu);
+        $this->assertSame(0, substr_count($menu, '->dropdown(false)'));
+        $this->assertSame(2, substr_count($menu, 'Tables\\Actions\\ActionGroup::make(['));
+        $this->assertStringContainsString("->label('Manage invitee')", $menu);
+        $this->assertStringContainsString("->label('More invitee actions')", $menu);
+        $this->assertStringContainsString('->dropdownWidth(\\\\Filament\\\\Support\\\\Enums\\\\MaxWidth::Medium)', $menu);
+        $this->assertStringContainsString("->dropdownMaxHeight('min(70dvh, 32rem)')", $menu);
         $this->assertStringContainsString("->label('Delivery Status')", $source);
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
-        $this->assertStringContainsString('->dropdownWidth(\\Filament\\Support\\Enums\\MaxWidth::Medium)', $menu);
-        $this->assertStringContainsString("->dropdownMaxHeight('min(70dvh, 32rem)')", $menu);
-        $this->assertStringNotContainsString('elive-invitee-actions-trigger', $menu);
 
-        $theme = file_get_contents(resource_path('css/filament/admin/theme.css'));
-        $this->assertStringNotContainsString('grid-template-columns: repeat(2, minmax(0, 1fr))', $theme);
+        $mainStart = strpos($menu, "Tables\\Actions\\ActionGroup::make([");
+        $advancedStart = strpos($menu, "Tables\\Actions\\ActionGroup::make([", $mainStart + 1);
+        $this->assertNotFalse($advancedStart);
+        $primary = substr($menu, $mainStart, $advancedStart - $mainStart);
+        $advanced = substr($menu, $advancedStart);
 
-        $names = [
+        // The everyday menu contains seven clearly named actions.
+        foreach ([
             'edit_invitee',
-            'generate_card',
-            'view_generated_card',
             'open_invitee_page',
-            'show_private_link',
             'send_whatsapp_invitation',
             'send_sms_invitation',
+            'refresh_sms_delivery',
+            'update_rsvp',
+            'cancel_invitee',
+        ] as $name) {
+            $this->assertStringContainsString("Action::make('{$name}')", $primary);
+            $this->assertStringNotContainsString("Action::make('{$name}')", $advanced);
+        }
+
+        foreach ([
+            'generate_card',
+            'view_generated_card',
+            'retry_failed_card',
+            'show_private_link',
             'mark_attending',
             'mark_not_attending',
             'reset_rsvp',
-            'cancel_invitee',
             'delete_invitee',
-        ];
-
-        $position = -1;
-        foreach ($names as $name) {
-            $next = strpos($menu, "Action::make('{$name}')");
-            $this->assertNotFalse($next, "Missing action: {$name}");
-            $this->assertGreaterThan($position, $next, "Action out of order: {$name}");
-            $position = $next;
+        ] as $name) {
+            $this->assertStringContainsString("Action::make('{$name}')", $advanced);
+            $this->assertStringNotContainsString("Action::make('{$name}')", $primary);
         }
+
+        foreach (['CARDS & DETAILS', 'RESEND INVITATIONS', 'ADVANCED RSVP', 'DELETE'] as $heading) {
+            $this->assertStringContainsString("->label('{$heading}')", $advanced);
+        }
+        $this->assertStringContainsString("resendInvitationAction('sms')", $advanced);
+        $this->assertStringContainsString("resendInvitationAction('whatsapp')", $advanced);
+        $this->assertStringContainsString("->label('Update RSVP')", $primary);
+        $this->assertStringContainsString("'rsvp_confirmed_at' => $status === Invitee::RSVP_PENDING ? null : now()", $primary);
 
         $this->assertStringContainsString('ViewAction::make()', $menu);
         $this->assertStringNotContainsString("Action::make('send_card_link')", $menu);
