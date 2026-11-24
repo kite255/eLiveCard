@@ -1167,6 +1167,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const cancelPending = () => {
         clearTimeout(debounceTimer);
+        debounceTimer = null;
         generation += 1;
         if (activeRequest) {
             activeRequest.abort();
