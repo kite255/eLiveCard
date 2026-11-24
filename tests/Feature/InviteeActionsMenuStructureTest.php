@@ -13,10 +13,13 @@ class InviteeActionsMenuStructureTest extends TestCase
         $end = strpos($source, '->bulkActions([', $start);
         $menu = substr($source, $start, $end - $start);
 
-        $this->assertSame(0, substr_count($menu, '->dropdown(false)'));
-        foreach (['Invitee & Cards', 'Messaging', 'RSVP Actions', 'Cancel or Delete'] as $groupLabel) {
+        $this->assertSame(4, substr_count($menu, '->dropdown(false)'));
+        foreach (['INVITEE & CARDS', 'MESSAGING', 'RSVP ACTIONS', 'CANCEL OR DELETE'] as $groupLabel) {
             $this->assertStringContainsString("->label('{$groupLabel}')", $menu);
         }
+        // Nested labeled ActionGroups render as icon-only menu entries in Filament.
+        // Non-dropdown sections must expose individual action labels directly.
+        $this->assertStringNotContainsString("->label('Invitee & Cards')->icon(", $menu);
         $this->assertStringContainsString("->label('Delivery Status')", $source);
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
         $this->assertStringNotContainsString('->maxHeight(', $menu);
