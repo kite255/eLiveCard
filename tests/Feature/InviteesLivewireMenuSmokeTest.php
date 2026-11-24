@@ -82,6 +82,14 @@ class InviteesLivewireMenuSmokeTest extends TestCase
             ->assertSuccessful()
             ->mountTableAction('refresh_sms_delivery', $invitee)
             ->assertHasNoTableActionErrors();
+
+        Livewire::test(InviteesRelationManager::class, [
+            'ownerRecord' => $event,
+            'pageClass' => ManageEventSection::class,
+        ])
+            ->assertSuccessful()
+            ->mountTableAction('update_rsvp', $invitee)
+            ->assertHasNoTableActionErrors();
     }
 
     public function test_add_manually_saves_an_international_number_for_whatsapp(): void
