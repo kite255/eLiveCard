@@ -13,11 +13,21 @@ class SmsDeliveryCallbackController extends Controller
 {
     public function __invoke(Request $request): JsonResponse
     {
+        // Never accept unauthenticated delivery receipts. Configure the same
+        // secret on the SMS provider and in SMS_DELIVERY_CALLBACK_TOKEN.
+        $secret = (string) config('services.sms.delivery_callback_token', '');
+        $supplied = (string) $request->header('X-SMS-Callback-Token', '');
+
+        if ($secret === '' || ! hash_equals($secret, $supplied)) {
+            Log::warning('SMS delivery callback rejected: invalid or missing authentication.');
+
+            return response()->json(['success' => false, 'message' => 'Unauthorized callback.'], 401);
+        }
+
         $payload = $request->all();
 
-        Log::info('SMS delivery callback received', [
-            'payload' => $payload,
-            'ip' => $request->ip(),
+        Log::info('SMS delivery callback received.', [
+            'provider_message_id_present' => filled($this->extractProviderMessageId($payload)),
         ]);
 
         $providerMessageId = $this->extractProviderMessageId($payload);
@@ -37,7 +47,7 @@ class SmsDeliveryCallbackController extends Controller
         if (! $smsLog) {
             Log::warning('SMS delivery callback received for unknown message ID', [
                 'provider_message_id' => $providerMessageId,
-                'payload' => $payload,
+                'provider_message_id' => $providerMessageId,
             ]);
 
             return response()->json([
@@ -46,9 +56,29 @@ class SmsDeliveryCallbackController extends Controller
             ], 404);
         }
 
-        $status = $this->normalizeStatus($this->extractStatus($payload));
+        $rawStatus = $this->extractStatus($payload);
+        $status = $this->normalizeStatus($rawStatus);
+
+        if ($status === SmsLog::STATUS_UNKNOWN) {
+            Log::warning('SMS callback contains an unrecognized delivery status.', [
+                'provider_message_id' => $providerMessageId,
+            ]);
+
+            return response()->json(['success' => false, 'message' => 'Unsupported delivery status.'], 422);
+        }
+
+        // A callback may arrive late or be delivered more than once.
+        // Never downgrade an already terminal provider receipt.
+        if (in_array($smsLog->status, [
+            SmsLog::STATUS_DELIVERED, SmsLog::STATUS_FAILED,
+            SmsLog::STATUS_UNDELIVERED, SmsLog::STATUS_REJECTED, SmsLog::STATUS_EXPIRED,
+        ], true)) {
+            return response()->json(['success' => true, 'message' => 'Final delivery status already recorded.']);
+        }
 
         $updateData = [
+            'provider_status' => (string) $rawStatus,
+            'delivery_report_checked_at' => now(),
             'status' => $status,
             'provider_response' => array_merge(
                 $smsLog->provider_response ?? [],
@@ -69,6 +99,8 @@ class SmsDeliveryCallbackController extends Controller
             $updateData['error_message'] = $this->extractErrorMessage($payload);
         }
 
+        // Update the original log, but not an invitee whose phone changed
+        // or whose newer SMS send has superseded this receipt.
         $smsLog->update($updateData);
 
         if ($smsLog->invitee) {
@@ -135,7 +167,7 @@ class SmsDeliveryCallbackController extends Controller
             'submitted',
             'sent' => SmsLog::STATUS_SENT,
 
-            default => SmsLog::STATUS_SENT,
+            default => SmsLog::STATUS_UNKNOWN,
         };
     }
 
@@ -157,6 +189,22 @@ class SmsDeliveryCallbackController extends Controller
         $invitee = $smsLog->invitee;
 
         if (! $invitee instanceof Invitee) {
+            return;
+        }
+
+        // Do not overwrite an invitee's state using an older receipt, an
+        // earlier phone generation or a different kind of SMS message.
+        $inviteeLatestLogId = SmsLog::query()
+            ->where('invitee_id', $invitee->id)
+            ->max('id');
+
+        if ((int) $inviteeLatestLogId !== (int) $smsLog->id) {
+            return;
+        }
+
+        if ($invitee->invitation_phone_changed_at
+            && in_array($smsLog->sms_type, [SmsLog::TYPE_INVITATION, SmsLog::TYPE_INVITATION_CARD], true)
+            && $smsLog->id <= (int) $invitee->invitation_sms_reset_log_id) {
             return;
         }
 
