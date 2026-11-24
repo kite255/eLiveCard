@@ -1078,53 +1078,46 @@ class InviteesRelationManager extends RelationManager
                     ->color('gray')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->modalHeading('Shared Phone Numbers')
-                    ->modalDescription('Read-only review of contacts shared by multiple invitees in this event. Each person keeps a separate invitation, QR code, and RSVP.')
+                    ->modalDescription('Find contacts shared by multiple invitees in this event. Each invitee keeps an individual invitation, QR code and RSVP.')
                     ->modalWidth('4xl')
                     ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close')
+                    ->extraModalFooterActions([
+                        Tables\Actions\Action::make('download_shared_phone_csv')
+                            ->label('Download CSV')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('primary')
+                            ->action(fn () => $this->downloadSharedPhoneNumbers()),
+                    ])
                     ->form([
                         Forms\Components\TextInput::make('shared_phone_search')
-                            ->label('Search by phone number or invitee name')
-                            ->placeholder('Enter a phone number or name')
+                            ->label('Search by name or phone')
+                            ->placeholder('Enter an invitee name or phone number')
+                            ->prefixIcon('heroicon-o-magnifying-glass')
                             ->live(debounce: 350),
+                        Forms\Components\Select::make('shared_phone_minimum')
+                            ->label('Number of invitees')
+                            ->options([2 => '2 or more', 3 => '3 or more', 4 => '4 or more'])
+                            ->default(2)
+                            ->live(),
+                        Forms\Components\Select::make('shared_phone_sort')
+                            ->label('Sort by')
+                            ->options([
+                                'count_desc' => 'Most invitees first',
+                                'count_asc' => 'Fewest invitees first',
+                                'phone_asc' => 'Phone number (A–Z)',
+                                'phone_desc' => 'Phone number (Z–A)',
+                            ])
+                            ->default('count_desc')
+                            ->live(),
                         Forms\Components\Placeholder::make('shared_phone_summary')
-                            ->label('Shared contacts')
+                            ->label('Matching shared contacts')
                             ->content(fn (Forms\Get $get): \Illuminate\Support\HtmlString => $this->sharedPhoneReportHtml(
                                 (string) ($get('shared_phone_search') ?? ''),
+                                (int) ($get('shared_phone_minimum') ?? 2),
+                                (string) ($get('shared_phone_sort') ?? 'count_desc'),
                             )),
                     ]),
-
-                Tables\Actions\Action::make('export_shared_phone_numbers')
-                    ->label('Export Shared Numbers')
-                    ->icon('heroicon-o-arrow-down-tray')
-                    ->color('gray')
-                    ->visible(fn (): bool => $this->canViewReportsForOwner())
-                    ->action(function () {
-                        abort_unless($this->canViewReportsForOwner(), 403);
-
-                        $event = $this->getOwnerRecord();
-                        $groups = app(\App\Services\SharedInviteePhoneService::class)->groups($event);
-
-                        return response()->streamDownload(static function () use ($groups): void {
-                            $out = fopen('php://output', 'w');
-                            // UTF-8 BOM makes Swahili/international names readable in Excel.
-                            fwrite($out, "\xEF\xBB\xBF");
-                            fputcsv($out, ['Phone Number', 'Invitee Count', 'Invitee ID', 'Invitee Name']);
-                            foreach ($groups as $phone => $members) {
-                                foreach ($members as $member) {
-                                    // Prefix untrusted spreadsheet fields with a single quote
-                                    // to prevent Excel formula injection on exported names.
-                                    $name = (string) $member['name'];
-                                    if (preg_match('/^[\\s]*[=+\\-@]/u', $name)) {
-                                        $name = "'".$name;
-                                    }
-                                    fputcsv($out, [$phone, count($members), $member['id'], $name]);
-                                }
-                            }
-                            fclose($out);
-                        }, 'event-'.$event->getKey().'-shared-phone-numbers.csv', [
-                            'Content-Type' => 'text/csv; charset=UTF-8',
-                        ]);
-                    }),
 
                 Tables\Actions\Action::make('export_invitees')
                     ->label('Export Invitees')
@@ -3015,44 +3008,31 @@ class InviteesRelationManager extends RelationManager
      * Render the event-scoped, read-only shared-phone review. Names and numbers
      * must be escaped because this placeholder intentionally contains HTML.
      */
-    protected function sharedPhoneReportHtml(string $search = ''): \Illuminate\Support\HtmlString
+    protected function sharedPhoneReportHtml(string $search = '', int $minimumInvitees = 2, string $sort = 'count_desc'): \Illuminate\Support\HtmlString
     {
         abort_unless($this->canViewReportsForOwner(), 403);
 
-        $groups = app(\App\Services\SharedInviteePhoneService::class)
-            ->groups($this->getOwnerRecord());
-        $totalGroups = count($groups);
-        $totalInvitees = array_sum(array_map('count', $groups));
-        $search = mb_strtolower(trim($search));
-
-        if ($search !== '') {
-            $groups = array_filter($groups, static function (array $members, string $phone) use ($search): bool {
-                if (str_contains(mb_strtolower($phone), $search)) {
-                    return true;
-                }
-                foreach ($members as $member) {
-                    if (str_contains(mb_strtolower((string) $member['name']), $search)) {
-                        return true;
-                    }
-                }
-                return false;
-            }, ARRAY_FILTER_USE_BOTH);
-        }
-
+        $service = app(\App\Services\SharedInviteePhoneService::class);
+        $allGroups = $service->groups($this->getOwnerRecord());
+        $groups = $service->filterGroups($allGroups, $search, $minimumInvitees, $sort);
+        $totalGroups = count($allGroups);
+        $totalInvitees = array_sum(array_map('count', $allGroups));
+        $matchingGroups = count($groups);
+        $matchingInvitees = array_sum(array_map('count', $groups));
         $visibleGroups = array_slice($groups, 0, 50, true);
+
         $html = '<div style="display:grid;gap:10px">'
-            .'<p><strong>'.count($groups).'</strong> matching shared numbers; '
-            .'<strong>'.$totalGroups.'</strong> total shared numbers across '
-            .'<strong>'.$totalInvitees.'</strong> invitees.</p>';
+            .'<p><strong>'.$matchingGroups.'</strong> matching shared numbers across '
+            .'<strong>'.$matchingInvitees.'</strong> invitees · '
+            .$totalGroups.' total shared numbers across '.$totalInvitees.' invitees in the event.</p>';
 
         if ($visibleGroups === []) {
-            $html .= '<p>No shared phone numbers match this search.</p>';
+            $html .= '<p>No shared numbers match these filters. Try another search or select 2 or more invitees.</p>';
         }
 
         foreach ($visibleGroups as $phone => $members) {
-            $safePhone = e($phone);
             $html .= '<div style="border:1px solid #9ca3af55;border-radius:8px;padding:12px">'
-                .'<strong>'.$safePhone.'</strong> · '.count($members).' invitees'
+                .'<strong>'.e($phone).'</strong> · '.count($members).' invitees'
                 .'<ul style="margin:6px 0 0 18px;list-style:disc">';
             foreach ($members as $member) {
                 $html .= '<li>'.e($member['name']).' (ID '.(int) $member['id'].')</li>';
@@ -3060,11 +3040,39 @@ class InviteesRelationManager extends RelationManager
             $html .= '</ul></div>';
         }
 
-        if (count($groups) > count($visibleGroups)) {
-            $html .= '<p>Showing the first 50 groups. Search to narrow results or export the full report.</p>';
+        if ($matchingGroups > count($visibleGroups)) {
+            $html .= '<p>Showing the first 50 matching groups. Narrow the filters to see more or download the full CSV.</p>';
         }
 
         return new \Illuminate\Support\HtmlString($html.'</div>');
+    }
+
+    /** Export every shared contact group, regardless of the current preview filters. */
+    protected function downloadSharedPhoneNumbers(): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        abort_unless($this->canViewReportsForOwner(), 403);
+
+        $event = $this->getOwnerRecord();
+        $groups = app(\App\Services\SharedInviteePhoneService::class)->groups($event);
+
+        return response()->streamDownload(static function () use ($groups): void {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['Phone Number', 'Invitee Count', 'Invitee ID', 'Invitee Name']);
+
+            foreach ($groups as $phone => $members) {
+                foreach ($members as $member) {
+                    $name = (string) $member['name'];
+                    if (preg_match('/^[\\s]*[=+\\-@]/u', $name)) {
+                        $name = "'".$name;
+                    }
+                    fputcsv($out, [$phone, count($members), $member['id'], $name]);
+                }
+            }
+            fclose($out);
+        }, 'event-'.$event->getKey().'-shared-phone-numbers.csv', [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     protected function sendSmsInvitationsFromToolbar(string $scope, string $sharedPhonePolicy = 'skip'): void

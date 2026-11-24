@@ -12,7 +12,8 @@ class SharedPhoneReportViewStructureTest extends TestCase
         $file = file_get_contents((new \ReflectionClass(InviteesRelationManager::class))->getFileName());
 
         $this->assertStringContainsString("Action::make('shared_phone_numbers')", $file);
-        $this->assertStringContainsString("Action::make('export_shared_phone_numbers')", $file);
+        $this->assertStringContainsString("Action::make('download_shared_phone_csv')", $file);
+        $this->assertStringNotContainsString("Action::make('export_shared_phone_numbers')", $file);
         $this->assertStringContainsString("->modalSubmitAction(false)", $file);
         $this->assertStringContainsString("->visible(fn (): bool => \$this->canViewReportsForOwner())", $file);
         $this->assertStringContainsString("->groups(\$this->getOwnerRecord())", $file);

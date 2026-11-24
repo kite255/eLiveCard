@@ -61,6 +61,29 @@ class SharedInviteePhoneServiceTest extends TestCase
         $this->assertSame(4, Invitee::query()->count());
     }
 
+    public function test_shared_phone_filter_searches_names_and_formatted_numbers_and_sorts_by_group_size(): void
+    {
+        $service = app(SharedInviteePhoneService::class);
+        $groups = [
+            '255712345678' => [
+                ['id' => 1, 'name' => 'John Peter'],
+                ['id' => 2, 'name' => 'Mary Peter'],
+            ],
+            '255755123456' => [
+                ['id' => 3, 'name' => 'Asha'],
+                ['id' => 4, 'name' => 'Neema'],
+                ['id' => 5, 'name' => 'James'],
+            ],
+        ];
+
+        $this->assertSame(['255755123456', '255712345678'], array_map('strval', array_keys($service->filterGroups($groups))));
+        $this->assertSame(['255712345678'], array_map('strval', array_keys($service->filterGroups($groups, 'MaRy'))));
+        $this->assertSame(['255712345678'], array_map('strval', array_keys($service->filterGroups($groups, '+255 712 345 678'))));
+        $this->assertSame(['255755123456'], array_map('strval', array_keys($service->filterGroups($groups, '', 3))));
+        $this->assertSame(['255712345678', '255755123456'], array_map('strval', array_keys($service->filterGroups($groups, '', 2, 'phone_asc'))));
+        $this->assertSame([], $service->filterGroups($groups, 'not found'));
+    }
+
     public function test_shared_phone_service_ignores_nonmatching_and_invalid_numbers(): void
     {
         $event = Event::query()->create([
