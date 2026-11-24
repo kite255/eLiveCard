@@ -30,7 +30,7 @@ class SendInvitationSmsJob implements ShouldQueue
         public ?string $customMessage = null,
         public bool $forceResend = false,
     ) {
-        $this->onQueue(self::QUEUE);
+        $this->onQueue((string) config('messaging.sms_queue', self::QUEUE));
     }
 
     public function middleware(): array
