@@ -821,16 +821,20 @@
             }
             .desktop-table-wrap table {
                 width: max-content;
-                min-width: 980px;
+                min-width: 720px;
                 table-layout: auto;
             }
             .desktop-table-wrap th,
             .desktop-table-wrap td {
-                padding: 10px 12px;
+                padding: 7px 6px;
                 font-size: 11px;
+                vertical-align: top;
             }
-            .desktop-table-wrap th { font-size: 10px; }
-            .desktop-table-wrap .name { min-width: 120px; }
+            .desktop-table-wrap th { font-size: 9px; letter-spacing: 0; }
+            .desktop-table-wrap .name { min-width: 112px; line-height: 1.3; }
+            .desktop-table-wrap .reply-value { max-width: 145px; line-height: 1.3; }
+            .desktop-table-wrap .response-time { font-size: 10px !important; }
+            .desktop-table-wrap .badge { padding: 4px 6px; font-size: 10px; }
             .desktop-table-wrap .invitee-phone { white-space: nowrap; }
             .mobile-rsvp-cards { display: none; }
         }
@@ -845,7 +849,7 @@
             .desktop-sms-channel { display: none; }
             .desktop-table-wrap .mobile-combined-channel-heading {
                 display: table-cell;
-                min-width: 116px;
+                min-width: 108px;
             }
             .desktop-table-wrap .mobile-combined-channel {
                 display: table-cell;
@@ -866,12 +870,12 @@
                 display: grid;
                 grid-template-columns: 16px minmax(0, 1fr);
                 align-items: center;
-                column-gap: 6px;
-                row-gap: 2px;
-                min-height: 22px;
+                column-gap: 4px;
+                row-gap: 0;
+                min-height: 18px;
             }
             .mobile-channel-entry + .mobile-channel-entry {
-                margin-top: 4px;
+                margin-top: 2px;
             }
             .mobile-channel-name {
                 display: inline-flex;
@@ -899,7 +903,7 @@
                 grid-column: 2;
                 margin: 0;
                 font-size: 9px;
-                line-height: 1.35;
+                line-height: 1.2;
                 color: var(--muted);
                 white-space: nowrap;
             }
