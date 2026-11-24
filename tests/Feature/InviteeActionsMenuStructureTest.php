@@ -20,6 +20,13 @@ class InviteeActionsMenuStructureTest extends TestCase
         $this->assertStringContainsString('MaxWidth::Medium', $menu);
         $this->assertStringContainsString("->dropdownMaxHeight('min(70dvh, 32rem)')", $menu);
         $this->assertStringContainsString("->label('Delivery Status')", $source);
+        // Shared-number export now lives inside the review modal rather than the crowded toolbar.
+        $this->assertStringContainsString("Action::make('shared_phone_numbers')", $source);
+        $this->assertStringContainsString("Action::make('download_shared_phone_csv')", $source);
+        $this->assertStringContainsString("->label('Download CSV')", $source);
+        $this->assertStringNotContainsString("Action::make('export_shared_phone_numbers')", $source);
+        $this->assertStringContainsString("shared_phone_minimum", $source);
+        $this->assertStringContainsString("shared_phone_sort", $source);
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
 
         $mainStart = strpos($menu, "Tables\\Actions\\ActionGroup::make([");
