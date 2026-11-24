@@ -755,7 +755,7 @@
             .rsvp-live-filtering .filters .apply-filters {
                 display: none;
             }
-            .filters .filter-actions:has(#rsvp-clear-filters[hidden]) {
+            .rsvp-live-filtering .filters .filter-actions:has(#rsvp-clear-filters[hidden]) {
                 display: none;
             }
         }
