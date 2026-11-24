@@ -1900,11 +1900,6 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
-                    Tables\Actions\Action::make('advanced_resend_section')
-                        ->label('RESEND INVITATIONS')
-                        ->disabled()
-                        ->color('gray'),
-
 
 
                     Tables\Actions\Action::make('advanced_rsvp_section')
