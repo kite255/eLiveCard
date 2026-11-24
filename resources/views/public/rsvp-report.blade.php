@@ -802,6 +802,39 @@
             }
         }
 
+        /* On small screens use the complete report table rather than reducing
+           the available information to a three-column summary. */
+        .mobile-table-hint { display: none; }
+        @media (max-width: 760px) {
+            .mobile-table-hint {
+                display: block;
+                margin: 4px 14px 8px;
+                font-size: 11px;
+                color: var(--muted);
+            }
+            .desktop-table-wrap {
+                display: block;
+                max-width: 100%;
+                overflow-x: auto;
+                overscroll-behavior-x: contain;
+                -webkit-overflow-scrolling: touch;
+            }
+            .desktop-table-wrap table {
+                width: max-content;
+                min-width: 980px;
+                table-layout: auto;
+            }
+            .desktop-table-wrap th,
+            .desktop-table-wrap td {
+                padding: 10px 12px;
+                font-size: 11px;
+            }
+            .desktop-table-wrap th { font-size: 10px; }
+            .desktop-table-wrap .name { min-width: 120px; }
+            .desktop-table-wrap .invitee-phone { white-space: nowrap; }
+            .mobile-rsvp-cards { display: none; }
+        }
+
         .live-search-status {
             min-height: 1.25em;
             margin: 0 14px 8px;
@@ -964,7 +997,8 @@
             <p id="rsvp-live-status" class="live-search-status" role="status" aria-live="polite" aria-atomic="true"></p>
             <div id="rsvp-live-results">
 
-            <div class="table-wrap desktop-table-wrap">
+            <p class="mobile-table-hint">Swipe left or right to view all report columns.</p>
+            <div class="table-wrap desktop-table-wrap" role="region" aria-label="Invitee responses table — scroll horizontally to view all columns" tabindex="0">
                 <table>
                     <thead>
                         <tr>
