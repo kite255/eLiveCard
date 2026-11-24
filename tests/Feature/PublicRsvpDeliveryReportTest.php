@@ -914,7 +914,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->assertNotEmpty($queries);
         foreach ($queries as $query) {
             $this->assertStringContainsString("ESCAPE '!'", $query['sql']);
-            $this->assertSame(5, count($query['bindings']));
+            $this->assertSame(6, count($query['bindings']));
             $this->assertStringNotContainsString("ESCAPE '\\\\'", $query['sql']);
         }
     }
