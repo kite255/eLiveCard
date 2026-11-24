@@ -317,7 +317,14 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee("search.addEventListener('input', schedule)", false)
             ->assertSee('450', false)
             ->assertSee("results.addEventListener('click'", false)
-            ->assertSee("window.addEventListener('popstate'", false);
+            ->assertSee("window.addEventListener('popstate'", false)
+            ->assertSee('id="rsvp-live-stats"', false)
+            ->assertSee('id="rsvp-live-response-count"', false)
+            ->assertSee('const refreshIntervalMs = 20000;', false)
+            ->assertSee("load(new URL(window.location.href), 'none', true)", false)
+            ->assertSee("currentStats.innerHTML = nextStats.innerHTML", false)
+            ->assertSee("currentResponseCount.textContent = nextResponseCount.textContent", false)
+            ->assertSee("if (silent && (activeRequest || debounceTimer || document.hidden)) return;", false);
 
         // The live update uses the same GET endpoint and server-side access rules.
         $this->get($url.'?search=asha')->assertOk()
