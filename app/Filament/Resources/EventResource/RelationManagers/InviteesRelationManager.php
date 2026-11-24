@@ -3189,6 +3189,10 @@ class InviteesRelationManager extends RelationManager
                     && $record->card_status === Invitee::CARD_STATUS_ACTIVE
                     && filled($record->phone) && filled($record->short_code)
                     && $this->hasCurrentInvitationSubmission($record, $channel))
+                ->requiresConfirmation()
+                ->modalHeading(fn (Invitee $record): string => 'Resend WhatsApp invitation to '.$record->name.'?')
+                ->modalDescription('Send another WhatsApp invitation? The recipient may receive a duplicate and an additional charge may apply.')
+                ->modalSubmitActionLabel('Confirm')
                 ->action(fn (Invitee $record) => $this->processInviteeInvitation(
                     $record,
                     $channel,
