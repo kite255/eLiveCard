@@ -7,6 +7,8 @@ use App\Jobs\GenerateInviteeCardJob;
 use App\Jobs\SendInvitationSmsJob;
 use App\Jobs\SendEventSmsJob;
 use App\Jobs\SendInvitationWhatsAppJob;
+use App\Models\MessageLog;
+use Illuminate\Support\Facades\Cache;
 use App\Models\MessageTemplate;
 use App\Services\SmsService;
 use App\Support\EliveMessagePlaceholders;
@@ -94,6 +96,17 @@ class SendEventMessage extends Page
                 ->modalSubmitActionLabel('Queue WhatsApp')
                 ->disabled(fn (): bool => $this->unsentEligibleWhatsappInviteesCount === 0)
                 ->action(fn () => $this->sendWhatsappInvitations()),
+
+            Action::make('sendFailedWhatsappSms')
+                ->label('SMS Fallback for Failed WhatsApp')
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->requiresConfirmation()
+                ->modalHeading('Send SMS to failed WhatsApp recipients')
+                ->modalDescription('Queue one invitation SMS per eligible invitee whose latest WhatsApp invitation failed. Pending, submitted, delivered, or read WhatsApp messages are excluded. Existing SMS invitations will not be resent.')
+                ->modalSubmitActionLabel('Queue Fallback SMS')
+                ->disabled(fn (): bool => $this->failedWhatsappSmsEligibleCount === 0)
+                ->action(fn () => $this->sendFailedWhatsappSms()),
 
             Action::make('sendRsvpReminderSms')
                 ->label('RSVP Reminder')
@@ -315,6 +328,129 @@ class SendEventMessage extends Page
             ->title('WhatsApp invitations queued')
             ->body($invitees->count() . ' WhatsApp invitation(s) queued for background delivery.')
             ->success()
+            ->send();
+    }
+
+    /**
+     * An older failed attempt is not a fallback candidate if a newer
+     * WhatsApp invitation is pending or has been submitted/delivered.
+     * A failed status must come from the persisted provider/log status;
+     * we never infer that the number is unregistered on WhatsApp.
+     */
+    protected function latestFailedWhatsappInvitationLogs(): \Illuminate\Support\Collection
+    {
+        $invitationTypes = ['invitation', 'event_invitation', 'whatsapp_invitation'];
+
+        $latestIds = MessageLog::query()
+            ->selectRaw('MAX(id)')
+            ->where('event_id', $this->record->id)
+            ->where('channel', MessageLog::CHANNEL_WHATSAPP)
+            ->whereIn('type', $invitationTypes)
+            ->whereNotNull('invitee_id')
+            ->groupBy('invitee_id');
+
+        return MessageLog::query()
+            ->whereIn('id', $latestIds)
+            ->where('status', MessageLog::STATUS_FAILED)
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    protected function failedWhatsappSmsRecipients(): \Illuminate\Support\Collection
+    {
+        $failedLogs = $this->latestFailedWhatsappInvitationLogs()
+            ->keyBy('invitee_id');
+
+        if ($failedLogs->isEmpty()) {
+            return collect();
+        }
+
+        return $this->eligibleInviteesQuery()
+            ->whereIn('id', $failedLogs->keys()->all())
+            ->where('card_status', \App\Models\Invitee::CARD_STATUS_ACTIVE)
+            ->where('whatsapp_status', 'failed')
+            ->whereDoesntHave('smsLogs', function (Builder $query): void {
+                $query->where('event_id', $this->record->id)
+                    ->whereIn('sms_type', ['invitation', 'invitation_card'])
+                    ->whereIn('status', ['queued', 'pending', 'sending', 'sent', 'logged', 'accepted', 'delivered']);
+            })
+            ->get()
+            ->map(function ($invitee) use ($failedLogs) {
+                $invitee->setRelation('failedWhatsappLog', $failedLogs->get($invitee->id));
+
+                return $invitee;
+            });
+    }
+
+    public function getFailedWhatsappSmsEligibleCountProperty(): int
+    {
+        return $this->failedWhatsappSmsRecipients()->count();
+    }
+
+    public function getFailedWhatsappSmsPreviewProperty(): \Illuminate\Support\Collection
+    {
+        return $this->failedWhatsappSmsRecipients()->take(10);
+    }
+
+    public function sendFailedWhatsappSms(): void
+    {
+        $queued = 0;
+        $skipped = 0;
+
+        foreach ($this->failedWhatsappSmsRecipients() as $invitee) {
+            // An atomic, short-lived claim protects against rapid double-clicks
+            // and concurrent administrative fallback actions.
+            $claim = Cache::lock(
+                'whatsapp-sms-fallback-'.$this->record->id.'-'.$invitee->id,
+                600
+            );
+
+            if (! $claim->get()) {
+                $skipped++;
+                continue;
+            }
+
+            $dispatched = false;
+            try {
+                // Re-evaluate the latest WhatsApp status before dispatch.
+                $latest = MessageLog::query()
+                    ->where('event_id', $this->record->id)
+                    ->where('invitee_id', $invitee->id)
+                    ->where('channel', MessageLog::CHANNEL_WHATSAPP)
+                    ->whereIn('type', ['invitation', 'event_invitation', 'whatsapp_invitation'])
+                    ->latest('id')
+                    ->first();
+
+                if (! $latest || $latest->status !== MessageLog::STATUS_FAILED
+                    || $invitee->fresh()?->whatsapp_status !== 'failed'
+                    || $invitee->smsLogs()
+                        ->where('event_id', $this->record->id)
+                        ->whereIn('sms_type', ['invitation', 'invitation_card'])
+                        ->whereIn('status', ['queued', 'pending', 'sending', 'sent', 'logged', 'accepted', 'delivered'])
+                        ->exists()) {
+                    $skipped++;
+                    continue;
+                }
+
+                SendInvitationSmsJob::dispatch(
+                    eventId: $this->record->id,
+                    inviteeId: $invitee->id,
+                );
+                $dispatched = true;
+                $queued++;
+            } finally {
+                // Only retain the temporary claim after a successful dispatch.
+                // Failed or skipped attempts must remain recoverable.
+                if (! $dispatched) {
+                    $claim->release();
+                }
+            }
+        }
+
+        Notification::make()
+            ->title('WhatsApp fallback SMS queued')
+            ->body($queued.' invitation SMS job(s) queued. '.$skipped.' skipped. SMS delivery is not yet confirmed.')
+            ->color($queued > 0 ? 'success' : 'warning')
             ->send();
     }
 
