@@ -78,12 +78,14 @@ class PublicRsvpReportController extends Controller
             ],
             'sms_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,failed,logged_only,unknown'],
             'whatsapp_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,read,failed,logged_only,unknown'],
+            'per_page' => ['nullable', 'integer', 'in:10,25,50,100'],
         ]);
 
         $search = trim((string) ($validated['search'] ?? ''));
         $status = trim((string) ($validated['status'] ?? ''));
         $smsDelivery = trim((string) ($validated['sms_delivery'] ?? ''));
         $whatsappDelivery = trim((string) ($validated['whatsapp_delivery'] ?? ''));
+        $perPage = (int) ($validated['per_page'] ?? self::PER_PAGE);
         // Always display invitee phone numbers in the shared RSVP report.
         $showPhoneNumbers = true;
 
@@ -147,7 +149,7 @@ class PublicRsvpReportController extends Controller
             // First added, first shown; ID breaks ties for imported records.
             ->orderBy('created_at')
             ->orderBy('id')
-            ->paginate(self::PER_PAGE)
+            ->paginate($perPage)
             ->withQueryString();
 
         // Retrieve only invitation delivery records for the invitees on this page.
@@ -317,6 +319,7 @@ class PublicRsvpReportController extends Controller
         return view('public.rsvp-report', [
             'event' => $event,
             'invitees' => $invitees,
+            'perPage' => $perPage,
             'total' => $total,
             'attending' => $attending,
             'notAttending' => $notAttending,
