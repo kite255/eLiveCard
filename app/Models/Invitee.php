@@ -139,6 +139,8 @@ class Invitee extends Model
         'whatsapp_failed_at',
 
         'invitation_phone_changed_at',
+        'invitation_sms_reset_log_id',
+        'invitation_message_reset_log_id',
         'invitation_sms_status',
         'invitation_sms_sent_at',
         'reminder_sms_status',
@@ -297,6 +299,10 @@ class Invitee extends Model
             // eligibility is reset, and no message is sent during an edit.
             $invitee->phone = $current;
             $invitee->invitation_phone_changed_at = now();
+            $invitee->invitation_sms_reset_log_id = \Illuminate\Support\Facades\DB::table('sms_logs')
+                ->where('invitee_id', $invitee->id)->max('id') ?? 0;
+            $invitee->invitation_message_reset_log_id = \Illuminate\Support\Facades\DB::table('message_logs')
+                ->where('invitee_id', $invitee->id)->max('id') ?? 0;
             $invitee->sms_status = self::SMS_STATUS_NOT_SENT;
             $invitee->invitation_sms_status = self::SMS_STATUS_NOT_SENT;
             $invitee->sms_sent_at = null;
