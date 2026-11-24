@@ -783,7 +783,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $html = $response->getContent();
         $this->assertMatchesRegularExpression(
-            '/<div class="name">Visible Phone Guest<\\/div>\\s*<div class="subtle"[^>]*>255700000321<\\/div>/',
+            '/<div class="name">Visible Phone Guest<\\/div>\\s*<div class="subtle invitee-phone"[^>]*>Phone: 255700000321<\\/div>/',
             $html
         );
     }
