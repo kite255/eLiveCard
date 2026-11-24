@@ -92,6 +92,7 @@ class WhatsappSmsFallbackTest extends TestCase
         $cardTemplate = CardTemplate::query()->create([
             'event_id' => $event->id,
             'name' => 'Invitation Template',
+            'template_image' => 'tests/template.png',
             'status' => CardTemplate::STATUS_ACTIVE,
         ]);
 
