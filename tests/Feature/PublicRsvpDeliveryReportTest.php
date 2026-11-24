@@ -258,10 +258,10 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $html = $response->getContent();
 
         $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading"'));
-        $this->assertSame(2, substr_count($html, 'aria-label="WhatsApp"'));
-        $this->assertSame(2, substr_count($html, 'viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title>'));
+        $this->assertSame(1, substr_count($html, 'aria-label="WhatsApp"'));
+        $this->assertSame(1, substr_count($html, 'viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title>'));
         $this->assertStringNotContainsString('M8 24l2-5a11', $html);
-        $this->assertSame(2, substr_count($html, 'aria-label="SMS"'));
+        $this->assertSame(1, substr_count($html, 'aria-label="SMS"'));
         $response->assertSee('CHANNEL')
             ->assertSee('Submitted')
             ->assertSee('Not Sent')
@@ -284,11 +284,11 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
-            ->assertSee('Compact invitee RSVP, channel, reply and response time report')
+            ->assertSee('Compact invitee RSVP, delivery and reply report')
             ->assertSee('WhatsApp')
             ->assertSee('SMS')
-            ->assertSee('RSVP Time')
-            ->assertSee('mobile-rsvp-card')
+            ->assertSee('RSVP ')
+            ->assertSee('mobile-compact-table')
             ->assertDontSee('<summary>Details</summary>', false)
             ->assertSee('Mobile reply is visible in its own column.')
             ->assertSee('Reply');
@@ -356,9 +356,9 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
-            ->assertSee('class="mobile-rsvp-cards"', false)
-            ->assertSee('class="mobile-card-channels"', false)
-            ->assertSee('class="mobile-channel-time"', false)
+            ->assertSee('class="mobile-rsvp-cards mobile-rsvp-columns"', false)
+            ->assertSee('class="mobile-compact-table"', false)
+            ->assertSee('class="mobile-compact-message"', false)
             ->assertSee('Submitted')
             ->assertSee('07 Nov 2026')
             ->assertSee('Nitahudhuria')
