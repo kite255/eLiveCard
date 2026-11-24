@@ -34,7 +34,7 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
         public string $languageCode = MessageTemplate::LANGUAGE_ENGLISH,
         public ?int $messageTemplateId = null,
     ) {
-        $this->onQueue(self::QUEUE);
+        $this->onQueue((string) config('messaging.whatsapp_queue', self::QUEUE));
     }
 
     public function uniqueId(): string
