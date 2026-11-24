@@ -390,6 +390,30 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('overflow-x: auto;', false);
     }
 
+    public function test_mobile_guest_column_is_narrow_and_whatsapp_sms_share_one_channel_column(): void
+    {
+        $event = $this->reportEvent('Mobile Channel Layout');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Channel Layout Guest',
+            'phone' => '255700009999',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertSee('class="guest-count-column"', false)
+            ->assertSee('class="mobile-combined-channel-heading"', false)
+            ->assertSee('class="mobile-combined-channel"', false)
+            ->assertSee('class="desktop-whatsapp-channel"', false)
+            ->assertSee('class="desktop-sms-channel"', false)
+            ->assertSee('class="mobile-channel-name">WhatsApp</span>', false)
+            ->assertSee('class="mobile-channel-name">SMS</span>', false)
+            ->assertSee('width: 54px;', false)
+            ->assertSee('mobile-combined-channel .delivery-status', false);
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
