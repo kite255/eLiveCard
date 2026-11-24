@@ -458,14 +458,29 @@ class InviteeInvitationService
     {
         $inFlight = ['queued', 'pending', 'sending', 'processing'];
 
-        return ($invitee->last_message_channel === 'sms' && in_array($invitee->last_message_status, $inFlight, true))
-            || in_array($invitee->invitation_sms_status, ['queued', 'sending', 'processing'], true)
-            || (Schema::hasTable('sms_logs') && DB::table('sms_logs')
+        // Only the latest invitation receipt for the current phone can block
+        // another send. Historical pending logs may remain after a later SMS
+        // was successfully submitted or delivered.
+        $latest = Schema::hasTable('sms_logs')
+            ? DB::table('sms_logs')
                 ->where('event_id', $invitee->event_id)
                 ->where('invitee_id', $invitee->id)
                 ->whereIn('sms_type', ['invitation', 'invitation_card'])
-                ->whereIn('status', $inFlight)
-                ->exists());
+                ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                    $query->where('id', '>', (int) $invitee->invitation_sms_reset_log_id))
+                ->orderByDesc('id')
+                ->first(['status'])
+            : null;
+
+        if ($latest !== null) {
+            return in_array((string) $latest->status, $inFlight, true);
+        }
+
+        // The send may be queued before an SMS log is created; preserve this
+        // protection if there is no provider receipt yet.
+        return ($invitee->last_message_channel === 'sms'
+                && in_array((string) $invitee->last_message_status, $inFlight, true))
+            || in_array((string) $invitee->invitation_sms_status, ['queued', 'sending', 'processing'], true);
     }
 
     private function recordResend(Invitee $invitee, string $channel, string $reason): void
