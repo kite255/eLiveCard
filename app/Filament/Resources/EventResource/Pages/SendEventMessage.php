@@ -369,7 +369,6 @@ class SendEventMessage extends Page
             ->whereIn('id', $failedLogs->keys()->all())
             ->whereIn('card_status', [
                 \App\Models\Invitee::CARD_STATUS_ACTIVE,
-                \App\Models\Invitee::CARD_STATUS_USED,
             ])
             ->whereDoesntHave('smsLogs', function (Builder $query): void {
                 $query->where('event_id', $this->record->id)
@@ -412,6 +411,7 @@ class SendEventMessage extends Page
                 continue;
             }
 
+            $dispatched = false;
             try {
                 // Re-evaluate the latest WhatsApp status before dispatch.
                 $latest = MessageLog::query()
@@ -436,11 +436,14 @@ class SendEventMessage extends Page
                     eventId: $this->record->id,
                     inviteeId: $invitee->id,
                 );
+                $dispatched = true;
                 $queued++;
             } finally {
-                // Keep the claim for 10 minutes so repeated clicks cannot
-                // enqueue the same recipient again before the worker starts.
-                // An expired claim still requires explicit admin action.
+                // Only retain the temporary claim after a successful dispatch.
+                // Failed or skipped attempts must remain recoverable.
+                if (! $dispatched) {
+                    $claim->release();
+                }
             }
         }
 
