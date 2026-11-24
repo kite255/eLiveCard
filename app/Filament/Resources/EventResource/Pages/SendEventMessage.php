@@ -5,6 +5,7 @@ namespace App\Filament\Resources\EventResource\Pages;
 use App\Filament\Resources\EventResource;
 use App\Jobs\GenerateInviteeCardJob;
 use App\Jobs\SendInvitationSmsJob;
+use App\Jobs\SendEventSmsJob;
 use App\Jobs\SendInvitationWhatsAppJob;
 use App\Models\MessageTemplate;
 use App\Services\SmsService;
@@ -100,7 +101,7 @@ class SendEventMessage extends Page
                 ->color('primary')
                 ->requiresConfirmation()
                 ->modalHeading('Send RSVP Reminder SMS')
-                ->modalDescription('This will send reminder SMS to invitees whose RSVP is still pending.')
+                ->modalDescription('Queue reminder SMS for invitees whose RSVP is still pending.')
                 ->modalSubmitActionLabel('Send Reminder')
                 ->disabled(fn (): bool => $this->pendingRsvpCount === 0)
                 ->action(fn () => $this->sendRsvpReminderSms()),
@@ -111,7 +112,7 @@ class SendEventMessage extends Page
                 ->color('primary')
                 ->requiresConfirmation()
                 ->modalHeading('Send Event Day Reminder SMS')
-                ->modalDescription('This will send final reminder SMS to invitees who are attending.')
+                ->modalDescription('Queue final reminder SMS for invitees who are attending.')
                 ->modalSubmitActionLabel('Send Final Reminder')
                 ->disabled(fn (): bool => $this->attendingCount === 0)
                 ->action(fn () => $this->sendEventDayReminderSms()),
@@ -122,7 +123,7 @@ class SendEventMessage extends Page
                 ->color('primary')
                 ->requiresConfirmation()
                 ->modalHeading('Send Thank You SMS')
-                ->modalDescription('This will send thank-you SMS to checked-in invitees only.')
+                ->modalDescription('Queue thank-you SMS for checked-in invitees only.')
                 ->modalSubmitActionLabel('Send Thank You')
                 ->disabled(fn (): bool => $this->checkedInInviteesCount === 0)
                 ->action(fn () => $this->sendThankYouSms()),
@@ -380,20 +381,13 @@ class SendEventMessage extends Page
         $this->notifyBulkSmsResult('Thank you SMS completed', $result);
     }
 
+    /**
+     * Queue one job per invitee so bulk sends do not block the admin request.
+     * Actual submitted/delivered totals belong to SMS logs, not this response.
+     */
     protected function sendBulkSms($invitees, string $template, string $smsType, array $duplicateTypes = []): array
     {
-        if ($invitees->isEmpty()) {
-            return [
-                'sent' => 0,
-                'failed' => 0,
-                'skipped' => 0,
-                'message' => 'No eligible invitees found.',
-            ];
-        }
-
-        $smsService = app(SmsService::class);
-        $sent = 0;
-        $failed = 0;
+        $queued = 0;
         $skipped = 0;
 
         foreach ($invitees as $invitee) {
@@ -402,49 +396,27 @@ class SendEventMessage extends Page
                 continue;
             }
 
-            try {
-                $message = EliveMessagePlaceholders::render($template, $invitee);
-
-                $result = $smsService->sendCustomMessage(
-                    invitee: $invitee,
-                    message: $message,
-                    type: $smsType,
-                );
-
-                if ((bool) ($result['success'] ?? false)) {
-                    $sent++;
-                } else {
-                    $failed++;
-                }
-            } catch (Throwable $exception) {
-                Log::error('Bulk SMS failed from Message Center', [
-                    'event_id' => $this->record->id,
-                    'invitee_id' => $invitee->id,
-                    'sms_type' => $smsType,
-                    'error' => $exception->getMessage(),
-                ]);
-
-                $failed++;
-            }
+            SendEventSmsJob::dispatch(
+                eventId: $this->record->id,
+                inviteeId: $invitee->id,
+                message: $template,
+                smsType: $smsType,
+            );
+            $queued++;
         }
 
         return [
-            'sent' => $sent,
-            'failed' => $failed,
+            'queued' => $queued,
             'skipped' => $skipped,
-            'message' => null,
         ];
     }
 
     protected function notifyBulkSmsResult(string $title, array $result): void
     {
-        $message = $result['message']
-            ?: ($result['sent'] . ' sent/logged. ' . $result['failed'] . ' failed. ' . $result['skipped'] . ' skipped.');
-
         Notification::make()
-            ->title($title)
-            ->body($message)
-            ->color(($result['failed'] ?? 0) > 0 ? 'warning' : 'success')
+            ->title(str_replace('completed', 'queued', $title))
+            ->body($result['queued'].' SMS job(s) queued; '.$result['skipped'].' skipped. Delivery is not yet confirmed.')
+            ->color($result['queued'] > 0 ? 'success' : 'warning')
             ->send();
     }
 
