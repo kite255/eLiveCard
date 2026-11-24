@@ -1207,6 +1207,14 @@ class SmsService
             $update['failed_at'] = null;
         }
 
+        // Provider responses can use +255, 255, 0-prefixed numbers, spaces,
+        // or hyphens. Match by the actual provider shoot ID first, and use a
+        // normalized phone only to disambiguate when a shoot ID has multiple
+        // recipients. Do not silently fail to update a unique receipt.
+        $mobile = $report['mobile'] ?? $report['phone'] ?? $report['recipient'] ?? null;
+        $normalizedMobile = $this->normalizeDeliveryReportPhone($mobile);
+        $terminalStatuses = ['delivered', 'read', 'failed', 'undelivered', 'expired', 'rejected'];
+
         foreach (['message_logs', 'sms_logs'] as $table) {
             if (! Schema::hasTable($table)) {
                 continue;
@@ -1215,45 +1223,93 @@ class SmsService
             $columns = Schema::getColumnListing($table);
             $safeUpdate = Arr::only($update, $columns);
 
-            if ($safeUpdate === []) {
+            if ($safeUpdate === [] || ! in_array('id', $columns, true)) {
                 continue;
             }
 
-            $query = DB::table($table)
-                ->where(function ($query) use ($columns, $shootId) {
-                    if (in_array('provider_message_id', $columns, true)) {
-                        $query->orWhere('provider_message_id', $shootId);
+            $referenceColumns = array_values(array_intersect(
+                ['provider_message_id', 'message_id', 'shoot_id'],
+                $columns,
+            ));
+
+            if ($referenceColumns === []) {
+                continue;
+            }
+
+            $matching = DB::table($table)
+                ->where(function ($query) use ($referenceColumns, $shootId): void {
+                    foreach ($referenceColumns as $column) {
+                        $query->orWhere($column, $shootId);
+                    }
+                })
+                ->get(array_values(array_unique(array_merge(
+                    ['id', 'status'],
+                    array_intersect(['phone', 'recipient', 'to'], $columns),
+                ))));
+
+            if ($matching->isEmpty()) {
+                Log::warning('SMS delivery receipt has no matching local record', [
+                    'table' => $table,
+                    'shoot_id' => $shootId,
+                ]);
+                continue;
+            }
+
+            $targets = $matching;
+            if ($normalizedMobile !== '' && $matching->count() > 1) {
+                $targets = $matching->filter(function ($row) use ($normalizedMobile): bool {
+                    foreach (['phone', 'recipient', 'to'] as $column) {
+                        if (isset($row->{$column})
+                            && $this->normalizeDeliveryReportPhone($row->{$column}) === $normalizedMobile) {
+                            return true;
+                        }
                     }
 
-                    if (in_array('message_id', $columns, true)) {
-                        $query->orWhere('message_id', $shootId);
-                    }
-
-                    if (in_array('shoot_id', $columns, true)) {
-                        $query->orWhere('shoot_id', $shootId);
-                    }
-                });
-
-            $mobile = $report['mobile'] ?? $report['phone'] ?? $report['recipient'] ?? null;
-
-            if (filled($mobile)) {
-                $query->where(function ($query) use ($columns, $mobile) {
-                    if (in_array('phone', $columns, true)) {
-                        $query->orWhere('phone', $mobile);
-                    }
-
-                    if (in_array('recipient', $columns, true)) {
-                        $query->orWhere('recipient', $mobile);
-                    }
-
-                    if (in_array('to', $columns, true)) {
-                        $query->orWhere('to', $mobile);
-                    }
+                    return false;
                 });
             }
 
-            $query->update($safeUpdate);
+            if ($targets->isEmpty()) {
+                Log::warning('SMS receipt mobile does not match multi-recipient shoot ID', [
+                    'table' => $table,
+                    'shoot_id' => $shootId,
+                ]);
+                continue;
+            }
+
+            foreach ($targets as $target) {
+                // A delayed submitted/unknown response must never erase a
+                // previously confirmed delivered or failed status.
+                if (in_array((string) $target->status, $terminalStatuses, true)
+                    && ! in_array($status, $terminalStatuses, true)) {
+                    continue;
+                }
+
+                DB::table($table)
+                    ->where('id', $target->id)
+                    ->when(
+                        ! in_array($status, $terminalStatuses, true),
+                        fn ($query) => $query->whereNotIn('status', $terminalStatuses),
+                    )
+                    ->update($safeUpdate);
+            }
         }
+    }
+
+    protected function normalizeDeliveryReportPhone(mixed $phone): string
+    {
+        $digits = preg_replace('/\\D+/', '', (string) $phone) ?? '';
+
+        // Tanzania domestic and international forms: 07..., 2557..., +2557...
+        if (strlen($digits) === 10 && str_starts_with($digits, '0')) {
+            return '255'.substr($digits, 1);
+        }
+
+        if (strlen($digits) === 9) {
+            return '255'.$digits;
+        }
+
+        return $digits;
     }
 
     protected function normalizeProviderDeliveryStatus(?string $providerStatus, ?string $providerStatusCode = null): string
