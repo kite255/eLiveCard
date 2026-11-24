@@ -1072,53 +1072,6 @@ class InviteesRelationManager extends RelationManager
                             ->send();
                     }),
 
-                Tables\Actions\Action::make('shared_phone_numbers')
-                    ->label('Shared Phone Numbers')
-                    ->icon('heroicon-o-users')
-                    ->color('gray')
-                    ->visible(fn (): bool => $this->canViewReportsForOwner())
-                    ->modalHeading('Shared Phone Numbers')
-                    ->modalDescription('Find contacts shared by multiple invitees in this event. Each invitee keeps an individual invitation, QR code and RSVP.')
-                    ->modalWidth('4xl')
-                    ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Close')
-                    ->extraModalFooterActions([
-                        Tables\Actions\Action::make('download_shared_phone_csv')
-                            ->label('Download CSV')
-                            ->icon('heroicon-o-arrow-down-tray')
-                            ->color('primary')
-                            ->action(fn () => $this->downloadSharedPhoneNumbers()),
-                    ])
-                    ->form([
-                        Forms\Components\TextInput::make('shared_phone_search')
-                            ->label('Search by name or phone')
-                            ->placeholder('Enter an invitee name or phone number')
-                            ->prefixIcon('heroicon-o-magnifying-glass')
-                            ->live(debounce: 350),
-                        Forms\Components\Select::make('shared_phone_minimum')
-                            ->label('Number of invitees')
-                            ->options([2 => '2 or more', 3 => '3 or more', 4 => '4 or more'])
-                            ->default(2)
-                            ->live(),
-                        Forms\Components\Select::make('shared_phone_sort')
-                            ->label('Sort by')
-                            ->options([
-                                'count_desc' => 'Most invitees first',
-                                'count_asc' => 'Fewest invitees first',
-                                'phone_asc' => 'Phone number (A–Z)',
-                                'phone_desc' => 'Phone number (Z–A)',
-                            ])
-                            ->default('count_desc')
-                            ->live(),
-                        Forms\Components\Placeholder::make('shared_phone_summary')
-                            ->label('Matching shared contacts')
-                            ->content(fn (Forms\Get $get): \Illuminate\Support\HtmlString => $this->sharedPhoneReportHtml(
-                                (string) ($get('shared_phone_search') ?? ''),
-                                (int) ($get('shared_phone_minimum') ?? 2),
-                                (string) ($get('shared_phone_sort') ?? 'count_desc'),
-                            )),
-                    ]),
-
                 Tables\Actions\Action::make('export_invitees')
                     ->label('Export Invitees')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
@@ -1224,35 +1177,6 @@ class InviteesRelationManager extends RelationManager
                             );
                         }),
 
-                    Tables\Actions\Action::make('retry_failed_whatsapp')
-                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Retry Failed WhatsApp')
-                        ->icon('heroicon-o-arrow-path')
-                        ->color('gray')
-                        ->modalHeading('Retry Failed WhatsApp Messages')
-                        ->modalDescription('Retry only failed attempts for the WhatsApp template configured in Event Settings. Accepted messages will not be resent.')
-                        ->modalSubmitActionLabel('Retry Failed')
-                        ->requiresConfirmation()
-                        ->action(function (): void {
-                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
-                            $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
-
-                            if (! $template || $template->type !== MessageTemplate::TYPE_INVITATION) {
-                                $this->brandedNotification()->title('WhatsApp invitation template not configured')
-                                    ->body('Configure an active WhatsApp template in Event Settings.')
-                                    ->danger()->send();
-                                return;
-                            }
-
-                            $this->sendEventMessagesFromToolbar(
-                                channel: 'whatsapp',
-                                templateType: $template->type,
-                                recipientScope: 'retry_failed',
-                                actionTitle: 'Failed WhatsApp messages retried',
-                                messageTemplateId: $template->id,
-                            );
-                        }),
-
                     Tables\Actions\Action::make('send_reminder')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && ! (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
                         ->label('Send Reminder')
@@ -1353,6 +1277,82 @@ class InviteesRelationManager extends RelationManager
                         ])),
 
                 Tables\Actions\ActionGroup::make([
+                Tables\Actions\Action::make('shared_phone_numbers')
+                    ->label('Shared Phone Numbers')
+                    ->icon('heroicon-o-users')
+                    ->color('gray')
+                    ->visible(fn (): bool => $this->canViewReportsForOwner())
+                    ->modalHeading('Shared Phone Numbers')
+                    ->modalDescription('Find contacts shared by multiple invitees in this event. Each invitee keeps an individual invitation, QR code and RSVP.')
+                    ->modalWidth('4xl')
+                    ->modalSubmitAction(false)
+                    ->modalCancelActionLabel('Close')
+                    ->extraModalFooterActions([
+                        Tables\Actions\Action::make('download_shared_phone_csv')
+                            ->label('Download CSV')
+                            ->icon('heroicon-o-arrow-down-tray')
+                            ->color('primary')
+                            ->action(fn () => $this->downloadSharedPhoneNumbers()),
+                    ])
+                    ->form([
+                        Forms\Components\TextInput::make('shared_phone_search')
+                            ->label('Search by name or phone')
+                            ->placeholder('Enter an invitee name or phone number')
+                            ->prefixIcon('heroicon-o-magnifying-glass')
+                            ->live(debounce: 350),
+                        Forms\Components\Select::make('shared_phone_minimum')
+                            ->label('Number of invitees')
+                            ->options([2 => '2 or more', 3 => '3 or more', 4 => '4 or more'])
+                            ->default(2)
+                            ->live(),
+                        Forms\Components\Select::make('shared_phone_sort')
+                            ->label('Sort by')
+                            ->options([
+                                'count_desc' => 'Most invitees first',
+                                'count_asc' => 'Fewest invitees first',
+                                'phone_asc' => 'Phone number (A–Z)',
+                                'phone_desc' => 'Phone number (Z–A)',
+                            ])
+                            ->default('count_desc')
+                            ->live(),
+                        Forms\Components\Placeholder::make('shared_phone_summary')
+                            ->label('Matching shared contacts')
+                            ->content(fn (Forms\Get $get): \Illuminate\Support\HtmlString => $this->sharedPhoneReportHtml(
+                                (string) ($get('shared_phone_search') ?? ''),
+                                (int) ($get('shared_phone_minimum') ?? 2),
+                                (string) ($get('shared_phone_sort') ?? 'count_desc'),
+                            )),
+                    ]),
+
+                    Tables\Actions\Action::make('retry_failed_whatsapp')
+                        ->visible(fn (): bool => $this->canSendMessagesForOwner())
+                        ->label('Retry Failed WhatsApp')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('gray')
+                        ->modalHeading('Retry Failed WhatsApp Messages')
+                        ->modalDescription('Retry only failed attempts for the WhatsApp template configured in Event Settings. Accepted messages will not be resent.')
+                        ->modalSubmitActionLabel('Retry Failed')
+                        ->requiresConfirmation()
+                        ->action(function (): void {
+                            $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+                            $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+
+                            if (! $template || $template->type !== MessageTemplate::TYPE_INVITATION) {
+                                $this->brandedNotification()->title('WhatsApp invitation template not configured')
+                                    ->body('Configure an active WhatsApp template in Event Settings.')
+                                    ->danger()->send();
+                                return;
+                            }
+
+                            $this->sendEventMessagesFromToolbar(
+                                channel: 'whatsapp',
+                                templateType: $template->type,
+                                recipientScope: 'retry_failed',
+                                actionTitle: 'Failed WhatsApp messages retried',
+                                messageTemplateId: $template->id,
+                            );
+                        }),
+
                     Tables\Actions\Action::make('export_rsvp')
                     ->label('Export RSVP')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
@@ -1417,7 +1417,7 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                 ])
-                    ->label('Reports & Tools')
+                    ->label('More Actions')
                     ->visible(fn (): bool => $this->canViewReportsForOwner() || $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-ellipsis-horizontal')
                     ->button()

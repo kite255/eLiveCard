@@ -20,5 +20,16 @@ class SharedPhoneReportViewStructureTest extends TestCase
         $this->assertStringContainsString("->streamDownload(", $file);
         $this->assertStringContainsString("e(\$member['name'])", $file);
         $this->assertStringContainsString("shared_phone_search", $file);
+        // Both review tools remain accessible in More Actions, not the primary toolbar.
+        $more = strpos($file, "Action::make('shared_phone_numbers')");
+        $retry = strpos($file, "Action::make('retry_failed_whatsapp')");
+        $reports = strpos($file, "Action::make('export_rsvp')");
+        $this->assertNotFalse($more);
+        $this->assertNotFalse($retry);
+        $this->assertNotFalse($reports);
+        $this->assertLessThan($retry, $more);
+        $this->assertLessThan($reports, $retry);
+        $this->assertStringContainsString("->label('More Actions')", $file);
+
     }
 }
