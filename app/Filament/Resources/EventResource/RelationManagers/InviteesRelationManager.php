@@ -3211,25 +3211,18 @@ class InviteesRelationManager extends RelationManager
                 && $record->card_status === Invitee::CARD_STATUS_ACTIVE
                 && filled($record->phone) && filled($record->short_code)
                 && $this->hasCurrentInvitationSubmission($record, $channel))
-            ->modalHeading(fn (Invitee $record): string => 'Resend '.$label.' invitation to '.$record->name)
-            ->modalDescription('Sends another copy of the invitation immediately. The invitee may receive it twice and your account may be charged again.')
-            ->modalSubmitActionLabel('Resend '.$label.' Now')
             ->requiresConfirmation()
-            ->form([
-                Forms\Components\Placeholder::make('resend_preview')
-                    ->label('Invitation Preview')
-                    ->content(fn (Invitee $record): string => app(\App\Services\InviteeInvitationService::class)->preview($record, $channel)),
-                Forms\Components\Textarea::make('reason')
-                    ->label('Reason for resending')
-                    ->minLength(10)
-                    ->maxLength(500)
-                    ->required(),
-                Forms\Components\Checkbox::make('acknowledge_duplicate')
-                    ->label('I understand the invitee may receive another copy and an additional charge may apply.')
-                    ->accepted()
-                    ->required(),
-            ])
-            ->action(fn (Invitee $record, array $data) => $this->processInviteeInvitation($record, $channel, $data['reason']));
+            ->modalIcon('heroicon-o-paper-airplane')
+            ->modalIconColor('warning')
+            ->modalHeading('Send SMS Invitation Again?')
+            ->modalDescription(fn (Invitee $record): string => 'Send another SMS invitation to '.$record->name.'? They may receive a duplicate message and an additional SMS charge may apply.')
+            ->modalSubmitActionLabel('Yes, Resend SMS')
+            ->modalCancelActionLabel('Keep Existing Invitation')
+            ->action(fn (Invitee $record) => $this->processInviteeInvitation(
+                $record,
+                $channel,
+                'Manual SMS invitation resend from invitee actions.',
+            ));
     }
 
     protected function processInviteeInvitation(Invitee $record, string $channel, ?string $resendReason = null): void
