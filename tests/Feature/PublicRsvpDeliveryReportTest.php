@@ -787,9 +787,47 @@ class PublicRsvpDeliveryReportTest extends TestCase
         );
     }
 
-    public function test_client_reply_is_html_escaped_and_phone_stays_hidden_by_default(): void
+    public function test_new_shared_rsvp_link_shows_phone_by_default(): void
+    {
+        $event = $this->reportEvent('Default Phone Visible Report');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Default Phone Guest',
+            'phone' => '255700009876',
+        ]);
+
+        // No existing client link: show invitee numbers by default.
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertSee('Default Phone Guest')
+            ->assertSee($invitee->phone);
+
+        $this->assertTrue((bool) $event->fresh()->rsvp_share_show_phone);
+    }
+
+    public function test_existing_hidden_shared_link_keeps_phone_hidden(): void
+    {
+        $event = $this->reportEvent('Existing Private Client Report');
+        $event->generateRsvpShareLink(showPhone: false);
+
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Existing Hidden Phone Guest',
+            'phone' => '255700009877',
+        ]);
+
+        $this->get($event->fresh()->rsvp_share_url)
+            ->assertOk()
+            ->assertSee('Existing Hidden Phone Guest')
+            ->assertDontSee($invitee->phone);
+    }
+
+    public function test_client_reply_is_html_escaped_and_phone_stays_hidden_when_explicitly_disabled(): void
     {
         $event = $this->reportEvent('Private Client Report');
+        $event->forceFill(['rsvp_share_show_phone' => false])->save();
         $invitee = Invitee::query()->create([
             'event_id' => $event->id,
             'card_type_id' => $this->reportCardType($event)->id,
