@@ -154,7 +154,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Delivery report unavailable')
             ->assertDontSee('Private provider error')
             ->assertDontSee('private-test-reference');
-        $this->assertSame(2, substr_count($unconfirmed->getContent(), 'Delivery report unavailable'));
+        $this->assertSame(3, substr_count($unconfirmed->getContent(), 'Delivery report unavailable'));
 
         config([
             'services.sms.base_url' => 'https://sms.example.test',
@@ -257,7 +257,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $html = $response->getContent();
 
-        $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading"'));
+        $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading desktop-channel-heading"'));
         $this->assertSame(1, substr_count($html, 'aria-label="WhatsApp"'));
         $this->assertSame(1, substr_count($html, 'viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title>'));
         $this->assertStringNotContainsString('M8 24l2-5a11', $html);
@@ -388,6 +388,30 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('255700009123')
             ->assertSee('.mobile-rsvp-cards { display: none; }', false)
             ->assertSee('overflow-x: auto;', false);
+    }
+
+    public function test_mobile_guest_column_is_narrow_and_whatsapp_sms_share_one_channel_column(): void
+    {
+        $event = $this->reportEvent('Mobile Channel Layout');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Channel Layout Guest',
+            'phone' => '255700009999',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertSee('class="guest-count-column"', false)
+            ->assertSee('class="mobile-combined-channel-heading"', false)
+            ->assertSee('class="mobile-combined-channel"', false)
+            ->assertSee('class="desktop-whatsapp-channel"', false)
+            ->assertSee('class="desktop-sms-channel"', false)
+            ->assertSee('class="mobile-channel-name">WhatsApp</span>', false)
+            ->assertSee('class="mobile-channel-name">SMS</span>', false)
+            ->assertSee('width: 54px;', false)
+            ->assertSee('mobile-combined-channel .delivery-status', false);
     }
 
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
