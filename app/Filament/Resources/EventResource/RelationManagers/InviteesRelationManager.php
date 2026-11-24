@@ -3180,6 +3180,29 @@ class InviteesRelationManager extends RelationManager
     {
         $label = $channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
 
+        if ($channel === 'whatsapp') {
+            return Tables\Actions\Action::make('force_resend_whatsapp_invitation')
+                ->label('Resend WhatsApp Invitation')
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
+                    && $record->card_status === Invitee::CARD_STATUS_ACTIVE
+                    && filled($record->phone) && filled($record->short_code)
+                    && $this->hasCurrentInvitationSubmission($record, $channel))
+                ->requiresConfirmation()
+                ->modalIcon('heroicon-o-paper-airplane')
+                ->modalIconColor('warning')
+                ->modalHeading('Send Invitation Again?')
+                ->modalDescription(fn (Invitee $record): string => 'Send a fresh WhatsApp invitation to '.$record->name.'? This sends another copy and may incur an additional messaging charge.')
+                ->modalSubmitActionLabel('Yes, Resend Invitation')
+                ->modalCancelActionLabel('Keep Existing Invitation')
+                ->action(fn (Invitee $record) => $this->processInviteeInvitation(
+                    $record,
+                    $channel,
+                    'Manual WhatsApp invitation resend from invitee actions.',
+                ));
+        }
+
         return Tables\Actions\Action::make('force_resend_'.$channel.'_invitation')
             ->label('Resend '.$label.' Invitation')
             ->icon('heroicon-o-arrow-path')
