@@ -282,6 +282,8 @@ class InviteeInvitationService
                         ->where('channel', 'whatsapp')
                         ->where('type', MessageTemplate::TYPE_INVITATION)
                         ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+                        ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                            $query->where('id', '>', (int) $invitee->invitation_message_reset_log_id))
                         ->exists()) {
                         return $this->result('skipped', 'This WhatsApp invitation was already submitted.');
                     }
