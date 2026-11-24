@@ -28,6 +28,64 @@ php artisan queue:work database --queue=communications,default --sleep=3 --tries
 
 Both services must deploy the same application commit, share the same database, and use shared public storage (or the same object-storage disk). The communications worker also listens to `default` so existing legacy jobs continue to run.
 
+
+## Production message delivery and scheduling
+
+Invitation SMS and WhatsApp jobs, and Message Center bulk reminder/thank-you SMS
+jobs, must be processed by a **persistent queue worker**. `schedule:run` is a
+separate service for scheduled reminders and event-completion activities; it
+does **not** replace the queue worker.
+
+Safe initial Coolify deployment (one communications worker, shared database):
+
+```bash
+php artisan queue:work database --queue=communications,default --sleep=1 --tries=3 --timeout=120
+```
+
+Run exactly one Laravel scheduler from Coolify or the host every minute:
+
+```cron
+* * * * * 
+```
+
+```bash
+cd /var/www/html && php artisan schedule:run
+```
+
+Do not launch a second scheduler if another host/container is already running one.
+Use `php artisan schedule:list` to inspect the registered schedule; this does
+not establish whether it is running. Ensure Coolify restarts the worker on
+failure and on deployment. Do **not** place `queue:work` in a one-shot task.
+
+Database queue configuration: `QUEUE_CONNECTION=database` and
+`DB_QUEUE_RETRY_AFTER=180` (must exceed `--timeout=120`).
+If you change the environment, rebuild/reload cached configuration and
+restart workers so the values take effect.
+
+The new Message Center event-SMS jobs default to the existing
+`communications` queue. To move **those jobs** onto a dedicated SMS queue,
+set `SMS_QUEUE=sms` and start a separate, persistent `sms` worker before
+switching the setting. Invitation SMS jobs remain on `communications`
+until explicitly migrated; do not retire that worker. WhatsApp invitation
+jobs also currently use `communications`, regardless of the default
+`WHATSAPP_QUEUE` setting.
+
+Operational verification (read-only):
+
+```bash
+php artisan tinker --execute='dump(DB::table("jobs")->selectRaw("queue, COUNT(*) as total")->groupBy("queue")->pluck("total", "queue")->toArray());'
+php artisan queue:failed
+php artisan schedule:list
+```
+
+**Live-send warning:** Enabling the scheduler can immediately process due
+automatic thank-you SMS for completed events. Check active event settings and
+recipient counts first. Queuing an SMS is not confirmation of delivery.
+The queue only tracks job execution; SMS delivery reports are a separate
+provider-dependent process. Provider timeouts are ambiguous, so queued manual
+event SMS jobs intentionally do not auto-retry; review the SMS logs before
+resending.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
