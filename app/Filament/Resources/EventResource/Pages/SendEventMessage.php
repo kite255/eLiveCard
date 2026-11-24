@@ -320,6 +320,7 @@ class SendEventMessage extends Page
                     inviteeId: $invitee->id,
                     languageCode: $languageCode,
                     messageTemplateId: $template->id,
+                    phoneGeneration: (int) $invitee->invitation_phone_generation,
                 )->afterCommit();
             }
         });
