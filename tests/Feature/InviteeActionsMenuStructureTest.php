@@ -17,7 +17,7 @@ class InviteeActionsMenuStructureTest extends TestCase
         $this->assertSame(2, substr_count($menu, 'Tables\\Actions\\ActionGroup::make(['));
         $this->assertStringContainsString("->label('Manage invitee')", $menu);
         $this->assertStringContainsString("->label('More invitee actions')", $menu);
-        $this->assertStringContainsString('->dropdownWidth(\\\\Filament\\\\Support\\\\Enums\\\\MaxWidth::Medium)', $menu);
+        $this->assertStringContainsString('MaxWidth::Medium', $menu);
         $this->assertStringContainsString("->dropdownMaxHeight('min(70dvh, 32rem)')", $menu);
         $this->assertStringContainsString("->label('Delivery Status')", $source);
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
