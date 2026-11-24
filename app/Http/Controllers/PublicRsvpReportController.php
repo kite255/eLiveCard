@@ -11,7 +11,9 @@ use Symfony\Component\HttpFoundation\Response;
 
 class PublicRsvpReportController extends Controller
 {
-    private const PER_PAGE = 50;
+    private const DEFAULT_PER_PAGE = 50;
+
+    private const ALLOWED_PER_PAGE = [25, 50, 100];
 
     public function show(Request $request, string $token): View
     {
@@ -78,6 +80,7 @@ class PublicRsvpReportController extends Controller
             ],
             'sms_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,failed,logged_only,unknown'],
             'whatsapp_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,read,failed,logged_only,unknown'],
+            'per_page' => ['nullable', 'integer', 'in:25,50,100'],
         ]);
 
         $search = trim((string) ($validated['search'] ?? ''));
@@ -85,6 +88,7 @@ class PublicRsvpReportController extends Controller
         $smsDelivery = trim((string) ($validated['sms_delivery'] ?? ''));
         $whatsappDelivery = trim((string) ($validated['whatsapp_delivery'] ?? ''));
         $showPhoneNumbers = (bool) $event->rsvp_share_show_phone;
+        $perPage = (int) ($validated['per_page'] ?? self::DEFAULT_PER_PAGE);
 
         $invitees = $event->invitees()
             ->with('cardType')
@@ -152,7 +156,7 @@ class PublicRsvpReportController extends Controller
                 END
             ")
             ->orderBy('name')
-            ->paginate(self::PER_PAGE)
+            ->paginate($perPage)
             ->withQueryString();
 
         // Retrieve only invitation delivery records for the invitees on this page.

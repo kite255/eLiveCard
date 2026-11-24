@@ -352,6 +352,44 @@
             gap: 8px;
         }
 
+        .pagination-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .pagination-size {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted);
+        }
+        .pagination-size select {
+            min-height: 34px;
+            padding: 6px 10px;
+            font: inherit;
+            color: var(--text);
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .pagination-link.is-active {
+            background: var(--elive-blue);
+            color: white;
+            border-color: var(--elive-blue);
+        }
+        .pagination-ellipsis {
+            padding: 0 2px;
+            color: var(--muted);
+        }
+        @media (max-width: 650px) {
+            .pagination-bar { justify-content: center; }
+            .pagination-size { justify-content: center; width: 100%; }
+        }
+
         .pagination-link,
         .pagination-current {
             display: inline-flex;
@@ -1114,28 +1152,73 @@
                 @endforelse
             </div>
 
-            @if ($invitees->hasPages())
-                <nav class="pagination" aria-label="Invitee report pages">
-                    <div class="pagination-controls">
-                        @if ($invitees->onFirstPage())
-                            <span class="pagination-link is-disabled" aria-disabled="true">Previous</span>
-                        @else
-                            <a class="pagination-link" rel="prev" href="{{ $invitees->previousPageUrl() }}">Previous</a>
-                        @endif
+            <nav class="pagination" aria-label="Invitee report pages">
+                <div class="pagination-bar">
+                    <label class="pagination-size" for="rsvp-per-page">
+                        Show
+                        <select id="rsvp-per-page" aria-label="Invitees per page">
+                            @foreach ([25, 50, 100] as $pageSize)
+                                <option value="{{ $pageSize }}" @selected($invitees->perPage() === $pageSize)>{{ $pageSize }}</option>
+                            @endforeach
+                        </select>
+                        invitees per page
+                    </label>
 
-                        <span class="pagination-current" aria-current="page">Page {{ $invitees->currentPage() }} of {{ $invitees->lastPage() }}</span>
+                    @if ($invitees->hasPages())
+                        <div class="pagination-controls">
+                            @if ($invitees->onFirstPage())
+                                <span class="pagination-link is-disabled" aria-disabled="true">Previous</span>
+                            @else
+                                <a class="pagination-link" rel="prev" href="{{ $invitees->previousPageUrl() }}">Previous</a>
+                            @endif
 
-                        @if ($invitees->hasMorePages())
-                            <a class="pagination-link" rel="next" href="{{ $invitees->nextPageUrl() }}">Next</a>
-                        @else
-                            <span class="pagination-link is-disabled" aria-disabled="true">Next</span>
-                        @endif
-                    </div>
-                    <div class="pagination-summary">
+                            @php
+                                $firstVisiblePage = max(1, min($invitees->currentPage() - 2, $invitees->lastPage() - 4));
+                                $lastVisiblePage = min($invitees->lastPage(), $firstVisiblePage + 4);
+                            @endphp
+
+                            @if ($firstVisiblePage > 1)
+                                <a class="pagination-link" aria-label="Go to page 1" href="{{ $invitees->url(1) }}">1</a>
+                                @if ($firstVisiblePage > 2)
+                                    <span class="pagination-ellipsis" aria-hidden="true">…</span>
+                                @endif
+                            @endif
+
+                            @for ($page = $firstVisiblePage; $page <= $lastVisiblePage; $page++)
+                                @if ($page === $invitees->currentPage())
+                                    <span class="pagination-link is-active" aria-current="page">{{ $page }}</span>
+                                @else
+                                    <a class="pagination-link" aria-label="Go to page {{ $page }}" href="{{ $invitees->url($page) }}">{{ $page }}</a>
+                                @endif
+                            @endfor
+
+                            @if ($lastVisiblePage < $invitees->lastPage())
+                                @if ($lastVisiblePage < $invitees->lastPage() - 1)
+                                    <span class="pagination-ellipsis" aria-hidden="true">…</span>
+                                @endif
+                                <a class="pagination-link" aria-label="Go to page {{ $invitees->lastPage() }}" href="{{ $invitees->url($invitees->lastPage()) }}">{{ $invitees->lastPage() }}</a>
+                            @endif
+
+                            <span class="pagination-current">Page {{ $invitees->currentPage() }} of {{ $invitees->lastPage() }}</span>
+
+                            @if ($invitees->hasMorePages())
+                                <a class="pagination-link" rel="next" href="{{ $invitees->nextPageUrl() }}">Next</a>
+                            @else
+                                <span class="pagination-link is-disabled" aria-disabled="true">Next</span>
+                            @endif
+                        </div>
+                    @else
+                        <span class="pagination-current">Page {{ $invitees->currentPage() }} of {{ $invitees->lastPage() }}</span>
+                    @endif
+                </div>
+                <div class="pagination-summary">
+                    @if ($invitees->total() > 0)
                         Showing {{ $invitees->firstItem() }} to {{ $invitees->lastItem() }} of {{ $invitees->total() }} results
-                    </div>
-                </nav>
-            @endif
+                    @else
+                        No invitees match the selected filters.
+                    @endif
+                </div>
+            </nav>
             </div>
         </section>
     </main>
@@ -1163,6 +1246,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 url.searchParams.set(name, value.trim());
             }
         }
+        const pageSize = results.querySelector('#rsvp-per-page');
+        if (pageSize) url.searchParams.set('per_page', pageSize.value);
         return url;
     };
 
@@ -1233,6 +1318,14 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', (event) => {
         event.preventDefault();
         load(valuesUrl());
+    });
+
+    results.addEventListener('change', (event) => {
+        if (event.target.id !== 'rsvp-per-page') return;
+        const url = valuesUrl();
+        url.searchParams.set('per_page', event.target.value);
+        url.searchParams.delete('page');
+        load(url, 'push');
     });
 
     results.addEventListener('click', (event) => {
