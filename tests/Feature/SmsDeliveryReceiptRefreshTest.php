@@ -54,16 +54,16 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
                 'mobile' => $log->phone,
             ]]])]);
 
-        $service = app(\\App\\Services\\SmsService::class);
+        $service = app(\App\Services\SmsService::class);
         $service->refreshDeliveryReport('test-shoot');
 
         $this->assertSame('pending', $log->fresh()->status);
         $this->assertSame('Buffered', $log->fresh()->provider_status);
         $this->assertNull($log->fresh()->delivered_at);
 
-        $invitee = \\App\\Models\\Invitee::query()->create([
+        $invitee = \App\Models\Invitee::query()->create([
             'event_id' => $log->event_id,
-            'card_type_id' => \\App\\Models\\CardType::query()->create([
+            'card_type_id' => \App\Models\CardType::query()->create([
                 'event_id' => $log->event_id,
                 'name' => 'Single',
                 'allowed_guests' => 1,
@@ -73,12 +73,12 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
         ]);
 
         $log->update(['invitee_id' => $invitee->id]);
-        $this->assertSame('Pending', app(\\App\\Services\\InvitationSmsDeliveryStatusService::class)->forInvitee($invitee)['label']);
+        $this->assertSame('Pending', app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($invitee)['label']);
 
         $service->refreshDeliveryReport('test-shoot');
         $this->assertSame('delivered', $log->fresh()->status);
         $this->assertNotNull($log->fresh()->delivered_at);
-        $this->assertSame('Delivered', app(\\App\\Services\\InvitationSmsDeliveryStatusService::class)->forInvitee($invitee)['label']);
+        $this->assertSame('Delivered', app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($invitee)['label']);
         Http::assertSentCount(2);
     }
 
