@@ -76,11 +76,11 @@ class SharedInviteePhoneServiceTest extends TestCase
             ],
         ];
 
-        $this->assertSame(['255755123456', '255712345678'], array_keys($service->filterGroups($groups)));
-        $this->assertSame(['255712345678'], array_keys($service->filterGroups($groups, 'MaRy')));
-        $this->assertSame(['255712345678'], array_keys($service->filterGroups($groups, '+255 712 345 678')));
-        $this->assertSame(['255755123456'], array_keys($service->filterGroups($groups, '', 3)));
-        $this->assertSame(['255712345678', '255755123456'], array_keys($service->filterGroups($groups, '', 2, 'phone_asc')));
+        $this->assertSame(['255755123456', '255712345678'], array_map('strval', array_keys($service->filterGroups($groups))));
+        $this->assertSame(['255712345678'], array_map('strval', array_keys($service->filterGroups($groups, 'MaRy'))));
+        $this->assertSame(['255712345678'], array_map('strval', array_keys($service->filterGroups($groups, '+255 712 345 678'))));
+        $this->assertSame(['255755123456'], array_map('strval', array_keys($service->filterGroups($groups, '', 3))));
+        $this->assertSame(['255712345678', '255755123456'], array_map('strval', array_keys($service->filterGroups($groups, '', 2, 'phone_asc'))));
         $this->assertSame([], $service->filterGroups($groups, 'not found'));
     }
 
