@@ -82,20 +82,26 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
                 ->first()
             : null;
 
-        // Keep legacy protection for invitation jobs dispatched outside the bulk toolbar.
-        if (! $tracking) {
-            $alreadySent = $invitee->messageLogs()
-                ->where('event_id', $invitee->event_id)
-                ->where('channel', 'whatsapp')
-                ->where('type', MessageTemplate::TYPE_INVITATION)
-                ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
-                ->when($invitee->invitation_phone_changed_at, fn ($query) =>
-                    $query->where('id', '>', (int) $invitee->invitation_message_reset_log_id))
-                ->exists();
+        // A successful invitation via another entry point must not be sent again,
+        // even if this job has its own pending template claim.
+        $alreadySent = $invitee->messageLogs()
+            ->where('event_id', $invitee->event_id)
+            ->where('channel', 'whatsapp')
+            ->where('type', MessageTemplate::TYPE_INVITATION)
+            ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+            ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                $query->where('id', '>', (int) $invitee->invitation_message_reset_log_id))
+            ->exists();
 
-            if ($alreadySent) {
-                return;
+        if ($alreadySent) {
+            if ($tracking && $tracking->status === 'pending') {
+                DB::table('whatsapp_template_sends')
+                    ->where('id', $tracking->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'submitted', 'last_error' => null, 'updated_at' => now()]);
             }
+
+            return;
         }
 
         if ($tracking && $tracking->status !== 'pending') {

@@ -3442,6 +3442,36 @@ class InviteesRelationManager extends RelationManager
                 ];
             }
 
+            if (! Schema::hasTable('whatsapp_template_sends')) {
+                return [
+                    'status' => 'failed',
+                    'type' => 'danger',
+                    'title' => 'WhatsApp tracking unavailable',
+                    'body' => 'Run the WhatsApp tracking migrations first.',
+                ];
+            }
+
+            $claimed = DB::table('whatsapp_template_sends')->insertOrIgnore([
+                'event_id' => $invitee->event_id,
+                'invitee_id' => $invitee->id,
+                'message_template_id' => $template->id,
+                'phone_generation' => (int) $invitee->invitation_phone_generation,
+                'status' => 'pending',
+                'attempts' => 1,
+                'last_attempt_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            if ($claimed !== 1) {
+                return [
+                    'status' => 'skipped',
+                    'type' => 'warning',
+                    'title' => 'WhatsApp invitation already requested',
+                    'body' => 'This invitation is already queued, submitted or failed. Check delivery status before retrying.',
+                ];
+            }
+
             SendInvitationWhatsAppJob::dispatch(
                 inviteeId: $invitee->id,
                 languageCode: filled($template->whatsapp_language_code)
@@ -3449,7 +3479,7 @@ class InviteesRelationManager extends RelationManager
                     : MessageTemplate::LANGUAGE_ENGLISH,
                 messageTemplateId: $template->id,
                 phoneGeneration: (int) $invitee->invitation_phone_generation,
-            );
+            )->afterCommit();
 
             $this->safeUpdateInvitee($invitee, [
                 'last_message_channel' => 'whatsapp',
