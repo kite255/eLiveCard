@@ -22,7 +22,7 @@
             copied: false,
             enabled: @js($record->hasValidRsvpShareLink()),
             url: @js($record->rsvp_share_url),
-            showPhone: @js($record->hasValidRsvpShareLink() ? (bool) $record->rsvp_share_show_phone : true),
+            showPhone: true,
             expiresInDays: '',
 
             notify(title, type = 'success') {
@@ -207,10 +207,7 @@
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Share a secure, read-only RSVP dashboard with the client.</p>
 
                 <div class="mt-3 flex flex-wrap gap-4">
-                    <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
-                        <input type="checkbox" x-model="showPhone" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                        Show phone numbers (default for new links)
-                    </label>
+                    
 
                     <label class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
                         Expires after

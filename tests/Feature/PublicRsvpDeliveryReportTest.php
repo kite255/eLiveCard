@@ -434,7 +434,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('Other Event Guest');
     }
 
-    public function test_shared_rsvp_search_does_not_expose_hidden_phone_numbers(): void
+    public function test_shared_rsvp_search_finds_phone_numbers_by_default(): void
     {
         $event = $this->reportEvent('Phone Privacy RSVP Event');
         $event->forceFill(['rsvp_share_show_phone' => false])->save();
@@ -447,8 +447,8 @@ class PublicRsvpDeliveryReportTest extends TestCase
         ]);
 
         $this->get($event->generateRsvpShareLink(showPhone: false).'?search=255700001234')
-            ->assertOk()->assertDontSee('Private Phone Guest')
-            ->assertSee('No invitees match the selected filters.');
+            ->assertOk()->assertSee('Private Phone Guest')
+            ->assertSee('Phone: 255700001234');
     }
 
     public function test_rsvp_filters_and_search_are_event_scoped(): void
@@ -807,7 +807,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->assertTrue((bool) $event->fresh()->rsvp_share_show_phone);
     }
 
-    public function test_existing_hidden_shared_link_keeps_phone_hidden(): void
+    public function test_existing_shared_link_displays_phone_by_default(): void
     {
         $event = $this->reportEvent('Existing Private Client Report');
         $event->generateRsvpShareLink(showPhone: false);
@@ -822,7 +822,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($event->fresh()->rsvp_share_url)
             ->assertOk()
             ->assertSee('Existing Hidden Phone Guest')
-            ->assertDontSee($invitee->phone);
+            ->assertSee($invitee->phone);
     }
 
     public function test_existing_shared_report_displays_phone_below_name_after_owner_enables_it(): void
@@ -837,7 +837,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'phone' => '255700009878',
         ]);
 
-        $this->get($url)->assertOk()->assertDontSee($invitee->phone);
+        $this->get($url)->assertOk()->assertSee($invitee->phone);
 
         // The owner can enable phone visibility without regenerating the link.
         $this->assertSame($url, $event->ensureRsvpShareLink(showPhone: true));
@@ -849,7 +849,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('name="whatsapp_delivery"', false);
     }
 
-    public function test_client_reply_is_html_escaped_and_phone_stays_hidden_when_explicitly_disabled(): void
+    public function test_client_reply_is_html_escaped_and_phone_is_visible_by_default(): void
     {
         $event = $this->reportEvent('Private Client Report');
         $event->forceFill(['rsvp_share_show_phone' => false])->save();
@@ -865,7 +865,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertOk()
             ->assertSee('&lt;script&gt;', false)
             ->assertDontSee('<script>alert("injected")</script>', false)
-            ->assertDontSee($invitee->phone);
+            ->assertSee($invitee->phone);
     }
 
     public function test_search_uses_portable_like_escape_and_treats_wildcards_literally(): void
@@ -914,7 +914,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->assertNotEmpty($queries);
         foreach ($queries as $query) {
             $this->assertStringContainsString("ESCAPE '!'", $query['sql']);
-            $this->assertSame(5, count($query['bindings']));
+            $this->assertSame(6, count($query['bindings']));
             $this->assertStringNotContainsString("ESCAPE '\\\\'", $query['sql']);
         }
     }

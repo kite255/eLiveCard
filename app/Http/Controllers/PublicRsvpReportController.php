@@ -84,7 +84,8 @@ class PublicRsvpReportController extends Controller
         $status = trim((string) ($validated['status'] ?? ''));
         $smsDelivery = trim((string) ($validated['sms_delivery'] ?? ''));
         $whatsappDelivery = trim((string) ($validated['whatsapp_delivery'] ?? ''));
-        $showPhoneNumbers = (bool) $event->rsvp_share_show_phone;
+        // Always display invitee phone numbers in the shared RSVP report.
+        $showPhoneNumbers = true;
 
         $invitees = $event->invitees()
             ->with('cardType')
