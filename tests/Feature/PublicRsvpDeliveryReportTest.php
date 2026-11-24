@@ -486,8 +486,8 @@ class PublicRsvpDeliveryReportTest extends TestCase
         ]);
 
         $this->get($event->generateRsvpShareLink())->assertOk()
-            ->assertSee('min-width: 720px;', false)
-            ->assertSee('padding: 7px 6px;', false)
+            ->assertSee('min-width: 640px;', false)
+            ->assertSee('padding: 5px 4px;', false)
             ->assertSee('min-width: 108px;', false)
             ->assertSee('column-gap: 4px;', false)
             ->assertSee('class="mobile-channel-entry"', false)
