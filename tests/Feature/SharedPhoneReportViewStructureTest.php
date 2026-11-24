@@ -14,10 +14,10 @@ class SharedPhoneReportViewStructureTest extends TestCase
         $this->assertStringContainsString("Action::make('shared_phone_numbers')", $file);
         $this->assertStringContainsString("Action::make('export_shared_phone_numbers')", $file);
         $this->assertStringContainsString("->modalSubmitAction(false)", $file);
-        $this->assertStringContainsString("->visible(fn (): bool => \\$this->canViewReportsForOwner())", $file);
-        $this->assertStringContainsString("->groups(\\$this->getOwnerRecord())", $file);
+        $this->assertStringContainsString("->visible(fn (): bool => \$this->canViewReportsForOwner())", $file);
+        $this->assertStringContainsString("->groups(\$this->getOwnerRecord())", $file);
         $this->assertStringContainsString("->streamDownload(", $file);
-        $this->assertStringContainsString("e(\\$member['name'])", $file);
+        $this->assertStringContainsString("e(\$member['name'])", $file);
         $this->assertStringContainsString("shared_phone_search", $file);
     }
 }
