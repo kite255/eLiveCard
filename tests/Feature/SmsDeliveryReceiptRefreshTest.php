@@ -140,6 +140,82 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
         $this->assertNotNull($log->fresh()->delivered_at);
     }
 
+    public function test_adaptive_sync_checks_due_messages_and_skips_recently_checked_ones(): void
+    {
+        $seed = $this->sentSms();
+        $seed->update([
+            'sent_at' => now()->subMinutes(3),
+            'delivery_report_checked_at' => now()->subMinutes(2),
+        ]);
+
+        $recentNotDue = $seed->replicate();
+        $recentNotDue->fill([
+            'provider_message_id' => 'recent-not-due',
+            'sent_at' => now()->subMinutes(3),
+            'delivery_report_checked_at' => now()->subSeconds(30),
+        ])->save();
+
+        $middleDue = $seed->replicate();
+        $middleDue->fill([
+            'provider_message_id' => 'middle-due',
+            'sent_at' => now()->subMinutes(30),
+            'delivery_report_checked_at' => now()->subMinutes(6),
+        ])->save();
+
+        $middleNotDue = $seed->replicate();
+        $middleNotDue->fill([
+            'provider_message_id' => 'middle-not-due',
+            'sent_at' => now()->subMinutes(30),
+            'delivery_report_checked_at' => now()->subMinutes(3),
+        ])->save();
+
+        $oldDue = $seed->replicate();
+        $oldDue->fill([
+            'provider_message_id' => 'old-due',
+            'sent_at' => now()->subHours(2),
+            'delivery_report_checked_at' => now()->subMinutes(31),
+        ])->save();
+
+        $oldNotDue = $seed->replicate();
+        $oldNotDue->fill([
+            'provider_message_id' => 'old-not-due',
+            'sent_at' => now()->subHours(2),
+            'delivery_report_checked_at' => now()->subMinutes(10),
+        ])->save();
+
+        Http::fake(['*/deliver/*' => Http::response(['data' => [
+            ['status' => 'Delivered', 'mobile' => '255700000001'],
+        ]])]);
+
+        $this->artisan('sms:sync-delivery-reports', ['--limit' => 25])->assertSuccessful();
+
+        $this->assertSame('delivered', $seed->fresh()->status);
+        $this->assertSame('delivered', $middleDue->fresh()->status);
+        $this->assertSame('delivered', $oldDue->fresh()->status);
+        $this->assertSame('sent', $recentNotDue->fresh()->status);
+        $this->assertSame('sent', $middleNotDue->fresh()->status);
+        $this->assertSame('sent', $oldNotDue->fresh()->status);
+        Http::assertSentCount(3);
+    }
+
+    public function test_explicit_shoot_id_can_be_refreshed_without_waiting_for_retry_window(): void
+    {
+        $log = $this->sentSms();
+        $log->update(['delivery_report_checked_at' => now()]);
+
+        Http::fake(['*/deliver/test-shoot' => Http::response([
+            'data' => [['status' => 'Delivered', 'mobile' => $log->phone]],
+        ])]);
+
+        $this->artisan('sms:sync-delivery-reports', [
+            '--shoot-id' => 'test-shoot',
+            '--limit' => 1,
+        ])->assertSuccessful();
+
+        $this->assertSame('delivered', $log->fresh()->status);
+        Http::assertSentCount(1);
+    }
+
     private function sentSms(): SmsLog
     {
         config([
