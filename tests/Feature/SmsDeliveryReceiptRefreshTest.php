@@ -85,7 +85,7 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
             ]],
         ])]);
 
-        $result = app(\\App\\Services\\SmsService::class)->refreshDeliveryReport('test-shoot');
+        $result = app(\App\Services\SmsService::class)->refreshDeliveryReport('test-shoot');
 
         $this->assertTrue($result['success']);
         $this->assertSame('delivered', $log->fresh()->status);
@@ -100,7 +100,7 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
             'data' => [['status' => 'Delivered', 'mobile' => '255799999999']],
         ])]);
 
-        app(\\App\\Services\\SmsService::class)->refreshDeliveryReport('test-shoot');
+        app(\App\Services\SmsService::class)->refreshDeliveryReport('test-shoot');
 
         // Shoot IDs uniquely identify a send, so provider phone formatting or
         // an inconsistent phone field must not hide a confirmed receipt.
@@ -117,7 +117,7 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
             'data' => [['status' => 'Delivered', 'mobile' => '0700000002']],
         ])]);
 
-        app(\\App\\Services\\SmsService::class)->refreshDeliveryReport('test-shoot');
+        app(\App\Services\SmsService::class)->refreshDeliveryReport('test-shoot');
 
         $this->assertSame('sent', $first->fresh()->status);
         $this->assertSame('delivered', $second->fresh()->status);
@@ -130,7 +130,7 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
             ->push(['data' => [['status' => 'Delivered', 'mobile' => $log->phone]]])
             ->push(['data' => [['status' => 'Operator Submitted', 'statusCode' => 'ACK', 'mobile' => $log->phone]]])]);
 
-        $service = app(\\App\\Services\\SmsService::class);
+        $service = app(\App\Services\SmsService::class);
         $service->refreshDeliveryReport('test-shoot');
         $this->assertSame('delivered', $log->fresh()->status);
 
