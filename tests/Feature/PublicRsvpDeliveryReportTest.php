@@ -517,6 +517,61 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Column Visibility Guest');
     }
 
+    public function test_invitees_are_sorted_oldest_added_first_not_by_rsvp_or_name(): void
+    {
+        $event = $this->reportEvent('First Added First');
+        $type = $this->reportCardType($event);
+
+        $first = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $type->id,
+            'name' => 'Z First',
+            'phone' => '255700111001',
+            'rsvp_status' => 'pending',
+        ]);
+        $second = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $type->id,
+            'name' => 'A Second',
+            'phone' => '255700111002',
+            'rsvp_status' => 'attending',
+        ]);
+        // Use explicit timestamps because imports often share a creation time.
+        $first->forceFill(['created_at' => now()->subDay()])->saveQuietly();
+        $second->forceFill(['created_at' => now()])->saveQuietly();
+
+        $response = $this->get($event->generateRsvpShareLink())->assertOk();
+        $html = $response->getContent();
+        $this->assertLessThan(strpos($html, 'A Second'), strpos($html, 'Z First'));
+    }
+
+    public function test_mobile_table_is_compact_and_numbered_pagination_preserves_filters(): void
+    {
+        $event = $this->reportEvent('Compact Paginated Report');
+        $type = $this->reportCardType($event);
+        for ($i = 1; $i <= 51; $i++) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => sprintf('Attendee %03d', $i),
+                'phone' => sprintf('25570010%04d', $i),
+                'rsvp_status' => 'pending',
+            ]);
+        }
+        $url = $event->generateRsvpShareLink();
+        $this->get($url.'?status=pending')->assertOk()
+            ->assertSee('min-width: 640px;', false)
+            ->assertSee('padding: 5px 4px;', false)
+            ->assertSee('aria-label="Current page 1"', false)
+            ->assertSee('aria-label="Page 2"', false)
+            ->assertSee('status=pending&amp;page=2', false);
+
+        $this->get($url.'?status=pending&page=2')->assertOk()
+            ->assertSee('aria-label="Current page 2"', false)
+            ->assertSee('aria-label="Page 1"', false)
+            ->assertSee('Showing 51 to 51 of 51 results');
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
@@ -834,14 +889,14 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($url . '?status=pending')
             ->assertOk()
             ->assertSee('aria-label="Invitee report pages"', false)
-            ->assertSee('Page 1 of 2')
+            ->assertSee('aria-label="Current page 1"', false)
             ->assertSee('Showing 1 to 50 of 51 results')
             ->assertSee('status=pending&amp;page=2', false)
             ->assertDontSee('<svg class="w-5 h-5"', false);
 
         $this->get($url . '?status=pending&page=2')
             ->assertOk()
-            ->assertSee('Page 2 of 2')
+            ->assertSee('aria-label="Current page 2"', false)
             ->assertSee('Showing 51 to 51 of 51 results')
             ->assertSee('rel="prev"', false)
             ->assertDontSee('<svg class="w-5 h-5"', false);
