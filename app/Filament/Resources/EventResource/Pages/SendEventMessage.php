@@ -367,9 +367,8 @@ class SendEventMessage extends Page
 
         return $this->eligibleInviteesQuery()
             ->whereIn('id', $failedLogs->keys()->all())
-            ->whereIn('card_status', [
-                \App\Models\Invitee::CARD_STATUS_ACTIVE,
-            ])
+            ->where('card_status', \App\Models\Invitee::CARD_STATUS_ACTIVE)
+            ->where('whatsapp_status', 'failed')
             ->whereDoesntHave('smsLogs', function (Builder $query): void {
                 $query->where('event_id', $this->record->id)
                     ->whereIn('sms_type', ['invitation', 'invitation_card'])
@@ -423,6 +422,7 @@ class SendEventMessage extends Page
                     ->first();
 
                 if (! $latest || $latest->status !== MessageLog::STATUS_FAILED
+                    || $invitee->fresh()?->whatsapp_status !== 'failed'
                     || $invitee->smsLogs()
                         ->where('event_id', $this->record->id)
                         ->whereIn('sms_type', ['invitation', 'invitation_card'])
