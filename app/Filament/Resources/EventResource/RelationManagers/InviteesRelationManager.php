@@ -1355,6 +1355,10 @@ class InviteesRelationManager extends RelationManager
                 Tables\Actions\ActionGroup::make([
                     // Invitee details, card management and private links.
                     Tables\Actions\ActionGroup::make([
+                        Tables\Actions\Action::make('invitee_cards_section')
+                            ->label('INVITEE & CARDS')
+                            ->disabled()
+                            ->color('gray'),
                     Tables\Actions\ViewAction::make()
                         ->label('View')
                         ->icon('heroicon-o-eye')
@@ -1641,10 +1645,14 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
-                    ])->label('Invitee & Cards')->icon('heroicon-o-identification'),
+                    ])->dropdown(false),
 
                     // Invitation-only communication actions.
                     Tables\Actions\ActionGroup::make([
+                        Tables\Actions\Action::make('messaging_section')
+                            ->label('MESSAGING')
+                            ->disabled()
+                            ->color('gray'),
                     Tables\Actions\Action::make('send_whatsapp_invitation')
                         ->label('Send WhatsApp Invitation')
                         ->icon('heroicon-o-chat-bubble-left-right')
@@ -1719,10 +1727,14 @@ class InviteesRelationManager extends RelationManager
                                 ->persistent()->send();
                         }),
 
-                    ])->label('Messaging')->icon('heroicon-o-chat-bubble-left-right'),
+                    ])->dropdown(false),
 
                     // RSVP management actions.
                     Tables\Actions\ActionGroup::make([
+                        Tables\Actions\Action::make('rsvp_section')
+                            ->label('RSVP ACTIONS')
+                            ->disabled()
+                            ->color('gray'),
                     Tables\Actions\Action::make('mark_attending')
                         ->label('Mark Attending')
                         ->visible(fn (): bool => $this->canManageInviteesForOwner())
@@ -1834,10 +1846,14 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    ])->label('RSVP Actions')->icon('heroicon-o-clipboard-document-check'),
+                    ])->dropdown(false),
 
                     // Destructive and irreversible actions.
                     Tables\Actions\ActionGroup::make([
+                        Tables\Actions\Action::make('danger_section')
+                            ->label('CANCEL OR DELETE')
+                            ->disabled()
+                            ->color('gray'),
                     Tables\Actions\Action::make('cancel_invitee')
                         ->label('Cancel Invitee')
                         ->visible(fn (): bool => $this->canManageInviteesForOwner())
@@ -1902,7 +1918,7 @@ class InviteesRelationManager extends RelationManager
                                     ->send();
                             }
                         }),
-                    ])->label('Cancel or Delete')->icon('heroicon-o-exclamation-triangle'),
+                    ])->dropdown(false),
                 ])
                     ->label('Manage invitee')
                     ->icon('heroicon-m-ellipsis-horizontal')
