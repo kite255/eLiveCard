@@ -2001,7 +2001,8 @@ class InviteesRelationManager extends RelationManager
                     ])->dropdown(false),
                 ])
                     ->label('Manage invitee')
-                    ->extraAttributes(['class' => 'elive-invitee-actions-trigger'])
+                    ->dropdownWidth(\Filament\Support\Enums\MaxWidth::Medium)
+                    ->maxHeight('min(70dvh, 32rem)')
                     ->icon('heroicon-m-ellipsis-horizontal')
                     ->color('primary')
                     ->iconButton()
