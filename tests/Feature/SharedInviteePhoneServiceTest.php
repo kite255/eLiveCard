@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CardType;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\User;
@@ -29,17 +30,24 @@ class SharedInviteePhoneServiceTest extends TestCase
             'status' => Event::STATUS_ACTIVE,
         ]);
 
+        $cardType = CardType::query()->create([
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
+        ]);
+        $otherCardType = CardType::query()->create([
+            'event_id' => $otherEvent->id, 'card_type_id' => $otherCardType->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
+        ]);
+
         $john = Invitee::query()->create([
-            'event_id' => $event->id, 'name' => 'John', 'phone' => '0712345678',
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'John', 'phone' => '0712345678',
         ]);
         $mary = Invitee::query()->create([
-            'event_id' => $event->id, 'name' => 'Mary', 'phone' => '+255712345678',
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Mary', 'phone' => '+255712345678',
         ]);
         Invitee::query()->create([
-            'event_id' => $event->id, 'name' => 'Peter', 'phone' => '0755555555',
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Peter', 'phone' => '0755555555',
         ]);
         Invitee::query()->create([
-            'event_id' => $otherEvent->id, 'name' => 'Another Guest', 'phone' => '255712345678',
+            'event_id' => $otherEvent->id, 'card_type_id' => $otherCardType->id, 'name' => 'Another Guest', 'phone' => '255712345678',
         ]);
 
         $service = app(SharedInviteePhoneService::class);
@@ -62,11 +70,15 @@ class SharedInviteePhoneServiceTest extends TestCase
             'status' => Event::STATUS_ACTIVE,
         ]);
 
+        $cardType = CardType::query()->create([
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
+        ]);
+
         $one = Invitee::query()->create([
-            'event_id' => $event->id, 'name' => 'Only', 'phone' => '0712345678',
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Only', 'phone' => '0712345678',
         ]);
         Invitee::query()->create([
-            'event_id' => $event->id, 'name' => 'Different', 'phone' => '0755555555',
+            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Different', 'phone' => '0755555555',
         ]);
 
         $service = app(SharedInviteePhoneService::class);
