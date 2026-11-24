@@ -68,8 +68,7 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
 
         // A queued invitation for the former number must not be redirected
         // silently to a newly edited phone number.
-        if ($this->phoneGeneration !== null
-            && $this->phoneGeneration !== (int) $invitee->invitation_phone_generation) {
+        if (($this->phoneGeneration ?? 0) !== (int) $invitee->invitation_phone_generation) {
             return;
         }
 
