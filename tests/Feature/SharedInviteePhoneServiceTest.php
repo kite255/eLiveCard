@@ -58,7 +58,7 @@ class SharedInviteePhoneServiceTest extends TestCase
         $this->assertCount(1, $service->others($john));
         $this->assertSame('Mary', $service->others($john)[0]['name']);
         $this->assertSame('John', $service->others($mary)[0]['name']);
-        $this->assertCount(4, Invitee::query()->count());
+        $this->assertSame(4, Invitee::query()->count());
     }
 
     public function test_shared_phone_service_ignores_nonmatching_and_invalid_numbers(): void
@@ -71,7 +71,7 @@ class SharedInviteePhoneServiceTest extends TestCase
         ]);
 
         $cardType = CardType::query()->create([
-            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
+            'event_id' => $event->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
         ]);
 
         $one = Invitee::query()->create([
