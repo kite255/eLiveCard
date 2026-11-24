@@ -3180,6 +3180,22 @@ class InviteesRelationManager extends RelationManager
     {
         $label = $channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
 
+        if ($channel === 'whatsapp') {
+            return Tables\Actions\Action::make('force_resend_whatsapp_invitation')
+                ->label('Resend WhatsApp Invitation')
+                ->icon('heroicon-o-arrow-path')
+                ->color('warning')
+                ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
+                    && $record->card_status === Invitee::CARD_STATUS_ACTIVE
+                    && filled($record->phone) && filled($record->short_code)
+                    && $this->hasCurrentInvitationSubmission($record, $channel))
+                ->action(fn (Invitee $record) => $this->processInviteeInvitation(
+                    $record,
+                    $channel,
+                    'Manual WhatsApp invitation resend from invitee actions.',
+                ));
+        }
+
         return Tables\Actions\Action::make('force_resend_'.$channel.'_invitation')
             ->label('Resend '.$label.' Invitation')
             ->icon('heroicon-o-arrow-path')
