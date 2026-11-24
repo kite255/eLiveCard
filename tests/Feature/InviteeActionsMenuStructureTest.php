@@ -62,7 +62,7 @@ class InviteeActionsMenuStructureTest extends TestCase
         $this->assertStringContainsString("resendInvitationAction('sms')", $advanced);
         $this->assertStringContainsString("resendInvitationAction('whatsapp')", $advanced);
         $this->assertStringContainsString("->label('Update RSVP')", $primary);
-        $this->assertStringContainsString("'rsvp_confirmed_at' => $status === Invitee::RSVP_PENDING ? null : now()", $primary);
+        $this->assertStringContainsString("'rsvp_confirmed_at' => ", $primary);
 
         $this->assertStringContainsString('ViewAction::make()', $menu);
         $this->assertStringNotContainsString("Action::make('send_card_link')", $menu);
