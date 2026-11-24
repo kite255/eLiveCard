@@ -70,6 +70,76 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_delivery_receipt_matches_unique_shoot_id_despite_phone_format_difference(): void
+    {
+        $log = $this->sentSms();
+        $log->update(['phone' => '+255 700 000 001']);
+
+        Http::fake(['*/deliver/test-shoot' => Http::response([
+            'data' => [[
+                'shootId' => 'test-shoot',
+                'mobile' => '0700000001',
+                'status' => 'Delivered',
+                'statusCode' => '000',
+                'deliveryTime' => '24-11-2026 17:36',
+            ]],
+        ])]);
+
+        $result = app(\\App\\Services\\SmsService::class)->refreshDeliveryReport('test-shoot');
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('delivered', $log->fresh()->status);
+        $this->assertSame('Delivered', $log->fresh()->provider_status);
+        $this->assertNotNull($log->fresh()->delivered_at);
+    }
+
+    public function test_single_recipient_receipt_is_reconciled_even_when_provider_phone_differs(): void
+    {
+        $log = $this->sentSms();
+        Http::fake(['*/deliver/test-shoot' => Http::response([
+            'data' => [['status' => 'Delivered', 'mobile' => '255799999999']],
+        ])]);
+
+        app(\\App\\Services\\SmsService::class)->refreshDeliveryReport('test-shoot');
+
+        // Shoot IDs uniquely identify a send, so provider phone formatting or
+        // an inconsistent phone field must not hide a confirmed receipt.
+        $this->assertSame('delivered', $log->fresh()->status);
+    }
+
+    public function test_multi_recipient_shoot_id_only_updates_matching_phone(): void
+    {
+        $first = $this->sentSms();
+        $second = $first->replicate();
+        $second->fill(['phone' => '+255700000002', 'status' => 'sent'])->save();
+
+        Http::fake(['*/deliver/test-shoot' => Http::response([
+            'data' => [['status' => 'Delivered', 'mobile' => '0700000002']],
+        ])]);
+
+        app(\\App\\Services\\SmsService::class)->refreshDeliveryReport('test-shoot');
+
+        $this->assertSame('sent', $first->fresh()->status);
+        $this->assertSame('delivered', $second->fresh()->status);
+    }
+
+    public function test_delayed_submitted_receipt_does_not_erase_confirmed_delivery(): void
+    {
+        $log = $this->sentSms();
+        Http::fake(['*/deliver/test-shoot' => Http::sequence()
+            ->push(['data' => [['status' => 'Delivered', 'mobile' => $log->phone]]])
+            ->push(['data' => [['status' => 'Operator Submitted', 'statusCode' => 'ACK', 'mobile' => $log->phone]]])]);
+
+        $service = app(\\App\\Services\\SmsService::class);
+        $service->refreshDeliveryReport('test-shoot');
+        $this->assertSame('delivered', $log->fresh()->status);
+
+        $service->refreshDeliveryReport('test-shoot');
+        $this->assertSame('delivered', $log->fresh()->status);
+        $this->assertSame('Delivered', $log->fresh()->provider_status);
+        $this->assertNotNull($log->fresh()->delivered_at);
+    }
+
     private function sentSms(): SmsLog
     {
         config([
