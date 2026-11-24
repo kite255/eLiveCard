@@ -309,8 +309,6 @@ class Invitee extends Model
             $invitee->sms_message_id = null;
             $invitee->sms_error = null;
             $invitee->invitation_sms_sent_at = null;
-            $invitee->invitation_sms_message_id = null;
-            $invitee->invitation_sms_error = null;
             if ($invitee->last_message_channel === 'sms') {
                 $invitee->last_message_status = self::MESSAGE_STATUS_NOT_SENT;
                 $invitee->last_message_channel = null;
