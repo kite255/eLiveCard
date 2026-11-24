@@ -661,7 +661,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $this->get($event->generateRsvpShareLink(showPhone: false).'?search=255700001234')
             ->assertOk()->assertSee('Private Phone Guest')
-            ->assertSee('Phone: 255700001234');
+            ->assertSee('255700001234');
     }
 
     public function test_rsvp_filters_and_search_are_event_scoped(): void
@@ -902,6 +902,66 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('<svg class="w-5 h-5"', false);
     }
 
+    public function test_rows_per_page_selector_limits_results_and_preserves_filters(): void
+    {
+        $event = $this->reportEvent('Selectable Report Size');
+        $type = $this->reportCardType($event);
+
+        for ($index = 1; $index <= 53; $index++) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => sprintf('Rows Guest %03d', $index),
+                'phone' => sprintf('25570004%04d', $index),
+                'rsvp_status' => 'pending',
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+        foreach ([10, 25, 50, 100] as $size) {
+            $this->get($url.'?status=pending&per_page='.$size)
+                ->assertOk()
+                ->assertViewHas('invitees', fn ($paginator) =>
+                    $paginator->perPage() === $size
+                    && $paginator->count() === min($size, 53)
+                    && $paginator->total() === 53
+                )
+                ->assertSee('id="rsvp-report-per-page"', false)
+                ->assertSee('Rows per page')
+                ->assertSee('value="'.$size.'" selected', false);
+        }
+
+        $this->get($url.'?status=pending&per_page=10&page=2')
+            ->assertOk()
+            ->assertViewHas('invitees', fn ($paginator) =>
+                $paginator->currentPage() === 2
+                && $paginator->perPage() === 10
+                && $paginator->firstItem() === 11
+            )
+            ->assertSee('per_page=10&amp;page=3', false);
+    }
+
+    public function test_rows_per_page_rejects_unsupported_sizes(): void
+    {
+        $url = $this->reportEvent('Page Size Guard')->generateRsvpShareLink();
+        foreach (['0', '1', '1000', 'all', '-10'] as $invalid) {
+            $this->get($url.'?per_page='.$invalid)->assertSessionHasErrors('per_page');
+        }
+    }
+
+    public function test_row_size_selector_is_present_even_when_single_page(): void
+    {
+        $url = $this->reportEvent('Small Report')->generateRsvpShareLink();
+        $this->get($url)->assertOk()
+            ->assertSee('id="rsvp-report-per-page"', false)
+            ->assertSee('value="10"', false)
+            ->assertSee('value="25"', false)
+            ->assertSee('value="50"', false)
+            ->assertSee('value="100"', false)
+            ->assertSee("results.addEventListener('change'", false)
+            ->assertSee("url.searchParams.delete('page')", false);
+    }
+
     public function test_client_report_paginates_fifty_invitees_without_losing_filters(): void
     {
         $event = $this->reportEvent('Paginated Report');
@@ -996,7 +1056,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $html = $response->getContent();
         $this->assertMatchesRegularExpression(
-            '/<div class="name">Visible Phone Guest<\\/div>\\s*<div class="subtle invitee-phone"[^>]*>Phone: 255700000321<\\/div>/',
+            '/<div class="name">Visible Phone Guest<\\/div>\\s*<div class="subtle invitee-phone"[^>]*>255700000321<\\/div>/',
             $html
         );
     }
@@ -1056,7 +1116,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->assertSame($url, $event->ensureRsvpShareLink(showPhone: true));
         $this->get($url)->assertOk()
             ->assertSee('Enabled Phone Guest')
-            ->assertSee('Phone: 255700009878')
+            ->assertSee('255700009878')
             ->assertSee('class="subtle invitee-phone"', false)
             ->assertDontSee('name="sms_delivery"', false)
             ->assertSee('name="whatsapp_delivery"', false);

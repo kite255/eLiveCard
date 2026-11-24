@@ -344,6 +344,29 @@
             border-top: 1px solid var(--border);
         }
 
+        .pagination-page-size {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px 2px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .pagination-page-size select {
+            min-height: 32px;
+            padding: 4px 8px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--text);
+            font: inherit;
+        }
+        @media (max-width: 760px) {
+            .pagination-page-size { padding: 8px 10px 2px; font-size: 11px; }
+            .pagination-page-size select { min-height: 30px; }
+        }
+
         .pagination-controls {
             display: flex;
             align-items: center;
@@ -1187,7 +1210,7 @@
                                 <td>
                                     <div class="name">{{ $invitee->name }}</div>
                                     @if ($showPhoneNumbers)
-                                        <div class="subtle invitee-phone" aria-label="Phone number">Phone: {{ $invitee->phone ?: '—' }}</div>
+                                        <div class="subtle invitee-phone" aria-label="Phone number">{{ $invitee->phone ?: '—' }}</div>
                                     @endif
                                 </td>
 
@@ -1332,6 +1355,15 @@
                 </table>
             </div>
 
+            <div class="pagination-page-size">
+                <label for="rsvp-report-per-page">Rows per page</label>
+                <select id="rsvp-report-per-page" name="per_page" aria-label="Rows per page">
+                    @foreach ([10, 25, 50, 100] as $size)
+                        <option value="{{ $size }}" @selected($perPage === $size)>{{ $size }}</option>
+                    @endforeach
+                </select>
+            </div>
+
             @if ($invitees->hasPages())
                 <nav class="pagination" aria-label="Invitee report pages">
                     <div class="pagination-controls">
@@ -1403,6 +1435,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const valuesUrl = () => {
         const url = new URL(form.action, window.location.href);
+        const perPage = new URL(window.location.href).searchParams.get('per_page');
+        if (perPage) url.searchParams.set('per_page', perPage);
         const values = new FormData(form);
         for (const [name, value] of values.entries()) {
             if (typeof value === 'string' && value.trim() !== '') {
@@ -1491,6 +1525,14 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', (event) => {
         event.preventDefault();
         load(valuesUrl());
+    });
+
+    results.addEventListener('change', (event) => {
+        if (event.target.id !== 'rsvp-report-per-page') return;
+        const url = valuesUrl();
+        url.searchParams.set('per_page', event.target.value);
+        url.searchParams.delete('page');
+        load(url, 'push');
     });
 
     results.addEventListener('click', (event) => {
