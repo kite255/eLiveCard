@@ -1638,7 +1638,9 @@ class InviteesRelationManager extends RelationManager
                         ->label('Send WhatsApp Invitation')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
+                            && filled($record->short_code)
+                            && ! $this->hasCurrentInvitationSubmission($record, 'whatsapp'))
                         ->modalHeading(fn (Invitee $record): string => 'Send WhatsApp invitation to '.$record->name)
                         ->modalDescription('Sends this invitation immediately using the WhatsApp template selected in Event Settings. The provider response will appear after submission; accepted does not mean delivered. Previously submitted invitations will not be resent.')
                         ->modalSubmitActionLabel('Send WhatsApp Now')
@@ -1654,7 +1656,9 @@ class InviteesRelationManager extends RelationManager
                         ->label('Send SMS Invitation')
                         ->icon('heroicon-o-envelope')
                         ->color('primary')
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
+                            && filled($record->short_code)
+                            && ! $this->hasCurrentInvitationSubmission($record, 'sms'))
                         ->modalHeading(fn (Invitee $record): string => 'Send SMS invitation to '.$record->name)
                         ->modalDescription('Sends this invitation immediately using the active SMS Invitation template. The provider response will appear after submission; accepted does not mean delivered. Already sent or pending invitations are skipped.')
                         ->modalSubmitActionLabel('Send SMS Now')
@@ -1669,6 +1673,11 @@ class InviteesRelationManager extends RelationManager
                                 )),
                         ])
                         ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'sms')),
+
+                    // Show Resend instead of Send after the current phone's invitation
+                    // has been submitted. Resend always requires a reason and acknowledgement.
+                    $this->resendInvitationAction('whatsapp'),
+                    $this->resendInvitationAction('sms'),
 
                     Tables\Actions\Action::make('refresh_sms_delivery')
                         ->label('Refresh SMS Delivery Status')
@@ -1702,63 +1711,6 @@ class InviteesRelationManager extends RelationManager
                                     : 'Provider report could not be verified. '.$fresh['description'])
                                 ->color(($result['success'] ?? false) ? 'success' : 'warning')
                                 ->persistent()->send();
-                        }),
-
-                    Tables\Actions\Action::make('update_rsvp')
-                        ->label('Update RSVP')
-                        ->icon('heroicon-o-check-circle')
-                        ->color('success')
-                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
-                        ->modalHeading(fn (Invitee $record): string => 'Update RSVP: '.$record->name)
-                        ->modalSubmitActionLabel('Save RSVP')
-                        ->fillForm(fn (Invitee $record): array => [
-                            'rsvp_status' => $record->rsvp_status ?: Invitee::RSVP_PENDING,
-                            'confirmed_guests' => (int) $record->confirmed_guests,
-                        ])
-                        ->form([
-                            Forms\Components\Select::make('rsvp_status')
-                                ->label('Response')
-                                ->options([
-                                    Invitee::RSVP_PENDING => 'Pending',
-                                    Invitee::RSVP_ATTENDING => 'Attending',
-                                    Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
-                                    Invitee::RSVP_MAYBE => 'Maybe',
-                                ])
-                                ->required()
-                                ->live(),
-                            Forms\Components\TextInput::make('confirmed_guests')
-                                ->label('Confirmed Guests')
-                                ->numeric()
-                                ->minValue(0)
-                                ->helperText('For Attending, enter the number of confirmed guests; limited by the invitation allowance.')
-                                ->visible(fn (Forms\Get $get): bool => $get('rsvp_status') === Invitee::RSVP_ATTENDING),
-                        ])
-                        ->action(function (Invitee $record, array $data): void {
-                            abort_unless($this->canManageInviteesForOwner(), 403);
-                            $status = (string) $data['rsvp_status'];
-                            $allowed = max(1, (int) $record->allowed_guests);
-                            $guests = $status === Invitee::RSVP_ATTENDING
-                                ? max(1, min($allowed, (int) ($data['confirmed_guests'] ?? 1)))
-                                : 0;
-                            $previous = $record->only(['rsvp_status', 'rsvp_confirmed_at', 'confirmed_guests']);
-                            $record->update([
-                                'rsvp_status' => $status,
-                                'rsvp_confirmed_at' => $status === Invitee::RSVP_PENDING ? null : now(),
-                                'confirmed_guests' => $guests,
-                            ]);
-
-                            AuditLogService::updated(
-                                subject: $record,
-                                eventId: $record->event_id,
-                                description: 'Invitee RSVP was updated.',
-                                oldValues: $previous,
-                                newValues: $record->only(['rsvp_status', 'rsvp_confirmed_at', 'confirmed_guests']),
-                            );
-
-                            $this->brandedNotification()
-                                ->title('eLive Card • RSVP updated: '.$record->name)
-                                ->success()
-                                ->send();
                         }),
 
                     Tables\Actions\Action::make('update_rsvp')
@@ -1953,9 +1905,7 @@ class InviteesRelationManager extends RelationManager
                         ->disabled()
                         ->color('gray'),
 
-                    $this->resendInvitationAction('sms'),
 
-                    $this->resendInvitationAction('whatsapp'),
 
                     Tables\Actions\Action::make('advanced_rsvp_section')
                         ->label('ADVANCED RSVP')
@@ -3198,6 +3148,31 @@ class InviteesRelationManager extends RelationManager
             ->persistent()->send();
     }
 
+    /**
+     * Decide whether the current phone already has a provider-submitted invitation.
+     * A changed number is a fresh invitation; old sends must not force Resend.
+     */
+    protected function hasCurrentInvitationSubmission(Invitee $record, string $channel): bool
+    {
+        if ($channel === 'sms') {
+            $state = app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record);
+
+            return in_array($state['label'], ['Submitted', 'Delivered'], true);
+        }
+
+        $templateId = $this->getOwnerRecord()->default_whatsapp_template_id;
+        if (! $templateId || ! Schema::hasTable('whatsapp_template_sends')) {
+            return false;
+        }
+
+        return DB::table('whatsapp_template_sends')
+            ->where('invitee_id', $record->id)
+            ->where('message_template_id', $templateId)
+            ->where('phone_generation', (int) $record->invitation_phone_generation)
+            ->whereIn('status', ['submitted', 'delivered', 'read'])
+            ->exists();
+    }
+
     protected function resendInvitationAction(string $channel): Tables\Actions\Action
     {
         $label = $channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
@@ -3208,7 +3183,8 @@ class InviteesRelationManager extends RelationManager
             ->color('warning')
             ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
                 && $record->card_status === Invitee::CARD_STATUS_ACTIVE
-                && filled($record->phone) && filled($record->short_code))
+                && filled($record->phone) && filled($record->short_code)
+                && $this->hasCurrentInvitationSubmission($record, $channel))
             ->modalHeading(fn (Invitee $record): string => 'Resend '.$label.' invitation to '.$record->name)
             ->modalDescription('Sends another copy of the invitation immediately. The invitee may receive it twice and your account may be charged again.')
             ->modalSubmitActionLabel('Resend '.$label.' Now')
