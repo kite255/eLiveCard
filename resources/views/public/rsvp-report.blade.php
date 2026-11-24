@@ -1036,8 +1036,10 @@
                                 </td>
 
                                 <td>
-                                    <div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div>
-                                    <div class="subtle response-time" style="margin-top:4px">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i') ?? '—' }}</div>
+                                    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:5px">
+                                        <div class="reply-value" title="{{ $invitee->last_reply_message ?: 'No reply' }}">{{ $invitee->last_reply_message ?: '—' }}</div>
+                                        <div class="subtle response-time" style="display:block;font-size:11px;line-height:1.4">{{ $invitee->rsvp_confirmed_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i') ?? '—' }}</div>
+                                    </div>
                                 </td>
                             </tr>
                         @empty
