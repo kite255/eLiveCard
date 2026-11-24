@@ -64,7 +64,7 @@ class SmsInvitationRecipientsService
             ->whereIn('sms_type', ['invitation', 'invitation_card'])
             ->whereIn('status', ['pending', 'queued', 'sending', 'sent', 'accepted', 'submitted', 'logged', 'delivered'])
             ->when($invitee->invitation_phone_changed_at, fn ($query) =>
-                $query->where('id', '>', (int) $invitee->invitation_message_reset_log_id))
+                $query->where('id', '>', (int) $invitee->invitation_sms_reset_log_id))
             ->exists()) {
             return 'An invitation SMS is already in progress or accepted by the provider.';
         }
