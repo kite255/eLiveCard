@@ -94,6 +94,13 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
             ->exists();
 
         if ($alreadySent) {
+            if ($tracking && $tracking->status === 'pending') {
+                DB::table('whatsapp_template_sends')
+                    ->where('id', $tracking->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'submitted', 'last_error' => null, 'updated_at' => now()]);
+            }
+
             return;
         }
 
