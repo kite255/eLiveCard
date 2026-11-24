@@ -1627,6 +1627,59 @@ class InviteesRelationManager extends RelationManager
                         ->openUrlInNewTab()
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
+                    Tables\Actions\Action::make('reply_whatsapp_message')
+                        ->label('Reply on WhatsApp')
+                        ->icon('heroicon-o-chat-bubble-left-right')
+                        ->color('success')
+                        ->visible(function (Invitee $record): bool {
+                            $user = auth()->user();
+
+                            return $this->canSendMessagesForOwner()
+                                && $user
+                                && ((method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+                                    || (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()))
+                                && filled($record->last_reply_message);
+                        })
+                        ->modalHeading(fn (Invitee $record): string => 'Reply to '.$record->name)
+                        ->modalDescription('Send a personal WhatsApp reply from the admin panel. Free-form replies require an inbound message within the last 24 hours. This does not resend an invitation.')
+                        ->modalSubmitActionLabel('Send Reply')
+                        ->form([
+                            Forms\Components\Placeholder::make('incoming_whatsapp_reply')
+                                ->label('Invitee message')
+                                ->content(fn (Invitee $record): string => (string) ($record->last_reply_message ?: 'No message')),
+                            Forms\Components\Placeholder::make('incoming_whatsapp_time')
+                                ->label('Received')
+                                ->content(fn (Invitee $record): string => $record->last_reply_at?->format('d M Y H:i') ?? 'Unknown'),
+                            Forms\Components\Textarea::make('reply')
+                                ->label('Your reply')
+                                ->required()
+                                ->maxLength(1000)
+                                ->rows(3),
+                        ])
+                        ->action(function (Invitee $record, array $data): void {
+                            $user = auth()->user();
+                            abort_unless(
+                                $this->canSendMessagesForOwner()
+                                    && $user
+                                    && ((method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+                                        || (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()))
+                                    && (int) $record->event_id === (int) $this->getOwnerRecord()->id,
+                                403
+                            );
+
+                            app(\App\Services\InviteeWhatsAppReplyService::class)->send(
+                                invitee: $record,
+                                message: (string) ($data['reply'] ?? ''),
+                                adminId: (int) $user->id,
+                            );
+
+                            $this->brandedNotification()
+                                ->title('WhatsApp reply accepted')
+                                ->body('WhatsApp accepted the message for sending. Delivery is not yet confirmed.')
+                                ->success()
+                                ->send();
+                        }),
+
                     Tables\Actions\Action::make('send_whatsapp_invitation')
                         ->label('Send WhatsApp Invitation')
                         ->icon('heroicon-o-chat-bubble-left-right')
