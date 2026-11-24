@@ -323,6 +323,63 @@
                     </div>
                 </div>
 
+                {{-- WhatsApp delivery failures and manual SMS fallback --}}
+                <div wire:poll.20s class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5">
+                    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold text-[#111827]">WhatsApp Delivery Failures</h2>
+                            <p class="mt-1 text-sm text-gray-600">
+                                These invitees have a failed latest WhatsApp invitation and are eligible for an SMS invitation.
+                                An undeliverable message does not necessarily mean the number is not registered on WhatsApp.
+                            </p>
+                        </div>
+                        <div class="rounded-xl bg-amber-50 px-4 py-3 text-center ring-1 ring-amber-200">
+                            <div class="text-2xl font-bold text-amber-800">{{ number_format($this->failedWhatsappSmsEligibleCount) }}</div>
+                            <div class="text-xs font-semibold text-amber-700">SMS fallback eligible</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <x-filament::button
+                            color="warning"
+                            icon="heroicon-o-paper-airplane"
+                            wire:click="mountAction('sendFailedWhatsappSms')"
+                            :disabled="$this->failedWhatsappSmsEligibleCount === 0"
+                        >
+                            Send SMS to Failed WhatsApp Recipients
+                        </x-filament::button>
+                    </div>
+
+                    <div class="mt-5 overflow-x-auto rounded-xl ring-1 ring-gray-200">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50 text-left text-gray-600">
+                                <tr>
+                                    <th class="px-4 py-3 font-semibold">Invitee</th>
+                                    <th class="px-4 py-3 font-semibold">WhatsApp status</th>
+                                    <th class="px-4 py-3 font-semibold">Failure reason</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @forelse ($this->failedWhatsappSmsPreview as $invitee)
+                                    <tr>
+                                        <td class="px-4 py-3 font-medium text-gray-900">{{ $invitee->name }}</td>
+                                        <td class="px-4 py-3 font-medium text-red-700">Undeliverable / Failed</td>
+                                        <td class="px-4 py-3 text-gray-600">{{ $invitee->getRelation('failedWhatsappLog')?->error_message ?: 'Provider did not give a reason.' }}</td>
+                                    </tr>
+                                @empty
+                                    <tr><td colspan="3" class="px-4 py-6 text-center text-gray-500">No confirmed WhatsApp failures currently eligible for SMS fallback.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    @if ($this->failedWhatsappSmsEligibleCount > 10)
+                        <p class="mt-3 text-xs text-gray-500">Showing the 10 most recent eligible invitees.</p>
+                    @endif
+                    <p class="mt-3 text-xs text-gray-500">
+                        Fallback is manual and requires confirmation. Pending WhatsApp messages are never treated as failures.
+                    </p>
+                </div>
+
                 {{-- Delivery Overview --}}
                 <div wire:poll.20s class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5">
                     <div>
