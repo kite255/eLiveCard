@@ -39,6 +39,33 @@ class WhatsAppTemplateTrackingTest extends TestCase
         ]);
     }
 
+    public function test_existing_submitted_invitation_blocks_a_new_template_claim(): void
+    {
+        [$invitee, $template] = $this->fixture();
+        $this->claim($invitee, $template);
+
+        $invitee->messageLogs()->create([
+            'event_id' => $invitee->event_id,
+            'channel' => 'whatsapp',
+            'type' => MessageTemplate::TYPE_INVITATION,
+            'phone' => $invitee->phone,
+            'message' => 'Existing invitation',
+            'status' => 'sent',
+        ]);
+
+        $service = $this->mock(WhatsAppApiCloudService::class);
+        $service->shouldNotReceive('sendInvitation');
+
+        (new SendInvitationWhatsAppJob($invitee->id, 'en', $template->id, 0))
+            ->handle($service);
+
+        $this->assertDatabaseHas('whatsapp_template_sends', [
+            'invitee_id' => $invitee->id,
+            'message_template_id' => $template->id,
+            'status' => 'submitted',
+        ]);
+    }
+
     public function test_failed_job_is_recorded_and_not_automatically_resent(): void
     {
         [$invitee, $template] = $this->fixture();
