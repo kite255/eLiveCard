@@ -11,6 +11,8 @@ use App\Models\User;
 use App\Services\WhatsAppApiCloudService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use App\Services\InviteeInvitationService;
 use Tests\TestCase;
 
 class WhatsAppTemplateTrackingTest extends TestCase
@@ -73,6 +75,89 @@ class WhatsAppTemplateTrackingTest extends TestCase
             'message_template_id' => $template->id,
             'status' => 'pending',
             'attempts' => 2,
+        ]);
+    }
+
+    public function test_phone_update_keeps_old_whatsapp_claim_and_enables_new_generation(): void
+    {
+        Queue::fake();
+        [$invitee, $template] = $this->fixture();
+        $this->claim($invitee, $template);
+
+        DB::table('whatsapp_template_sends')->where('invitee_id', $invitee->id)
+            ->update(['status' => 'submitted']);
+
+        $invitee->forceFill([
+            'whatsapp_status' => 'delivered',
+            'whatsapp_sent_at' => now()->subHour(),
+        ])->save();
+
+        $invitee->phone = '0712345678';
+        $invitee->save();
+        $invitee->refresh();
+
+        $this->assertSame('255712345678', $invitee->phone);
+        $this->assertSame(1, $invitee->invitation_phone_generation);
+        $this->assertSame('not_sent', $invitee->whatsapp_status);
+        $this->assertNull($invitee->whatsapp_sent_at);
+
+        $this->assertDatabaseHas('whatsapp_template_sends', [
+            'invitee_id' => $invitee->id, 'phone_generation' => 0,
+            'status' => 'submitted',
+        ]);
+
+        $invitee->event->update(['default_whatsapp_template_id' => $template->id]);
+        $result = app(InviteeInvitationService::class)->send($invitee->event, $invitee, 'whatsapp');
+        $this->assertSame('queued', $result['status']);
+
+        $this->assertDatabaseHas('whatsapp_template_sends', [
+            'invitee_id' => $invitee->id, 'phone_generation' => 1,
+            'status' => 'pending',
+        ]);
+
+        Queue::assertPushed(SendInvitationWhatsAppJob::class, function ($job): bool {
+            return $job->phoneGeneration === 1;
+        });
+
+        $this->assertSame(2, DB::table('whatsapp_template_sends')
+            ->where('invitee_id', $invitee->id)->count());
+
+        $again = app(InviteeInvitationService::class)->send($invitee->event, $invitee->fresh(), 'whatsapp');
+        $this->assertSame('skipped', $again['status']);
+        Queue::assertPushed(SendInvitationWhatsAppJob::class, 1);
+    }
+
+    public function test_formatting_change_does_not_reset_whatsapp_status_or_generation(): void
+    {
+        [$invitee, $template] = $this->fixture();
+        $invitee->forceFill(['whatsapp_status' => 'delivered'])->save();
+
+        $invitee->phone = '+255 754 123 456';
+        $invitee->save();
+        $invitee->refresh();
+
+        $this->assertSame(0, $invitee->invitation_phone_generation);
+        $this->assertNull($invitee->invitation_phone_changed_at);
+        $this->assertSame('delivered', $invitee->whatsapp_status);
+    }
+
+    public function test_stale_queued_invitation_does_not_send_to_new_phone(): void
+    {
+        [$invitee, $template] = $this->fixture();
+        $this->claim($invitee, $template);
+
+        $invitee->phone = '0712345678';
+        $invitee->save();
+
+        $service = $this->mock(WhatsAppApiCloudService::class);
+        $service->shouldNotReceive('sendInvitation');
+
+        (new SendInvitationWhatsAppJob($invitee->id, 'en', $template->id, 0))
+            ->handle($service);
+
+        $this->assertDatabaseHas('whatsapp_template_sends', [
+            'invitee_id' => $invitee->id, 'phone_generation' => 0,
+            'status' => 'pending',
         ]);
     }
 
