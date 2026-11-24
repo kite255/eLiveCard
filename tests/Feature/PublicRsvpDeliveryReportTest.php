@@ -572,6 +572,27 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Showing 51 to 51 of 51 results');
     }
 
+    public function test_mobile_reply_heading_is_short_and_delivery_timestamps_are_readable(): void
+    {
+        $event = $this->reportEvent('Readable Mobile RSVP');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Readable Reply Guest',
+            'phone' => '255700005550',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())->assertOk()
+            ->assertSee('class="desktop-reply-heading">WhatsApp Reply / Response Time</span>', false)
+            ->assertSee('class="mobile-reply-heading">Reply / Time</span>', false)
+            ->assertSee('.mobile-reply-heading { display: inline; }', false)
+            ->assertSee('.desktop-reply-heading { display: none; }', false)
+            ->assertSee('font-size: 10px;', false)
+            ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
+            ->assertSee('class="reply-time-heading"', false);
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
