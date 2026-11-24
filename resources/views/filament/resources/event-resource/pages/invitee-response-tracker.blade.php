@@ -461,8 +461,9 @@
         .rsvp-table th:nth-child(9),.rsvp-table td:nth-child(9){width:110px}
         .rsvp-table th:nth-child(10),.rsvp-table td:nth-child(10){width:168px}
         .rsvp-table th:nth-child(11),.rsvp-table td:nth-child(11){width:106px;text-align:right}
-        .rsvp-name{font-size:13px;font-weight:850;color:#0F172A}
+        .rsvp-name{font-size:13px;font-weight:850;color:#0F172A;line-height:1.4}
         .rsvp-meta{margin-top:3px;font-size:10.5px;font-weight:650;color:#64748B}
+        .rsvp-phone{margin-top:2px;color:#617C9E;font-size:11px;font-weight:650;line-height:1.35;white-space:nowrap}
         .rsvp-badge{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:850;line-height:1;white-space:nowrap}
         .rsvp-delivery{display:flex;flex-direction:column;gap:5px}
         .rsvp-delivery-line{display:flex;align-items:center;gap:7px;min-width:0}
@@ -726,7 +727,7 @@
 
                             <td>
                                 <div class="rsvp-name">{{ $invitee->name }}</div>
-                                <div class="rsvp-meta">{{ $invitee->phone ?: '—' }}</div>
+                                <div class="rsvp-phone">{{ $invitee->phone ?: '—' }}</div>
                             </td>
 
                             <td>
