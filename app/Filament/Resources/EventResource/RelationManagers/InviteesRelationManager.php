@@ -1432,18 +1432,8 @@ class InviteesRelationManager extends RelationManager
             ])
             ->actionsPosition(Tables\Enums\ActionsPosition::AfterColumns)
             ->actions([
+                // Seven everyday actions. Keep this dropdown brief and readable.
                 Tables\Actions\ActionGroup::make([
-                    // Invitee details, card management and private links.
-                    Tables\Actions\ActionGroup::make([
-                        Tables\Actions\Action::make('invitee_cards_section')
-                            ->label('INVITEE & CARDS')
-                            ->disabled()
-                            ->color('gray'),
-                    Tables\Actions\ViewAction::make()
-                        ->label('View')
-                        ->icon('heroicon-o-eye')
-                        ->modalHeading(fn ($record): string => 'View Invitee: ' . $record->name),
-
                     Tables\Actions\Action::make('edit_invitee')
                         ->label('Edit Invitee')
                         ->visible(fn (): bool => $this->canManageInviteesForOwner())
@@ -1637,6 +1627,246 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
+                    Tables\Actions\Action::make('open_invitee_page')
+                        ->label('Open Invitee Page')
+                        ->icon('heroicon-o-eye')
+                        ->url(fn ($record) => route('invitee.page', $record->short_code))
+                        ->openUrlInNewTab()
+                        ->visible(fn ($record): bool => filled($record->short_code)),
+
+                    Tables\Actions\Action::make('send_whatsapp_invitation')
+                        ->label('Send WhatsApp Invitation')
+                        ->icon('heroicon-o-chat-bubble-left-right')
+                        ->color('success')
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
+                        ->modalHeading(fn (Invitee $record): string => 'Send WhatsApp invitation to '.$record->name)
+                        ->modalDescription('Sends this invitation immediately using the WhatsApp template selected in Event Settings. The provider response will appear after submission; accepted does not mean delivered. Previously submitted invitations will not be resent.')
+                        ->modalSubmitActionLabel('Send WhatsApp Now')
+                        ->requiresConfirmation()
+                        ->form([
+                            Forms\Components\Placeholder::make('whatsapp_template_preview')
+                                ->label('Configured Template')
+                                ->content(fn (Invitee $record): string => app(\App\Services\InviteeInvitationService::class)->preview($record, 'whatsapp')),
+                        ])
+                        ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'whatsapp')),
+
+                    Tables\Actions\Action::make('send_sms_invitation')
+                        ->label('Send SMS Invitation')
+                        ->icon('heroicon-o-envelope')
+                        ->color('primary')
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
+                        ->modalHeading(fn (Invitee $record): string => 'Send SMS invitation to '.$record->name)
+                        ->modalDescription('Sends this invitation immediately using the active SMS Invitation template. The provider response will appear after submission; accepted does not mean delivered. Already sent or pending invitations are skipped.')
+                        ->modalSubmitActionLabel('Send SMS Now')
+                        ->requiresConfirmation()
+                        ->form([
+                            Forms\Components\Placeholder::make('sms_invitation_preview')
+                                ->label('Personalized SMS Preview')
+                                ->content(fn (Invitee $record): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(
+                                    '<div style="white-space:pre-wrap;word-break:break-word;font-size:0.875rem;">'
+                                    .e(app(\App\Services\InviteeInvitationService::class)->preview($record, 'sms'))
+                                    .'</div>'
+                                )),
+                        ])
+                        ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'sms')),
+
+                    Tables\Actions\Action::make('refresh_sms_delivery')
+                        ->label('Refresh SMS Delivery Status')
+                        ->icon('heroicon-o-arrow-path')
+                        ->color('info')
+                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner())
+                        ->requiresConfirmation()
+                        ->modalHeading('Check SMS provider delivery report')
+                        ->modalDescription('Fetch the latest available provider delivery report for this invitee. Submitted does not mean delivered, and no provider response will remain unverified.')
+                        ->action(function (Invitee $record): void {
+                            abort_unless($this->canSendMessagesForOwner(), 403);
+                            $service = app(\App\Services\InvitationSmsDeliveryStatusService::class);
+                            $state = $service->forInvitee($record);
+                            $log = $state['log'];
+
+                            if (! $log || blank($log->provider_message_id)) {
+                                $this->brandedNotification()
+                                    ->title('eLive Card • SMS status unverified')
+                                    ->body('No provider reference exists for this invitation. Cannot verify delivery from the SMS provider.')
+                                    ->warning()->send();
+                                return;
+                            }
+
+                            $result = app(\App\Services\SmsService::class)
+                                ->refreshDeliveryReport((string) $log->provider_message_id);
+                            $fresh = $service->forInvitee($record->fresh());
+                            $this->brandedNotification()
+                                ->title('eLive Card • SMS delivery: '.$fresh['label'])
+                                ->body(($result['success'] ?? false)
+                                    ? $fresh['description']
+                                    : 'Provider report could not be verified. '.$fresh['description'])
+                                ->color(($result['success'] ?? false) ? 'success' : 'warning')
+                                ->persistent()->send();
+                        }),
+
+                    Tables\Actions\Action::make('update_rsvp')
+                        ->label('Update RSVP')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                        ->modalHeading(fn (Invitee $record): string => 'Update RSVP: '.$record->name)
+                        ->modalSubmitActionLabel('Save RSVP')
+                        ->fillForm(fn (Invitee $record): array => [
+                            'rsvp_status' => $record->rsvp_status ?: Invitee::RSVP_PENDING,
+                            'confirmed_guests' => (int) $record->confirmed_guests,
+                        ])
+                        ->form([
+                            Forms\Components\Select::make('rsvp_status')
+                                ->label('Response')
+                                ->options([
+                                    Invitee::RSVP_PENDING => 'Pending',
+                                    Invitee::RSVP_ATTENDING => 'Attending',
+                                    Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
+                                    Invitee::RSVP_MAYBE => 'Maybe',
+                                ])
+                                ->required()
+                                ->live(),
+                            Forms\Components\TextInput::make('confirmed_guests')
+                                ->label('Confirmed Guests')
+                                ->numeric()
+                                ->minValue(0)
+                                ->helperText('For Attending, enter the number of confirmed guests; limited by the invitation allowance.')
+                                ->visible(fn (Forms\Get $get): bool => $get('rsvp_status') === Invitee::RSVP_ATTENDING),
+                        ])
+                        ->action(function (Invitee $record, array $data): void {
+                            abort_unless($this->canManageInviteesForOwner(), 403);
+                            $status = (string) $data['rsvp_status'];
+                            $allowed = max(1, (int) $record->allowed_guests);
+                            $guests = $status === Invitee::RSVP_ATTENDING
+                                ? max(1, min($allowed, (int) ($data['confirmed_guests'] ?? 1)))
+                                : 0;
+                            $previous = $record->only(['rsvp_status', 'rsvp_confirmed_at', 'confirmed_guests']);
+                            $record->update([
+                                'rsvp_status' => $status,
+                                'rsvp_confirmed_at' => $status === Invitee::RSVP_PENDING ? null : now(),
+                                'confirmed_guests' => $guests,
+                            ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee RSVP was updated.',
+                                oldValues: $previous,
+                                newValues: $record->only(['rsvp_status', 'rsvp_confirmed_at', 'confirmed_guests']),
+                            );
+
+                            $this->brandedNotification()
+                                ->title('eLive Card • RSVP updated: '.$record->name)
+                                ->success()
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('update_rsvp')
+                        ->label('Update RSVP')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                        ->modalHeading(fn (Invitee $record): string => 'Update RSVP: '.$record->name)
+                        ->modalSubmitActionLabel('Save RSVP')
+                        ->fillForm(fn (Invitee $record): array => [
+                            'rsvp_status' => $record->rsvp_status ?: Invitee::RSVP_PENDING,
+                            'confirmed_guests' => (int) $record->confirmed_guests,
+                        ])
+                        ->form([
+                            Forms\Components\Select::make('rsvp_status')
+                                ->label('Response')
+                                ->options([
+                                    Invitee::RSVP_PENDING => 'Pending',
+                                    Invitee::RSVP_ATTENDING => 'Attending',
+                                    Invitee::RSVP_NOT_ATTENDING => 'Not Attending',
+                                    Invitee::RSVP_MAYBE => 'Maybe',
+                                ])
+                                ->required()
+                                ->live(),
+                            Forms\Components\TextInput::make('confirmed_guests')
+                                ->label('Confirmed Guests')
+                                ->numeric()
+                                ->minValue(0)
+                                ->helperText('For Attending, enter the number of confirmed guests; limited by the invitation allowance.')
+                                ->visible(fn (Forms\Get $get): bool => $get('rsvp_status') === Invitee::RSVP_ATTENDING),
+                        ])
+                        ->action(function (Invitee $record, array $data): void {
+                            abort_unless($this->canManageInviteesForOwner(), 403);
+                            $status = (string) $data['rsvp_status'];
+                            $allowed = max(1, (int) $record->allowed_guests);
+                            $guests = $status === Invitee::RSVP_ATTENDING
+                                ? max(1, min($allowed, (int) ($data['confirmed_guests'] ?? 1)))
+                                : 0;
+                            $previous = $record->only(['rsvp_status', 'rsvp_confirmed_at', 'confirmed_guests']);
+                            $record->update([
+                                'rsvp_status' => $status,
+                                'rsvp_confirmed_at' => $status === Invitee::RSVP_PENDING ? null : now(),
+                                'confirmed_guests' => $guests,
+                            ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee RSVP was updated.',
+                                oldValues: $previous,
+                                newValues: $record->only(['rsvp_status', 'rsvp_confirmed_at', 'confirmed_guests']),
+                            );
+
+                            $this->brandedNotification()
+                                ->title('eLive Card • RSVP updated: '.$record->name)
+                                ->success()
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('cancel_invitee')
+                        ->label('Cancel Invitee')
+                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
+                        ->icon('heroicon-o-no-symbol')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Cancel Invitee')
+                        ->modalDescription('This keeps the invitee record but blocks the card from being used.')
+                        ->action(function (Invitee $record): void {
+                            $oldValues = $record->only(['card_status']);
+
+                            $record->update([
+                                'card_status' => Invitee::CARD_STATUS_CANCELLED,
+                            ]);
+
+                            AuditLogService::updated(
+                                subject: $record,
+                                eventId: $record->event_id,
+                                description: 'Invitee card was cancelled.',
+                                oldValues: $oldValues,
+                                newValues: $record->only(['card_status']),
+                            );
+
+                            $this->brandedNotification()
+                                ->title('eLive Card • Invitee cancelled successfully')
+                                ->success()
+                                ->send();
+                        }),
+                ])
+                    ->label('Manage invitee')
+                    ->dropdownWidth(\Filament\Support\Enums\MaxWidth::Medium)
+                    ->dropdownMaxHeight('min(70dvh, 32rem)')
+                    ->icon('heroicon-m-ellipsis-horizontal')
+                    ->color('primary')
+                    ->iconButton()
+                    ->tooltip('Manage invitee'),
+
+                // Less-used actions stay available without cluttering the main menu.
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\Action::make('advanced_card_section')
+                        ->label('CARDS & DETAILS')
+                        ->disabled()
+                        ->color('gray'),
+
+                    Tables\Actions\ViewAction::make()
+                        ->label('View')
+                        ->icon('heroicon-o-eye')
+                        ->modalHeading(fn ($record): string => 'View Invitee: ' . $record->name),
+
                     Tables\Actions\Action::make('generate_card')
                         ->label('Generate / Regenerate Card')
                         ->visible(fn (): bool => $this->canGenerateCardsForOwner())
@@ -1705,13 +1935,6 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    Tables\Actions\Action::make('open_invitee_page')
-                        ->label('Open Invitee Page')
-                        ->icon('heroicon-o-eye')
-                        ->url(fn ($record) => route('invitee.page', $record->short_code))
-                        ->openUrlInNewTab()
-                        ->visible(fn ($record): bool => filled($record->short_code)),
-
                     Tables\Actions\Action::make('show_private_link')
                         ->label('Show Private Link')
                         ->icon('heroicon-o-link')
@@ -1725,96 +1948,20 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
-                    ])->dropdown(false),
-
-                    // Invitation-only communication actions.
-                    Tables\Actions\ActionGroup::make([
-                        Tables\Actions\Action::make('messaging_section')
-                            ->label('MESSAGING')
-                            ->disabled()
-                            ->color('gray'),
-                    Tables\Actions\Action::make('send_whatsapp_invitation')
-                        ->label('Send WhatsApp Invitation')
-                        ->icon('heroicon-o-chat-bubble-left-right')
-                        ->color('success')
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
-                        ->modalHeading(fn (Invitee $record): string => 'Send WhatsApp invitation to '.$record->name)
-                        ->modalDescription('Sends this invitation immediately using the WhatsApp template selected in Event Settings. The provider response will appear after submission; accepted does not mean delivered. Previously submitted invitations will not be resent.')
-                        ->modalSubmitActionLabel('Send WhatsApp Now')
-                        ->requiresConfirmation()
-                        ->form([
-                            Forms\Components\Placeholder::make('whatsapp_template_preview')
-                                ->label('Configured Template')
-                                ->content(fn (Invitee $record): string => app(\App\Services\InviteeInvitationService::class)->preview($record, 'whatsapp')),
-                        ])
-                        ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'whatsapp')),
-
-                    Tables\Actions\Action::make('send_sms_invitation')
-                        ->label('Send SMS Invitation')
-                        ->icon('heroicon-o-envelope')
-                        ->color('primary')
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner() && filled($record->short_code))
-                        ->modalHeading(fn (Invitee $record): string => 'Send SMS invitation to '.$record->name)
-                        ->modalDescription('Sends this invitation immediately using the active SMS Invitation template. The provider response will appear after submission; accepted does not mean delivered. Already sent or pending invitations are skipped.')
-                        ->modalSubmitActionLabel('Send SMS Now')
-                        ->requiresConfirmation()
-                        ->form([
-                            Forms\Components\Placeholder::make('sms_invitation_preview')
-                                ->label('Personalized SMS Preview')
-                                ->content(fn (Invitee $record): \Illuminate\Support\HtmlString => new \Illuminate\Support\HtmlString(
-                                    '<div style="white-space:pre-wrap;word-break:break-word;font-size:0.875rem;">'
-                                    .e(app(\App\Services\InviteeInvitationService::class)->preview($record, 'sms'))
-                                    .'</div>'
-                                )),
-                        ])
-                        ->action(fn (Invitee $record) => $this->processInviteeInvitation($record, 'sms')),
+                    Tables\Actions\Action::make('advanced_resend_section')
+                        ->label('RESEND INVITATIONS')
+                        ->disabled()
+                        ->color('gray'),
 
                     $this->resendInvitationAction('sms'),
 
                     $this->resendInvitationAction('whatsapp'),
 
-                    Tables\Actions\Action::make('refresh_sms_delivery')
-                        ->label('Refresh SMS Delivery Status')
-                        ->icon('heroicon-o-arrow-path')
-                        ->color('info')
-                        ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner())
-                        ->requiresConfirmation()
-                        ->modalHeading('Check SMS provider delivery report')
-                        ->modalDescription('Fetch the latest available provider delivery report for this invitee. Submitted does not mean delivered, and no provider response will remain unverified.')
-                        ->action(function (Invitee $record): void {
-                            abort_unless($this->canSendMessagesForOwner(), 403);
-                            $service = app(\App\Services\InvitationSmsDeliveryStatusService::class);
-                            $state = $service->forInvitee($record);
-                            $log = $state['log'];
+                    Tables\Actions\Action::make('advanced_rsvp_section')
+                        ->label('ADVANCED RSVP')
+                        ->disabled()
+                        ->color('gray'),
 
-                            if (! $log || blank($log->provider_message_id)) {
-                                $this->brandedNotification()
-                                    ->title('eLive Card • SMS status unverified')
-                                    ->body('No provider reference exists for this invitation. Cannot verify delivery from the SMS provider.')
-                                    ->warning()->send();
-                                return;
-                            }
-
-                            $result = app(\App\Services\SmsService::class)
-                                ->refreshDeliveryReport((string) $log->provider_message_id);
-                            $fresh = $service->forInvitee($record->fresh());
-                            $this->brandedNotification()
-                                ->title('eLive Card • SMS delivery: '.$fresh['label'])
-                                ->body(($result['success'] ?? false)
-                                    ? $fresh['description']
-                                    : 'Provider report could not be verified. '.$fresh['description'])
-                                ->color(($result['success'] ?? false) ? 'success' : 'warning')
-                                ->persistent()->send();
-                        }),
-
-                    ])->dropdown(false),
-
-                    // RSVP management actions.
-                    Tables\Actions\ActionGroup::make([
-                        Tables\Actions\Action::make('rsvp_section')
-                            ->label('RSVP ACTIONS')
-                            ->disabled()
-                            ->color('gray'),
                     Tables\Actions\Action::make('mark_attending')
                         ->label('Mark Attending')
                         ->visible(fn (): bool => $this->canManageInviteesForOwner())
@@ -1926,42 +2073,10 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    ])->dropdown(false),
-
-                    // Destructive and irreversible actions.
-                    Tables\Actions\ActionGroup::make([
-                        Tables\Actions\Action::make('danger_section')
-                            ->label('CANCEL OR DELETE')
-                            ->disabled()
-                            ->color('gray'),
-                    Tables\Actions\Action::make('cancel_invitee')
-                        ->label('Cancel Invitee')
-                        ->visible(fn (): bool => $this->canManageInviteesForOwner())
-                        ->icon('heroicon-o-no-symbol')
-                        ->color('warning')
-                        ->requiresConfirmation()
-                        ->modalHeading('Cancel Invitee')
-                        ->modalDescription('This keeps the invitee record but blocks the card from being used.')
-                        ->action(function (Invitee $record): void {
-                            $oldValues = $record->only(['card_status']);
-
-                            $record->update([
-                                'card_status' => Invitee::CARD_STATUS_CANCELLED,
-                            ]);
-
-                            AuditLogService::updated(
-                                subject: $record,
-                                eventId: $record->event_id,
-                                description: 'Invitee card was cancelled.',
-                                oldValues: $oldValues,
-                                newValues: $record->only(['card_status']),
-                            );
-
-                            $this->brandedNotification()
-                                ->title('eLive Card • Invitee cancelled successfully')
-                                ->success()
-                                ->send();
-                        }),
+                    Tables\Actions\Action::make('advanced_delete_section')
+                        ->label('DELETE')
+                        ->disabled()
+                        ->color('gray'),
 
                     Tables\Actions\Action::make('delete_invitee')
                         ->label('Delete Invitee')
@@ -1998,15 +2113,14 @@ class InviteesRelationManager extends RelationManager
                                     ->send();
                             }
                         }),
-                    ])->dropdown(false),
                 ])
-                    ->label('Manage invitee')
+                    ->label('More invitee actions')
                     ->dropdownWidth(\Filament\Support\Enums\MaxWidth::Medium)
                     ->dropdownMaxHeight('min(70dvh, 32rem)')
-                    ->icon('heroicon-m-ellipsis-horizontal')
-                    ->color('primary')
+                    ->icon('heroicon-o-cog-6-tooth')
+                    ->color('gray')
                     ->iconButton()
-                    ->tooltip('Manage invitee'),
+                    ->tooltip('More invitee actions'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
