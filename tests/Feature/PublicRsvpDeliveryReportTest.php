@@ -762,6 +762,31 @@ class PublicRsvpDeliveryReportTest extends TestCase
             );
     }
 
+    public function test_shared_report_displays_phone_below_invitee_name_when_enabled(): void
+    {
+        $event = $this->reportEvent('Client Report With Phones');
+        $event->forceFill(['rsvp_share_show_phone' => true])->save();
+
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Visible Phone Guest',
+            'phone' => '255700000321',
+        ]);
+
+        $response = $this->get($event->generateRsvpShareLink())->assertOk();
+
+        $response->assertSee('Visible Phone Guest')
+            ->assertSee('255700000321')
+            ->assertDontSee('<th rowspan="2">Phone</th>', false);
+
+        $html = $response->getContent();
+        $this->assertMatchesRegularExpression(
+            '/<div class="name">Visible Phone Guest<\\/div>\\s*<div class="subtle"[^>]*>255700000321<\\/div>/',
+            $html
+        );
+    }
+
     public function test_client_reply_is_html_escaped_and_phone_stays_hidden_by_default(): void
     {
         $event = $this->reportEvent('Private Client Report');
