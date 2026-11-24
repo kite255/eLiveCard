@@ -2731,6 +2731,7 @@ class InviteesRelationManager extends RelationManager
                     $eligible->whereExists(function ($sub) use ($messageTemplateId): void {
                         $sub->selectRaw('1')->from('whatsapp_template_sends as wts')
                             ->whereColumn('wts.invitee_id', 'invitees.id')
+                            ->whereColumn('wts.phone_generation', 'invitees.invitation_phone_generation')
                             ->where('wts.message_template_id', $messageTemplateId)
                             ->where('wts.status', 'failed');
                     });
@@ -2746,7 +2747,8 @@ class InviteesRelationManager extends RelationManager
                     $eligible->where(function (Builder $legacy): void {
                         $legacy->whereExists(function ($sub): void {
                             $sub->selectRaw('1')->from('whatsapp_template_sends as previous')
-                                ->whereColumn('previous.invitee_id', 'invitees.id');
+                                ->whereColumn('previous.invitee_id', 'invitees.id')
+                                ->whereColumn('previous.phone_generation', 'invitees.invitation_phone_generation');
                         })->orWhere(function (Builder $neverSent): void {
                             $neverSent->whereNull('whatsapp_sent_at')
                                 ->where(function (Builder $status): void {
@@ -2786,6 +2788,7 @@ class InviteesRelationManager extends RelationManager
                     ->join('invitees', 'invitees.id', '=', 'whatsapp_template_sends.invitee_id')
                     ->where('invitees.event_id', $this->getOwnerRecord()->id)
                     ->where('whatsapp_template_sends.message_template_id', $messageTemplateId)
+                    ->whereColumn('whatsapp_template_sends.phone_generation', 'invitees.invitation_phone_generation')
                     ->where('invitees.card_status', Invitee::CARD_STATUS_ACTIVE)
                     ->selectRaw('whatsapp_template_sends.status, COUNT(*) as total')
                     ->groupBy('whatsapp_template_sends.status')
@@ -2850,12 +2853,14 @@ class InviteesRelationManager extends RelationManager
                         ->where('event_id', $event->id)
                         ->where('invitee_id', $invitee->id)
                         ->where('message_template_id', $template->id)
+                        ->where('phone_generation', (int) $invitee->invitation_phone_generation)
                         ->where('status', 'failed')
                         ->update(['status' => 'pending', 'attempts' => DB::raw('attempts + 1'),
                             'last_attempt_at' => now(), 'updated_at' => now()]) === 1
                     : DB::table('whatsapp_template_sends')->insertOrIgnore([
                         'event_id' => $event->id, 'invitee_id' => $invitee->id,
-                        'message_template_id' => $template->id, 'status' => 'pending',
+                        'message_template_id' => $template->id,
+                        'phone_generation' => (int) $invitee->invitation_phone_generation, 'status' => 'pending',
                         'attempts' => 1, 'last_attempt_at' => now(),
                         'created_at' => now(), 'updated_at' => now(),
                     ]) === 1;
@@ -2884,6 +2889,7 @@ class InviteesRelationManager extends RelationManager
                     ->where('event_id', $event->id)
                     ->where('invitee_id', $invitee->id)
                     ->where('message_template_id', $template->id)
+                    ->where('phone_generation', (int) $invitee->invitation_phone_generation)
                     ->update([
                         'status' => in_array($result['status'] ?? null, ['sent', 'logged'], true) ? 'submitted' : 'failed',
                         'last_error' => ($result['status'] ?? null) === 'failed'
