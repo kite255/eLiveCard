@@ -8,6 +8,7 @@ use App\Services\AuditLogService;
 use App\Services\SmsService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Container\Container;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -30,7 +31,10 @@ class SendInvitationSmsJob implements ShouldQueue
         public ?string $customMessage = null,
         public bool $forceResend = false,
     ) {
-        $this->onQueue((string) config('messaging.sms_queue', self::QUEUE));
+        $queue = Container::getInstance()->bound('config')
+            ? (string) config('messaging.sms_queue', self::QUEUE)
+            : self::QUEUE;
+        $this->onQueue($queue);
     }
 
     public function middleware(): array
