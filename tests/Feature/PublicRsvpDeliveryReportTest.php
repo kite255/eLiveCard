@@ -487,8 +487,8 @@ class PublicRsvpDeliveryReportTest extends TestCase
 
         $this->get($event->generateRsvpShareLink())->assertOk()
             ->assertSee('min-width: 0;', false)
-            ->assertSee('padding: 5px 2px;', false)
-            ->assertSee('min-width: 100px;', false)
+            ->assertSee('padding: 5px 6px;', false)
+            ->assertSee('min-width: 0;', false)
             ->assertSee('column-gap: 3px;', false)
             ->assertSee('class="mobile-channel-entry"', false)
             ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
@@ -561,7 +561,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $url = $event->generateRsvpShareLink();
         $this->get($url.'?status=pending')->assertOk()
             ->assertSee('min-width: 0;', false)
-            ->assertSee('padding: 5px 2px;', false)
+            ->assertSee('padding: 5px 6px;', false)
             ->assertSee('aria-label="Current page 1"', false)
             ->assertSee('aria-label="Page 2"', false)
             ->assertSee('status=pending&amp;page=2', false);
@@ -607,11 +607,30 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($event->generateRsvpShareLink())->assertOk()
             ->assertSee('width: max-content;', false)
             ->assertSee('min-width: 0;', false)
-            ->assertSee('padding: 5px 2px;', false)
-            ->assertSee('min-width: 88px;', false)
-            ->assertSee('min-width: 100px;', false)
-            ->assertSee('min-width: 106px;', false)
+            ->assertSee('padding: 5px 6px;', false)
+            ->assertSee('min-width: 0;', false)
+            ->assertSee('min-width: 0;', false)
+            ->assertSee('min-width: 0;', false)
             ->assertSee('Reply / Time');
+    }
+
+    public function test_mobile_invitee_card_channel_and_reply_columns_use_equal_cell_padding(): void
+    {
+        $event = $this->reportEvent('Uniform Mobile Columns');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Uniform Column Guest',
+            'phone' => '255700005552',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $response = $this->get($event->generateRsvpShareLink())->assertOk();
+        $response->assertSee('padding: 5px 6px;', false)
+            ->assertSee('.desktop-table-wrap .reply-time-heading { min-width: 0;', false)
+            ->assertSee('class="mobile-combined-channel-heading"', false)
+            ->assertSee('class="mobile-combined-channel"', false)
+            ->assertSee('Uniform Column Guest');
     }
 
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
