@@ -55,7 +55,7 @@ class SmsDeliveryCallbackIntegrityTest extends TestCase
         return [$invitee, $log];
     }
 
-    private function callback(array $body, bool $authorized = true)
+    private function postDeliveryCallback(array $body, bool $authorized = true)
     {
         $request = $this;
 
@@ -70,7 +70,7 @@ class SmsDeliveryCallbackIntegrityTest extends TestCase
     {
         [, $log] = $this->fixture();
 
-        $this->callback(['message_id' => 'receipt-123', 'status' => 'delivered'], false)
+        $this->postDeliveryCallback(['message_id' => 'receipt-123', 'status' => 'delivered'], false)
             ->assertUnauthorized();
 
         $this->assertSame(SmsLog::STATUS_SENT, $log->fresh()->status);
@@ -92,7 +92,7 @@ class SmsDeliveryCallbackIntegrityTest extends TestCase
     {
         [, $log] = $this->fixture();
 
-        $this->callback(['message_id' => 'receipt-123', 'status' => 'unexpected-provider-value'])
+        $this->postDeliveryCallback(['message_id' => 'receipt-123', 'status' => 'unexpected-provider-value'])
             ->assertUnprocessable();
 
         $this->assertSame(SmsLog::STATUS_SENT, $log->fresh()->status);
@@ -102,11 +102,11 @@ class SmsDeliveryCallbackIntegrityTest extends TestCase
     {
         [$invitee, $log] = $this->fixture();
 
-        $this->callback(['message_id' => 'receipt-123', 'status' => 'delivered'])
+        $this->postDeliveryCallback(['message_id' => 'receipt-123', 'status' => 'delivered'])
             ->assertOk();
         $this->assertSame(SmsLog::STATUS_DELIVERED, $log->fresh()->status);
 
-        $this->callback(['message_id' => 'receipt-123', 'status' => 'submitted'])
+        $this->postDeliveryCallback(['message_id' => 'receipt-123', 'status' => 'submitted'])
             ->assertOk();
 
         $this->assertSame(SmsLog::STATUS_DELIVERED, $log->fresh()->status);
@@ -129,7 +129,7 @@ class SmsDeliveryCallbackIntegrityTest extends TestCase
         ]);
         $invitee->forceFill(['sms_status' => Invitee::SMS_STATUS_SENT])->saveQuietly();
 
-        $this->callback(['message_id' => 'receipt-123', 'status' => 'delivered'])
+        $this->postDeliveryCallback(['message_id' => 'receipt-123', 'status' => 'delivered'])
             ->assertOk();
 
         $this->assertSame(SmsLog::STATUS_DELIVERED, $oldLog->fresh()->status);
