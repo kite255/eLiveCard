@@ -56,11 +56,15 @@ class InviteeActionsMenuStructureTest extends TestCase
             $this->assertStringNotContainsString("Action::make('{$name}')", $primary);
         }
 
-        foreach (['CARDS & DETAILS', 'RESEND INVITATIONS', 'ADVANCED RSVP', 'DELETE'] as $heading) {
+        foreach (['CARDS & DETAILS', 'ADVANCED RSVP', 'DELETE'] as $heading) {
             $this->assertStringContainsString("->label('{$heading}')", $advanced);
         }
-        $this->assertStringContainsString("resendInvitationAction('sms')", $advanced);
-        $this->assertStringContainsString("resendInvitationAction('whatsapp')", $advanced);
+        $this->assertStringContainsString("resendInvitationAction('sms')", $primary);
+        $this->assertStringContainsString("resendInvitationAction('whatsapp')", $primary);
+        $this->assertStringNotContainsString("resendInvitationAction('sms')", $advanced);
+        $this->assertStringNotContainsString("resendInvitationAction('whatsapp')", $advanced);
+        $this->assertSame(1, substr_count($primary, "Action::make('update_rsvp')"));
+        $this->assertStringContainsString("hasCurrentInvitationSubmission", $source);
         $this->assertStringContainsString("->label('Update RSVP')", $primary);
         $this->assertStringContainsString("'rsvp_confirmed_at' => ", $primary);
 
