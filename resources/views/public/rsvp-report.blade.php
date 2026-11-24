@@ -873,13 +873,15 @@
             }
             .desktop-table-wrap th { font-size: 9px; letter-spacing: 0; }
             .desktop-table-wrap .name { min-width: 112px; line-height: 1.3; }
-            .desktop-table-wrap .reply-value { max-width: 120px; line-height: 1.25; }
+            .desktop-table-wrap .reply-value { max-width: 110px; line-height: 1.25; }
             .desktop-table-wrap .response-time { font-size: 10px !important; }
             .desktop-table-wrap .badge { padding: 4px 6px; font-size: 10px; }
             .desktop-table-wrap .invitee-phone { white-space: nowrap; }
             .mobile-rsvp-cards { display: none; }
         }
 
+        .mobile-reply-heading { display: none; }
+        .desktop-reply-heading { display: inline; }
         .mobile-combined-channel-heading,
         .mobile-combined-channel { display: none; }
 
@@ -888,6 +890,16 @@
             .desktop-channel-subheading,
             .desktop-whatsapp-channel,
             .desktop-sms-channel { display: none; }
+            .desktop-reply-heading { display: none; }
+            .mobile-reply-heading { display: inline; }
+            .desktop-table-wrap .reply-time-heading { min-width: 100px; white-space: nowrap; }
+            .desktop-table-wrap th:first-child,
+            .desktop-table-wrap td:first-child {
+                padding-left: 3px;
+                padding-right: 3px;
+                width: 20px;
+                white-space: nowrap;
+            }
             .desktop-table-wrap .mobile-combined-channel-heading {
                 display: table-cell;
                 min-width: 108px;
@@ -943,9 +955,9 @@
                 display: block;
                 grid-column: 2;
                 margin: 0;
-                font-size: 9px;
-                line-height: 1.15;
-                color: var(--muted);
+                font-size: 10px;
+                line-height: 1.2;
+                color: #64748b;
                 white-space: nowrap;
             }
             /* Guests are retained on desktop, but do not occupy phone width. */
@@ -1165,7 +1177,7 @@
                             <th colspan="2" scope="colgroup" class="channel-heading desktop-channel-heading">CHANNEL</th>
                             <th rowspan="2" scope="col" class="mobile-combined-channel-heading">CHANNEL</th>
 
-                            <th rowspan="2">WhatsApp Reply / Response Time</th>
+                            <th rowspan="2" class="reply-time-heading"><span class="desktop-reply-heading">WhatsApp Reply / Response Time</span><span class="mobile-reply-heading">Reply / Time</span></th>
                         </tr>
                         <tr>
                             <th scope="col" class="channel-icon-heading desktop-channel-subheading"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.966-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.198-.347.223-.644.075-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.058-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.496.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.371-.272.297-1.04 1.016-1.04 2.479s1.065 2.875 1.213 3.073c.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.693.625.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.002-5.443 4.43-9.87 9.875-9.87a9.81 9.81 0 0 1 6.987 2.894 9.8 9.8 0 0 1 2.89 6.99c-.003 5.443-4.43 9.872-9.868 9.872m8.403-18.274A11.9 11.9 0 0 0 12.05 0C5.495 0 .16 5.335 .157 11.893c-.001 2.096.547 4.143 1.588 5.945L0 24l6.3-1.653a11.88 11.88 0 0 0 5.747 1.464h.005c6.557 0 11.892-5.335 11.895-11.893a11.82 11.82 0 0 0-3.493-8.413"/></svg></th>
