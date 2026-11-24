@@ -692,6 +692,80 @@
             }
         }
 
+        /* Compact mobile dashboard: preserve readable statistics and both filters. */
+        @media (max-width: 760px) {
+            .stats {
+                gap: 8px;
+                margin: 12px 0;
+            }
+            .stats .stat {
+                padding: 11px 12px;
+                border-radius: 12px;
+                min-height: 61px;
+            }
+            .stats .stat strong {
+                font-size: 24px;
+                line-height: 1.05;
+            }
+            .stats .stat span {
+                font-size: 10px;
+                line-height: 1.2;
+                margin-top: 3px;
+            }
+            .panel-heading {
+                padding: 12px 14px;
+            }
+            .response-heading-content {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: baseline;
+                justify-content: space-between;
+                column-gap: 8px;
+                row-gap: 2px;
+                width: 100%;
+            }
+            .panel-heading h2 { font-size: 14px; }
+            .panel-heading p { font-size: 11px; margin: 0; }
+            .filters {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+                padding: 10px 12px;
+            }
+            .filters > input[type="search"] {
+                grid-column: 1 / -1;
+                min-width: 0;
+            }
+            .filters > select {
+                width: 100%;
+                min-width: 0;
+                padding: 0 22px 0 8px;
+                font-size: 11px;
+            }
+            .filters .input, .filters .select, .filters .button {
+                min-height: 36px;
+                border-radius: 8px;
+            }
+            .filters .filter-actions {
+                grid-column: 1 / -1;
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+            .rsvp-live-filtering .filters .apply-filters {
+                display: none;
+            }
+            .filters .filter-actions:has(#rsvp-clear-filters[hidden]) {
+                display: none;
+            }
+        }
+        @media (max-width: 370px) {
+            .filters { grid-template-columns: 1fr; }
+            .filters > input[type="search"], .filters .filter-actions {
+                grid-column: 1;
+            }
+        }
+
         .invitee-phone {
             margin-top: 4px;
             color: #506785;
@@ -1098,7 +1172,7 @@
 
         <section class="panel">
             <div class="panel-heading">
-                <div>
+                <div class="response-heading-content">
                     <h2>Invitee Responses</h2>
                     <p id="rsvp-live-response-count">{{ $responded }} of {{ $total }} invitees have responded.</p>
                 </div>
@@ -1137,8 +1211,8 @@
                     <option value="unknown" @selected($whatsappDelivery === 'unknown')>Unknown</option>
                 </select>
 
-                <div style="display:flex; gap:8px;">
-                    <button type="submit" class="button">Apply Filters</button>
+                <div class="filter-actions">
+                    <button type="submit" class="button apply-filters">Apply Filters</button>
 
                     <a id="rsvp-clear-filters" href="{{ request()->url() }}" class="button secondary" @if ($search === '' && $status === '' && $whatsappDelivery === '') hidden @endif>
                         Clear
@@ -1440,6 +1514,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    document.documentElement.classList.add('rsvp-live-filtering');
+
     let debounceTimer;
     let activeRequest;
     let generation = 0;
@@ -1531,7 +1607,11 @@ document.addEventListener('DOMContentLoaded', () => {
     search.addEventListener('input', schedule);
 
     for (const select of form.querySelectorAll('select[name]')) {
-        select.addEventListener('change', () => load(valuesUrl()));
+        select.addEventListener('change', () => {
+            const url = valuesUrl();
+            url.searchParams.delete('page');
+            load(url);
+        });
     }
 
     form.addEventListener('submit', (event) => {
