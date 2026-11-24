@@ -449,8 +449,10 @@ class SmsLog extends Model
 
     public function getDeliveryDisplayAttribute(): string
     {
-        if ($this->hasDeliveryReportUnavailable()) {
-            return 'Sent · Delivery report unavailable';
+        if (in_array($this->status, [self::STATUS_SENT, 'submitted', 'accepted'], true)) {
+            return $this->hasDeliveryReportUnavailable() || $this->provider_status === 'report_failed'
+                ? 'Sent · Delivery report unavailable'
+                : 'Sent · Awaiting delivery';
         }
 
         return $this->status_label;

@@ -636,8 +636,12 @@
                             $hasLegacySms = $legacySmsSent($invitee);
                             $hasLegacyWhatsapp = $legacyWhatsappSent($invitee);
 
+                            $invitationSms = $invitee->smsLogs->first();
+                            $smsLog = $invitationSms ?? $smsLog;
                             $smsStatus = $smsLog
-                                ? $actualProviderStatus($smsLog, 'sms')
+                                ? ($invitationSms
+                                    ? $normalizeDeliveryStatus($invitationSms->status, 'sms')
+                                    : $actualProviderStatus($smsLog, 'sms'))
                                 : ($hasLegacySms
                                     ? $normalizeDeliveryStatus(
                                         $invitee->sms_status
@@ -690,9 +694,16 @@
                                     ? ($invitee->last_sms_sent_at ?? $invitee->sms_sent_at ?? $invitee->invitation_sms_sent_at)
                                     : ($invitee->last_whatsapp_sent_at ?? null));
 
-                            $smsTime = $smsLog
-                                ? $actualProviderTime($smsLog, $smsStatus)
-                                : ($invitee->last_sms_sent_at ?? $invitee->sms_sent_at ?? $invitee->invitation_sms_sent_at);
+                            $smsTime = $invitationSms
+                                ? match ($smsStatus) {
+                                    'delivered' => $invitationSms->delivered_at,
+                                    'failed', 'undelivered', 'expired', 'rejected' => $invitationSms->failed_at,
+                                    default => $invitationSms->sent_at,
+                                }
+                                : ($smsLog
+                                    ? $actualProviderTime($smsLog, $smsStatus)
+                                    : ($invitee->last_sms_sent_at ?? $invitee->sms_sent_at ?? $invitee->invitation_sms_sent_at));
+                            $smsLabel = $invitationSms?->delivery_display ?? $formatStatus($smsStatus);
 
                             $whatsappTime = $whatsappLog
                                 ? $actualProviderTime($whatsappLog, $whatsappStatus)
@@ -739,7 +750,7 @@
                                             </span>
                                             <div>
                                                 <span class="rsvp-badge" style="{{ $statusStyles[$smsStatus] ?? $statusStyles['unknown'] }}">
-                                                    {{ $formatStatus($smsStatus) }}
+                                                    {{ $smsLabel }}
                                                 </span>
                                                 <span class="rsvp-time">{{ $smsTime ? optional($smsTime)->format('d M H:i') : '—' }}</span>
                                             </div>
@@ -763,9 +774,9 @@
                                             </span>
                                             <div>
                                                 <span class="rsvp-badge" style="{{ $statusStyles[$deliveryStatus] ?? $statusStyles['unknown'] }}">
-                                                    {{ $formatStatus($deliveryStatus) }}
+                                                    {{ $deliveryChannel === 'sms' ? $smsLabel : $formatStatus($deliveryStatus) }}
                                                 </span>
-                                                <span class="rsvp-time">{{ $deliveryTime ? optional($deliveryTime)->format('d M H:i') : '—' }}</span>
+                                                <span class="rsvp-time">{{ optional($deliveryChannel === 'sms' ? $smsTime : $deliveryTime)->format('d M H:i') ?? '—' }}</span>
                                             </div>
                                         </div>
                                     @endif

@@ -555,13 +555,17 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('sms_delivery_status')
                     ->label('SMS Delivery')
-                    ->state(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
-                        ->forInvitee($record)['label'])
-                    ->description(function (Invitee $record): string {
+                    ->state(function (Invitee $record): string {
                         $state = app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record);
-                        return ($state['status_time'] ? ($state['status_time_label'].' at '.$state['status_time'].' | ') : '')
-                            .$state['description'];
+
+                        return $state['label'] === 'Submitted' || $state['label'] === 'Failed'
+                            ? ($state['log']?->delivery_display ?? $state['label'])
+                            : $state['label'];
                     })
+                    ->description(fn (Invitee $record): ?string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                        ->forInvitee($record)['status_time'])
+                    ->tooltip(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
+                        ->forInvitee($record)['description'])
                     ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
                         ->forInvitee($record)['color'])
                     ->badge()
