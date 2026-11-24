@@ -610,8 +610,9 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('Submitted SMS Guest')
             ->assertDontSee('Uncontacted Guest')
             ->assertDontSee('Private Other Event Guest')
-            ->assertSee('name="sms_delivery"', false)
-            ->assertSee('name="whatsapp_delivery"', false);
+            ->assertDontSee('name="sms_delivery"', false)
+            ->assertSee('name="whatsapp_delivery"', false)
+            ->assertSee('aria-label="Phone number"', false);
 
         $this->get($url.'?sms_delivery=submitted')
             ->assertOk()->assertSee('Submitted SMS Guest')
@@ -822,6 +823,30 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertOk()
             ->assertSee('Existing Hidden Phone Guest')
             ->assertDontSee($invitee->phone);
+    }
+
+    public function test_existing_shared_report_displays_phone_below_name_after_owner_enables_it(): void
+    {
+        $event = $this->reportEvent('Client Report Phone Setting');
+        $url = $event->generateRsvpShareLink(showPhone: false);
+
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Enabled Phone Guest',
+            'phone' => '255700009878',
+        ]);
+
+        $this->get($url)->assertOk()->assertDontSee($invitee->phone);
+
+        // The owner can enable phone visibility without regenerating the link.
+        $this->assertSame($url, $event->ensureRsvpShareLink(showPhone: true));
+        $this->get($url)->assertOk()
+            ->assertSee('Enabled Phone Guest')
+            ->assertSee('Phone: 255700009878')
+            ->assertSee('class="subtle invitee-phone"', false)
+            ->assertDontSee('name="sms_delivery"', false)
+            ->assertSee('name="whatsapp_delivery"', false);
     }
 
     public function test_client_reply_is_html_escaped_and_phone_stays_hidden_when_explicitly_disabled(): void
