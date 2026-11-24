@@ -24,6 +24,13 @@ class InviteeActionsMenuStructureTest extends TestCase
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
         $this->assertStringNotContainsString('->maxHeight(', $menu);
 
+        // Keep the menu anchored to its row action and usable in small viewports.
+        $this->assertStringContainsString("->extraAttributes(['class' => 'elive-invitee-actions-trigger'])", $menu);
+        $theme = file_get_contents(resource_path('css/filament/admin/theme.css'));
+        $this->assertStringContainsString('.fi-dropdown:has(.elive-invitee-actions-trigger) .fi-dropdown-panel', $theme);
+        $this->assertStringContainsString('grid-template-columns: repeat(2, minmax(0, 1fr))', $theme);
+        $this->assertStringContainsString('max-height: calc(100dvh - 1.5rem)', $theme);
+
         $names = [
             'edit_invitee',
             'generate_card',
