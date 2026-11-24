@@ -62,13 +62,24 @@ Database queue configuration: `QUEUE_CONNECTION=database` and
 If you change the environment, rebuild/reload cached configuration and
 restart workers so the values take effect.
 
-The new Message Center event-SMS jobs default to the existing
-`communications` queue. To move **those jobs** onto a dedicated SMS queue,
-set `SMS_QUEUE=sms` and start a separate, persistent `sms` worker before
-switching the setting. Invitation SMS jobs remain on `communications`
-until explicitly migrated; do not retire that worker. WhatsApp invitation
-jobs also currently use `communications`, regardless of the default
-`WHATSAPP_QUEUE` setting.
+SMS and WhatsApp invitation jobs default to the existing `communications`
+queue. To separate them, first start persistent workers for `sms` and
+`whatsapp`, then set `SMS_QUEUE=sms` and `WHATSAPP_QUEUE=whatsapp`, and
+restart application workers after configuration is refreshed. Card generation
+continues on its existing `card-generation` queue. Keep the `communications`
+worker alive for any other legacy jobs still routed there.
+
+Suggested starting points after provider capacity checks:
+
+```bash
+php artisan queue:work database --queue=sms --sleep=1 --tries=3 --timeout=120
+php artisan queue:work database --queue=whatsapp --sleep=1 --tries=3 --timeout=120
+php artisan queue:work database --queue=communications,default --sleep=1 --tries=3 --timeout=120
+```
+
+Use **two** independently supervised SMS worker instances initially; scale
+only after measuring provider response times and confirming provider limits.
+Do not treat worker count as a provider-approved requests-per-second limit.
 
 Operational verification (read-only):
 
