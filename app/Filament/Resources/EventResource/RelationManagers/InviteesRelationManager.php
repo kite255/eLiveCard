@@ -329,10 +329,17 @@ class InviteesRelationManager extends RelationManager
                     })
                     ->sortable()
                     ->weight('bold')
-                    ->description(fn (Invitee $record): ?string => collect([
-                        $record->phone,
-                        $record->email,
-                    ])->filter()->implode(' • ') ?: null)
+                    ->description(function (Invitee $record): ?string {
+                        $others = app(\App\Services\SharedInviteePhoneService::class)->others($record);
+                        $parts = array_filter([$record->phone, $record->email]);
+                        if ($others !== []) {
+                            $names = implode(', ', array_slice(array_column($others, 'name'), 0, 3));
+                            $parts[] = 'Shared number ('.(count($others) + 1).' invitees): '.$names
+                                .(count($others) > 3 ? ' +'.(count($others) - 3).' more' : '');
+                        }
+
+                        return implode(' • ', $parts) ?: null;
+                    })
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('phone')
@@ -1109,14 +1116,29 @@ class InviteesRelationManager extends RelationManager
                                 $counts = app(\App\Services\SmsInvitationRecipientsService::class)
                                     ->counts($this->getOwnerRecord(), $scope);
 
+                                $shared = app(\App\Services\SharedInviteePhoneService::class)
+                                    ->summary($this->getOwnerRecord());
+
                                 return "Eligible to queue: {$counts['eligible']}. Excluded: {$counts['excluded']}. "
-                                    .'These are current estimates; recipient eligibility is checked again when submitting. '
+                                    ."Shared contacts: {$shared['shared_numbers']} phone numbers used by {$shared['shared_invitees']} invitees. "
+                                    .($shared['examples'] !== '' ? "Examples: {$shared['examples']}. " : '')
+                                    .'Choose how to handle shared numbers below. Counts are estimates; eligibility is checked again when submitting. '
                                     .'Queued means awaiting processing, not delivered.';
                             }),
+                        Forms\Components\Select::make('shared_phone_policy')
+                            ->label('Shared Phone Numbers')
+                            ->options([
+                                'separate' => 'Send separately (one invitation per eligible invitee)',
+                                'skip' => 'Skip shared numbers for manual review',
+                            ])
+                            ->default('skip')
+                            ->required()
+                            ->helperText('Separate invitations contain different private links and may incur multiple SMS charges. Skipping shared numbers preserves all invitees and their cards.'),
                     ])
                     ->requiresConfirmation()
                     ->action(fn (array $data) => $this->sendSmsInvitationsFromToolbar(
                         (string) ($data['recipient_scope'] ?? ''),
+                        (string) ($data['shared_phone_policy'] ?? 'skip'),
                     )),
 
                     Tables\Actions\Action::make('send_whatsapp')
@@ -2864,7 +2886,7 @@ class InviteesRelationManager extends RelationManager
             ->send();
     }
 
-    protected function sendSmsInvitationsFromToolbar(string $scope): void
+    protected function sendSmsInvitationsFromToolbar(string $scope, string $sharedPhonePolicy = 'skip'): void
     {
         abort_unless($this->canSendMessagesForOwner(), 403);
 
@@ -2877,7 +2899,16 @@ class InviteesRelationManager extends RelationManager
             return;
         }
 
+        if (! in_array($sharedPhonePolicy, ['skip', 'separate'], true)) {
+            $this->brandedNotification()
+                ->title('eLive Card • Invalid shared-phone selection')
+                ->danger()->send();
+            return;
+        }
+
         $event = $this->getOwnerRecord();
+        $sharedService = app(\App\Services\SharedInviteePhoneService::class);
+        $sharedPhones = array_fill_keys(array_keys($sharedService->groups($event)), true);
         $sender = app(\App\Services\InviteeInvitationService::class);
 
         if (! $sender->template($event, MessageTemplate::CHANNEL_SMS)) {
@@ -2889,12 +2920,18 @@ class InviteesRelationManager extends RelationManager
             return;
         }
 
-        $counts = ['queued' => 0, 'skipped' => 0, 'failed' => 0, 'not_eligible' => 0];
+        $counts = ['queued' => 0, 'skipped' => 0, 'failed' => 0, 'not_eligible' => 0, 'shared_phone_skipped' => 0];
 
         // Never call the older generic SMS sender. It uses general message status
         // and can select the wrong recipients after a WhatsApp interaction.
-        $recipients->candidateQuery($event)->chunkById(200, function ($invitees) use ($event, $sender, $recipients, $scope, &$counts): void {
+        $recipients->candidateQuery($event)->chunkById(200, function ($invitees) use ($event, $sender, $recipients, $scope, $sharedPhonePolicy, $sharedPhones, $sharedService, &$counts): void {
             foreach ($invitees as $invitee) {
+                $normalized = $sharedService->normalize($invitee->phone);
+                if ($sharedPhonePolicy === 'skip' && $normalized !== null && isset($sharedPhones[$normalized])) {
+                    $counts['shared_phone_skipped']++;
+                    continue;
+                }
+
                 if (! $recipients->eligible($invitee, $scope)) {
                     $counts['not_eligible']++;
                     continue;
@@ -2915,12 +2952,12 @@ class InviteesRelationManager extends RelationManager
             action: 'sms_invitations_bulk_processed',
             description: 'SMS invitation recipients processed with verified channel-specific eligibility.',
             eventId: $event->id,
-            metadata: ['channel' => 'sms', 'recipient_scope' => $scope] + $counts,
+            metadata: ['channel' => 'sms', 'recipient_scope' => $scope, 'shared_phone_policy' => $sharedPhonePolicy] + $counts,
         );
 
         $this->brandedNotification()
             ->title('eLive Card • Bulk SMS: '.array_sum($counts).' invitees processed')
-            ->body("Queued: {$counts['queued']}. Skipped: {$counts['skipped']}. Excluded: {$counts['not_eligible']}. Failed: {$counts['failed']}. Queued messages are not delivery confirmations.")
+            ->body("Queued: {$counts['queued']}. Shared-phone review: {$counts['shared_phone_skipped']}. Skipped: {$counts['skipped']}. Excluded: {$counts['not_eligible']}. Failed: {$counts['failed']}. Queued messages are not delivery confirmations.")
             ->color($counts['failed'] > 0 ? 'warning' : 'success')
             ->persistent()->send();
     }
