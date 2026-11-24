@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\EventResource\Pages\SendEventMessage;
 use App\Jobs\SendInvitationSmsJob;
 use App\Models\CardType;
+use App\Models\CardTemplate;
 use App\Models\Event;
 use App\Models\GeneratedCard;
 use App\Models\Invitee;
@@ -88,7 +89,14 @@ class WhatsappSmsFallbackTest extends TestCase
             'whatsapp_status' => 'failed',
         ]);
 
+        $cardTemplate = CardTemplate::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Invitation Template',
+            'status' => CardTemplate::STATUS_ACTIVE,
+        ]);
+
         GeneratedCard::query()->create([
+            'card_template_id' => $cardTemplate->id,
             'event_id' => $event->id,
             'invitee_id' => $invitee->id,
             'status' => GeneratedCard::STATUS_GENERATED,
