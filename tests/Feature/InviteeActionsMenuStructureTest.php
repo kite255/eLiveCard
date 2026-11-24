@@ -22,14 +22,12 @@ class InviteeActionsMenuStructureTest extends TestCase
         $this->assertStringNotContainsString("->label('Invitee & Cards')->icon(", $menu);
         $this->assertStringContainsString("->label('Delivery Status')", $source);
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
-        $this->assertStringNotContainsString('->maxHeight(', $menu);
+        $this->assertStringContainsString('->dropdownWidth(\\Filament\\Support\\Enums\\MaxWidth::Medium)', $menu);
+        $this->assertStringContainsString("->dropdownMaxHeight('min(70dvh, 32rem)')", $menu);
+        $this->assertStringNotContainsString('elive-invitee-actions-trigger', $menu);
 
-        // Keep the menu anchored to its row action and usable in small viewports.
-        $this->assertStringContainsString("->extraAttributes(['class' => 'elive-invitee-actions-trigger'])", $menu);
         $theme = file_get_contents(resource_path('css/filament/admin/theme.css'));
-        $this->assertStringContainsString('.fi-dropdown:has(.elive-invitee-actions-trigger) .fi-dropdown-panel', $theme);
-        $this->assertStringContainsString('grid-template-columns: repeat(2, minmax(0, 1fr))', $theme);
-        $this->assertStringContainsString('max-height: calc(100dvh - 1.5rem)', $theme);
+        $this->assertStringNotContainsString('grid-template-columns: repeat(2, minmax(0, 1fr))', $theme);
 
         $names = [
             'edit_invitee',
