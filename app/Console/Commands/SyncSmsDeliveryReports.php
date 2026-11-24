@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 class SyncSmsDeliveryReports extends Command
 {
     protected $signature = 'sms:sync-delivery-reports
-                            {--limit=100 : Maximum number of SMS logs to process}
+                            {--limit=25 : Maximum number of SMS logs to process}
                             {--shoot-id= : Sync only one provider shoot ID}';
 
     protected $description = 'Fetch eLive SMS delivery reports and update SMS log statuses.';
@@ -44,15 +44,38 @@ class SyncSmsDeliveryReports extends Command
             });
 
             if (\Schema::hasColumn('sms_logs', 'delivery_report_checked_at')) {
-                $query->where(function (Builder $query): void {
+                // Newly sent messages need prompt feedback. Older unresolved
+                // messages are still retried, but with increasing cooldowns.
+                // Use sent_at when available; created_at covers legacy logs.
+                $now = now();
+                $recent = $now->copy()->subMinutes(15);
+                $hourOld = $now->copy()->subHour();
+
+                $query->where(function (Builder $query) use ($now, $recent, $hourOld): void {
                     $query
                         ->whereNull('delivery_report_checked_at')
-                        ->orWhere(
-                            'delivery_report_checked_at',
-                            '<=',
-                            now()->subMinutes(5),
-                        );
-                })->orderByRaw('CASE WHEN delivery_report_checked_at IS NULL THEN 0 ELSE 1 END')
+                        ->orWhere(function (Builder $q) use ($recent, $now): void {
+                            $q->whereRaw('COALESCE(sent_at, created_at) >= ?', [$recent])
+                                ->where('delivery_report_checked_at', '<=', $now->copy()->subMinute());
+                        })
+                        ->orWhere(function (Builder $q) use ($recent, $hourOld, $now): void {
+                            $q->whereRaw('COALESCE(sent_at, created_at) < ?', [$recent])
+                                ->whereRaw('COALESCE(sent_at, created_at) >= ?', [$hourOld])
+                                ->where('delivery_report_checked_at', '<=', $now->copy()->subMinutes(5));
+                        })
+                        ->orWhere(function (Builder $q) use ($hourOld, $now): void {
+                            $q->whereRaw('COALESCE(sent_at, created_at) < ?', [$hourOld])
+                                ->where('delivery_report_checked_at', '<=', $now->copy()->subMinutes(30));
+                        });
+                })
+                    // Give fresh messages priority while selecting the least
+                    // recently checked records within each age bracket.
+                    ->orderByRaw(
+                        'CASE WHEN COALESCE(sent_at, created_at) >= ? THEN 0 '
+                        .'WHEN COALESCE(sent_at, created_at) >= ? THEN 1 ELSE 2 END',
+                        [$recent, $hourOld],
+                    )
+                    ->orderByRaw('CASE WHEN delivery_report_checked_at IS NULL THEN 0 ELSE 1 END')
                     ->orderBy('delivery_report_checked_at');
             }
         }
