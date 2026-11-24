@@ -52,7 +52,8 @@ class InvitationSmsDeliveryStatusService
         $label = match ($status) {
             'delivered' => 'Delivered',
             'failed', 'rejected', 'undelivered', 'expired' => 'Failed',
-            'queued', 'pending' => 'Queued',
+            'queued' => 'Queued',
+            'pending' => 'Pending',
             'sending', 'processing' => 'Processing',
             'sent', 'submitted', 'accepted' => 'Submitted',
             'logged' => 'Logged Only',
@@ -62,7 +63,7 @@ class InvitationSmsDeliveryStatusService
         $color = match ($label) {
             'Delivered' => 'success',
             'Failed' => 'danger',
-            'Queued', 'Processing' => 'warning',
+            'Queued', 'Pending', 'Processing' => 'warning',
             'Submitted' => 'info',
             default => 'gray',
         };
@@ -86,7 +87,7 @@ class InvitationSmsDeliveryStatusService
             'Delivered' => $log->delivered_at,
             'Failed' => $log->failed_at,
             'Submitted' => $log->sent_at ?? $log->created_at,
-            'Queued', 'Processing' => $log->created_at,
+            'Queued', 'Pending', 'Processing' => $log->created_at,
             default => null,
         };
         $timeLabel = match ($label) {
@@ -94,6 +95,7 @@ class InvitationSmsDeliveryStatusService
             'Failed' => 'Failed',
             'Submitted' => 'Submitted',
             'Queued' => 'Queued',
+            'Pending' => 'Pending',
             'Processing' => 'Processing',
             default => null,
         };

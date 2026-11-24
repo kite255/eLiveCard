@@ -38,6 +38,50 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
         Http::assertSentCount(3);
     }
 
+    public function test_buffered_receipt_is_pending_and_remains_eligible_for_future_delivery_checks(): void
+    {
+        $log = $this->sentSms();
+
+        Http::fake(['*/deliver/test-shoot' => Http::sequence()
+            ->push(['data' => [[
+                'status' => 'Buffered',
+                'statusCode' => 'ACK',
+                'mobile' => $log->phone,
+            ]]])
+            ->push(['data' => [[
+                'status' => 'Delivered',
+                'statusCode' => '000',
+                'mobile' => $log->phone,
+            ]]])]);
+
+        $service = app(\App\Services\SmsService::class);
+        $service->refreshDeliveryReport('test-shoot');
+
+        $this->assertSame('pending', $log->fresh()->status);
+        $this->assertSame('Buffered', $log->fresh()->provider_status);
+        $this->assertNull($log->fresh()->delivered_at);
+
+        $invitee = \App\Models\Invitee::query()->create([
+            'event_id' => $log->event_id,
+            'card_type_id' => \App\Models\CardType::query()->create([
+                'event_id' => $log->event_id,
+                'name' => 'Single',
+                'allowed_guests' => 1,
+            ])->id,
+            'name' => 'Buffered Guest',
+            'phone' => $log->phone,
+        ]);
+
+        $log->update(['invitee_id' => $invitee->id]);
+        $this->assertSame('Pending', app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($invitee)['label']);
+
+        $service->refreshDeliveryReport('test-shoot');
+        $this->assertSame('delivered', $log->fresh()->status);
+        $this->assertNotNull($log->fresh()->delivered_at);
+        $this->assertSame('Delivered', app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($invitee)['label']);
+        Http::assertSentCount(2);
+    }
+
     public function test_a_success_envelope_without_a_message_receipt_does_not_confirm_delivery(): void
     {
         $log = $this->sentSms();

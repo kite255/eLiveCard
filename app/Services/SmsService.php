@@ -1334,6 +1334,10 @@ class SmsService
                 'delivrd',
             ], true) => 'delivered',
 
+            // Provider Buffered means awaiting delivery, not handset-delivered.
+            // Check before ACK so an acknowledgement cannot override Buffered.
+            in_array($status, ['buffered', 'buffer', 'buffering'], true) => 'pending',
+
             in_array($status, [
                 'operator_submitted',
                 'operator_submit',
