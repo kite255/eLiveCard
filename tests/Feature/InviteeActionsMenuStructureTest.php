@@ -23,7 +23,7 @@ class InviteeActionsMenuStructureTest extends TestCase
         $this->assertStringContainsString("->label('Delivery Status')", $source);
         $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
         $this->assertStringContainsString('->dropdownWidth(\\Filament\\Support\\Enums\\MaxWidth::Medium)', $menu);
-        $this->assertStringContainsString("->maxHeight('min(70dvh, 32rem)')", $menu);
+        $this->assertStringContainsString("->dropdownMaxHeight('min(70dvh, 32rem)')", $menu);
         $this->assertStringNotContainsString('elive-invitee-actions-trigger', $menu);
 
         $theme = file_get_contents(resource_path('css/filament/admin/theme.css'));
