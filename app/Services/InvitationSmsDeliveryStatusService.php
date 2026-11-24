@@ -20,6 +20,8 @@ class InvitationSmsDeliveryStatusService
             ? SmsLog::query()->where('event_id', $invitee->event_id)
                 ->where('invitee_id', $invitee->id)
                 ->whereIn('sms_type', [SmsLog::TYPE_INVITATION, SmsLog::TYPE_INVITATION_CARD])
+                ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                    $query->where('id', '>', (int) $invitee->invitation_sms_reset_log_id))
                 ->latest('id')->first()
             : null;
 
@@ -27,6 +29,14 @@ class InvitationSmsDeliveryStatusService
             && in_array((string) $invitee->last_message_status, ['queued', 'pending', 'sending', 'processing'], true)
             && (string) $invitee->sms_status === Invitee::SMS_STATUS_PENDING) {
             return $this->result('Queued', 'warning', 'Invitation is awaiting queue processing. Delivery is not confirmed.', $log);
+        }
+
+        if (! $log && $invitee->invitation_phone_changed_at) {
+            return $this->result(
+                'Not Sent — Phone Updated',
+                'warning',
+                'The contact number was updated. No invitation SMS has been recorded to the new number yet. Previous SMS history is retained.',
+            );
         }
 
         if (! $log) {

@@ -138,6 +138,9 @@ class Invitee extends Model
         'whatsapp_read_at',
         'whatsapp_failed_at',
 
+        'invitation_phone_changed_at',
+        'invitation_sms_reset_log_id',
+        'invitation_message_reset_log_id',
         'invitation_sms_status',
         'invitation_sms_sent_at',
         'reminder_sms_status',
@@ -163,6 +166,7 @@ class Invitee extends Model
     ];
 
     protected $casts = [
+        'invitation_phone_changed_at' => 'datetime',
         'allowed_guests' => 'integer',
         'confirmed_guests' => 'integer',
         'checked_in_count' => 'integer',
@@ -277,6 +281,37 @@ class Invitee extends Model
 
             if (Schema::hasColumn('invitees', 'open_count') && $invitee->open_count === null) {
                 $invitee->open_count = 0;
+            }
+        });
+
+        static::saving(function (Invitee $invitee): void {
+            if (! $invitee->exists || ! $invitee->isDirty('phone')) {
+                return;
+            }
+
+            $previous = \App\Support\WhatsAppPhone::normalize((string) $invitee->getRawOriginal('phone'));
+            $current = \App\Support\WhatsAppPhone::normalize((string) $invitee->phone);
+            if (! $current || $previous === $current) {
+                return;
+            }
+
+            // Historic SMS logs remain immutable. Only current invitation
+            // eligibility is reset, and no message is sent during an edit.
+            $invitee->phone = $current;
+            $invitee->invitation_phone_changed_at = now();
+            $invitee->invitation_sms_reset_log_id = \Illuminate\Support\Facades\DB::table('sms_logs')
+                ->where('invitee_id', $invitee->id)->max('id') ?? 0;
+            $invitee->invitation_message_reset_log_id = \Illuminate\Support\Facades\DB::table('message_logs')
+                ->where('invitee_id', $invitee->id)->max('id') ?? 0;
+            $invitee->sms_status = self::SMS_STATUS_NOT_SENT;
+            $invitee->invitation_sms_status = self::SMS_STATUS_NOT_SENT;
+            $invitee->sms_sent_at = null;
+            $invitee->sms_message_id = null;
+            $invitee->sms_error = null;
+            $invitee->invitation_sms_sent_at = null;
+            if ($invitee->last_message_channel === 'sms') {
+                $invitee->last_message_status = self::MESSAGE_STATUS_NOT_SENT;
+                $invitee->last_message_channel = null;
             }
         });
 
