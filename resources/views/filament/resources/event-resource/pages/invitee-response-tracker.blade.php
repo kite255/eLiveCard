@@ -445,23 +445,22 @@
         .rsvp-input:focus,.rsvp-select:focus{border-color:#213B73;box-shadow:0 0 0 3px rgba(33,59,115,.10)}
         .rsvp-clear{height:42px;border:0;border-radius:12px;background:#F1F5F9;padding:0 14px;color:#334155;font-size:12px;font-weight:800;cursor:pointer}
         .rsvp-table-wrap{margin:0 16px 16px;overflow-x:auto;border:1px solid #E5E7EB;border-radius:16px;background:#fff}
-        .rsvp-table{width:1390px;min-width:1390px;table-layout:fixed;border-collapse:separate;border-spacing:0}
+        .rsvp-table{width:1240px;min-width:1240px;table-layout:fixed;border-collapse:separate;border-spacing:0}
         .rsvp-table th{padding:11px 10px;background:#F8FAFC;border-bottom:1px solid #E5E7EB;color:#111827;font-size:11px;font-weight:900;text-align:left;white-space:nowrap}
         .rsvp-table td{padding:11px 10px;border-bottom:1px solid #E5E7EB;color:#111827;font-size:12px;vertical-align:middle;overflow:hidden;white-space:nowrap}
         .rsvp-table tbody tr:last-child td{border-bottom:0}
         .rsvp-table tbody tr:hover td{background:#F8FAFC}
         .rsvp-table th:nth-child(1),.rsvp-table td:nth-child(1){width:44px;text-align:center}
         .rsvp-table th:nth-child(2),.rsvp-table td:nth-child(2){width:175px}
-        .rsvp-table th:nth-child(3),.rsvp-table td:nth-child(3){width:150px}
-        .rsvp-table th:nth-child(4),.rsvp-table td:nth-child(4){width:175px}
-        .rsvp-table th:nth-child(5),.rsvp-table td:nth-child(5){width:96px}
-        .rsvp-table th:nth-child(6),.rsvp-table td:nth-child(6){width:58px}
-        .rsvp-table th:nth-child(7),.rsvp-table td:nth-child(7){width:130px}
-        .rsvp-table th:nth-child(8),.rsvp-table td:nth-child(8){width:112px}
-        .rsvp-table th:nth-child(9),.rsvp-table td:nth-child(9){width:86px}
-        .rsvp-table th:nth-child(10),.rsvp-table td:nth-child(10){width:110px}
-        .rsvp-table th:nth-child(11),.rsvp-table td:nth-child(11){width:168px}
-        .rsvp-table th:nth-child(12),.rsvp-table td:nth-child(12){width:106px;text-align:right}
+        .rsvp-table th:nth-child(3),.rsvp-table td:nth-child(3){width:175px}
+        .rsvp-table th:nth-child(4),.rsvp-table td:nth-child(4){width:96px}
+        .rsvp-table th:nth-child(5),.rsvp-table td:nth-child(5){width:58px}
+        .rsvp-table th:nth-child(6),.rsvp-table td:nth-child(6){width:130px}
+        .rsvp-table th:nth-child(7),.rsvp-table td:nth-child(7){width:112px}
+        .rsvp-table th:nth-child(8),.rsvp-table td:nth-child(8){width:86px}
+        .rsvp-table th:nth-child(9),.rsvp-table td:nth-child(9){width:110px}
+        .rsvp-table th:nth-child(10),.rsvp-table td:nth-child(10){width:168px}
+        .rsvp-table th:nth-child(11),.rsvp-table td:nth-child(11){width:106px;text-align:right}
         .rsvp-name{font-size:13px;font-weight:850;color:#0F172A}
         .rsvp-meta{margin-top:3px;font-size:10.5px;font-weight:650;color:#64748B}
         .rsvp-badge{display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:850;line-height:1;white-space:nowrap}
@@ -588,7 +587,6 @@
                     <tr>
                         <th>#</th>
                         <th>Guest Name</th>
-                        <th>Phone Number</th>
                         <th>Delivery</th>
                         <th>Opened</th>
                         <th>Views</th>
@@ -728,8 +726,8 @@
 
                             <td>
                                 <div class="rsvp-name">{{ $invitee->name }}</div>
+                                <div class="rsvp-meta">{{ $invitee->phone ?: '—' }}</div>
                             </td>
-                            <td><span class="rsvp-meta">{{ $invitee->phone ?: '—' }}</span></td>
 
                             <td>
                                 <div class="rsvp-delivery">
@@ -847,7 +845,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="12">
+                            <td colspan="11">
                                 <div class="rsvp-empty">
                                     <div class="text-lg font-black text-gray-900">No invitees found</div>
                                     <div class="mt-1 text-sm text-gray-500">No invitees match the current filters.</div>
