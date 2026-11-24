@@ -42,6 +42,7 @@ class WhatsappSmsFallbackTest extends TestCase
         $invitee->smsLogs()->create([
             'event_id' => $event->id,
             'sms_type' => 'invitation_card',
+            'message' => 'Invitation link sent',
             'status' => 'accepted',
             'phone' => $invitee->phone,
         ]);
