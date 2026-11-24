@@ -502,7 +502,7 @@ class InviteesRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('message_status_summary')
-                    ->label('Message Status')
+                    ->label('Delivery Status')
                     ->state(function (Invitee $record): string {
                         $sms = app(\App\Services\InvitationSmsDeliveryStatusService::class)
                             ->forInvitee($record);
@@ -566,7 +566,8 @@ class InviteesRelationManager extends RelationManager
                         ->forInvitee($record)['color'])
                     ->badge()
                     ->wrap()
-                    ->toggleable(),
+                    ->tooltip(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record)['description'])
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('sms_status')
                     ->label('SMS Status')
@@ -1614,7 +1615,7 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
-                    ])->dropdown(false),
+                    ])->label('Invitee & Cards')->icon('heroicon-o-identification'),
 
                     // Invitation-only communication actions.
                     Tables\Actions\ActionGroup::make([
@@ -1692,7 +1693,7 @@ class InviteesRelationManager extends RelationManager
                                 ->persistent()->send();
                         }),
 
-                    ])->dropdown(false),
+                    ])->label('Messaging')->icon('heroicon-o-chat-bubble-left-right'),
 
                     // RSVP management actions.
                     Tables\Actions\ActionGroup::make([
@@ -1807,7 +1808,7 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    ])->dropdown(false),
+                    ])->label('RSVP Actions')->icon('heroicon-o-clipboard-document-check'),
 
                     // Destructive and irreversible actions.
                     Tables\Actions\ActionGroup::make([
@@ -1875,7 +1876,7 @@ class InviteesRelationManager extends RelationManager
                                     ->send();
                             }
                         }),
-                    ])->dropdown(false),
+                    ])->label('Cancel or Delete')->icon('heroicon-o-exclamation-triangle'),
                 ])
                     ->label('Manage invitee')
                     ->icon('heroicon-m-ellipsis-horizontal')
