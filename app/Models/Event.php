@@ -928,7 +928,7 @@ class Event extends Model
             'rsvp_share_enabled' => true,
             'rsvp_share_expires_at' => $expiresAt,
             'rsvp_share_show_phone' => $showPhone
-                ?? (bool) $this->rsvp_share_show_phone,
+                ?? ($this->rsvp_share_url ? (bool) $this->rsvp_share_show_phone : true),
             'rsvp_share_last_generated_at' => now(),
         ])->save();
 
