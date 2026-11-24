@@ -13,7 +13,12 @@ class InviteeActionsMenuStructureTest extends TestCase
         $end = strpos($source, '->bulkActions([', $start);
         $menu = substr($source, $start, $end - $start);
 
-        $this->assertSame(4, substr_count($menu, '->dropdown(false)'));
+        $this->assertSame(0, substr_count($menu, '->dropdown(false)'));
+        foreach (['Invitee & Cards', 'Messaging', 'RSVP Actions', 'Cancel or Delete'] as $groupLabel) {
+            $this->assertStringContainsString("->label('{$groupLabel}')", $menu);
+        }
+        $this->assertStringContainsString("->label('Delivery Status')", $source);
+        $this->assertStringContainsString("Action::make('audit_missing_invitation_sms_logs')", $source);
         $this->assertStringNotContainsString('->maxHeight(', $menu);
 
         $names = [

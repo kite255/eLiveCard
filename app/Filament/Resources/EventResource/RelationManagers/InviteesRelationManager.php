@@ -502,7 +502,7 @@ class InviteesRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('message_status_summary')
-                    ->label('Message Status')
+                    ->label('Delivery Status')
                     ->state(function (Invitee $record): string {
                         $sms = app(\App\Services\InvitationSmsDeliveryStatusService::class)
                             ->forInvitee($record);
@@ -566,7 +566,8 @@ class InviteesRelationManager extends RelationManager
                         ->forInvitee($record)['color'])
                     ->badge()
                     ->wrap()
-                    ->toggleable(),
+                    ->tooltip(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record)['description'])
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('sms_status')
                     ->label('SMS Status')
@@ -1305,6 +1306,32 @@ class InviteesRelationManager extends RelationManager
                         );
                     }),
 
+                    Tables\Actions\Action::make('audit_missing_invitation_sms_logs')
+                        ->label('Check Missing SMS Delivery Logs')
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->color('info')
+                        ->visible(fn (): bool => $this->canViewReportsForOwner())
+                        ->modalHeading('Invitees without invitation SMS logs')
+                        ->modalDescription('Read-only check of invitation SMS logs for this event. An absent log does not prove the message was never sent.')
+                        ->modalSubmitAction(false)
+                        ->modalWidth('3xl')
+                        ->modalContent(function (): \Illuminate\Contracts\View\View {
+                            $eventId = $this->getOwnerRecord()->id;
+                            $missingQuery = Invitee::query()
+                                ->where('event_id', $eventId)
+                                ->whereDoesntHave('smsLogs', function (Builder $query) use ($eventId): void {
+                                    $query->where('event_id', $eventId)
+                                        ->whereIn('sms_type', ['invitation', 'invitation_card']);
+                                });
+
+                            return view('filament.resources.event-resource.partials.missing-invitation-sms-logs', [
+                                'missingCount' => (clone $missingQuery)->count(),
+                                'missingInvitees' => $missingQuery->orderBy('name')
+                                    ->limit(20)
+                                    ->get(['id', 'name', 'phone']),
+                            ]);
+                        }),
+
                     Tables\Actions\Action::make('refresh_status')
                         ->label('Refresh Status')
                         ->icon('heroicon-o-arrow-path')
@@ -1614,7 +1641,7 @@ class InviteesRelationManager extends RelationManager
                         })
                         ->visible(fn ($record): bool => filled($record->short_code)),
 
-                    ])->dropdown(false),
+                    ])->label('Invitee & Cards')->icon('heroicon-o-identification'),
 
                     // Invitation-only communication actions.
                     Tables\Actions\ActionGroup::make([
@@ -1692,7 +1719,7 @@ class InviteesRelationManager extends RelationManager
                                 ->persistent()->send();
                         }),
 
-                    ])->dropdown(false),
+                    ])->label('Messaging')->icon('heroicon-o-chat-bubble-left-right'),
 
                     // RSVP management actions.
                     Tables\Actions\ActionGroup::make([
@@ -1807,7 +1834,7 @@ class InviteesRelationManager extends RelationManager
                                 ->send();
                         }),
 
-                    ])->dropdown(false),
+                    ])->label('RSVP Actions')->icon('heroicon-o-clipboard-document-check'),
 
                     // Destructive and irreversible actions.
                     Tables\Actions\ActionGroup::make([
@@ -1875,7 +1902,7 @@ class InviteesRelationManager extends RelationManager
                                     ->send();
                             }
                         }),
-                    ])->dropdown(false),
+                    ])->label('Cancel or Delete')->icon('heroicon-o-exclamation-triangle'),
                 ])
                     ->label('Manage invitee')
                     ->icon('heroicon-m-ellipsis-horizontal')
