@@ -144,15 +144,9 @@ class PublicRsvpReportController extends Controller
             )
             ->when($smsDelivery !== '', fn (Builder $query) => $this->filterDelivery($query, 'sms', $smsDelivery))
             ->when($whatsappDelivery !== '', fn (Builder $query) => $this->filterDelivery($query, 'whatsapp', $whatsappDelivery))
-            ->orderByRaw("
-                CASE
-                    WHEN rsvp_status = 'attending' THEN 1
-                    WHEN rsvp_status IN ('not_attending', 'declined') THEN 2
-                    WHEN rsvp_status = 'maybe' THEN 3
-                    ELSE 4
-                END
-            ")
-            ->orderBy('name')
+            // First added, first shown; ID breaks ties for imported records.
+            ->orderBy('created_at')
+            ->orderBy('id')
             ->paginate(self::PER_PAGE)
             ->withQueryString();
 
