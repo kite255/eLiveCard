@@ -46,6 +46,7 @@ return [
     */
 
     'sms' => [
+        'delivery_callback_token' => env('SMS_DELIVERY_CALLBACK_TOKEN'),
         'driver' => env('SMS_DRIVER', 'log'),
 
         'provider' => env(
