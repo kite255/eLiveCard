@@ -34,6 +34,7 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
         public int $inviteeId,
         public string $languageCode = MessageTemplate::LANGUAGE_ENGLISH,
         public ?int $messageTemplateId = null,
+        public ?int $phoneGeneration = null,
     ) {
         $queue = Container::getInstance()->bound('config')
             ? (string) config('messaging.whatsapp_queue', self::QUEUE)
@@ -43,7 +44,7 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
 
     public function uniqueId(): string
     {
-        return $this->inviteeId.'-'.$this->languageCode.'-'.($this->messageTemplateId ?? 'auto');
+        return $this->inviteeId.'-'.$this->languageCode.'-'.($this->messageTemplateId ?? 'auto').'-'.($this->phoneGeneration ?? 0);
     }
 
     public function middleware(): array
@@ -65,12 +66,19 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        // A queued invitation for the former number must not be redirected
+        // silently to a newly edited phone number.
+        if (($this->phoneGeneration ?? 0) !== (int) $invitee->invitation_phone_generation) {
+            return;
+        }
+
         // The bulk sender claims the template/invitee combination before dispatch.
         $tracking = $this->messageTemplateId && Schema::hasTable('whatsapp_template_sends')
             ? DB::table('whatsapp_template_sends')
                 ->where('event_id', $invitee->event_id)
                 ->where('invitee_id', $invitee->id)
                 ->where('message_template_id', $this->messageTemplateId)
+                ->where('phone_generation', $this->phoneGeneration ?? 0)
                 ->first()
             : null;
 
@@ -81,6 +89,8 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
                 ->where('channel', 'whatsapp')
                 ->where('type', MessageTemplate::TYPE_INVITATION)
                 ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+                ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                    $query->where('id', '>', (int) $invitee->invitation_message_reset_log_id))
                 ->exists();
 
             if ($alreadySent) {

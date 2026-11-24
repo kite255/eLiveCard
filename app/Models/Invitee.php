@@ -139,6 +139,7 @@ class Invitee extends Model
         'whatsapp_failed_at',
 
         'invitation_phone_changed_at',
+        'invitation_phone_generation',
         'invitation_sms_reset_log_id',
         'invitation_message_reset_log_id',
         'invitation_sms_status',
@@ -167,6 +168,7 @@ class Invitee extends Model
 
     protected $casts = [
         'invitation_phone_changed_at' => 'datetime',
+        'invitation_phone_generation' => 'integer',
         'allowed_guests' => 'integer',
         'confirmed_guests' => 'integer',
         'checked_in_count' => 'integer',
@@ -299,6 +301,20 @@ class Invitee extends Model
             // eligibility is reset, and no message is sent during an edit.
             $invitee->phone = $current;
             $invitee->invitation_phone_changed_at = now();
+            // Every actual phone change starts a new invitation generation.
+            // Existing WhatsApp claims and message logs remain untouched.
+            $invitee->invitation_phone_generation = (int) $invitee->invitation_phone_generation + 1;
+            $invitee->whatsapp_status = 'not_sent';
+            $invitee->whatsapp_message_id = null;
+            $invitee->whatsapp_sent_at = null;
+            $invitee->whatsapp_delivered_at = null;
+            $invitee->whatsapp_read_at = null;
+            $invitee->whatsapp_failed_at = null;
+            if ($invitee->last_message_channel === 'whatsapp') {
+                $invitee->last_message_status = self::MESSAGE_STATUS_NOT_SENT;
+                $invitee->last_message_channel = null;
+            }
+
             $invitee->invitation_sms_reset_log_id = \Illuminate\Support\Facades\DB::table('sms_logs')
                 ->where('invitee_id', $invitee->id)->max('id') ?? 0;
             $invitee->invitation_message_reset_log_id = \Illuminate\Support\Facades\DB::table('message_logs')

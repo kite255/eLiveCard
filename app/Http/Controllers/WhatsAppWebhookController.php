@@ -1277,6 +1277,13 @@ class WhatsAppWebhookController extends Controller
                 )
                 : null;
 
+        // Preserve the historic receipt on its original log, but never let
+        // an old-number webhook overwrite the new number's Not Sent state.
+        if ($invitee && $invitee->invitation_phone_changed_at
+            && (int) $matchedLog->id <= (int) $invitee->invitation_message_reset_log_id) {
+            $invitee = null;
+        }
+
         if ($invitee) {
             $this->updateInviteeWhatsappStatus(
                 invitee: $invitee,
