@@ -835,7 +835,7 @@
             </div>
         </section>
 
-        <section class="stats">
+        <section class="stats" id="rsvp-live-stats" aria-label="Live RSVP statistics">
             <div class="stat">
                 <strong>{{ $total }}</strong>
                 <span>Total Invitees</span>
@@ -871,7 +871,7 @@
             <div class="panel-heading">
                 <div>
                     <h2>Invitee Responses</h2>
-                    <p>{{ $responded }} of {{ $total }} invitees have responded.</p>
+                    <p id="rsvp-live-response-count">{{ $responded }} of {{ $total }} invitees have responded.</p>
                 </div>
             </div>
 
@@ -1152,6 +1152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let debounceTimer;
     let activeRequest;
     let generation = 0;
+    const refreshIntervalMs = 20000;
 
     const valuesUrl = () => {
         const url = new URL(form.action, window.location.href);
@@ -1173,13 +1174,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    const load = async (url, historyMode = 'replace') => {
+    const load = async (url, historyMode = 'replace', silent = false) => {
+        if (silent && (activeRequest || debounceTimer || document.hidden)) return;
         cancelPending();
         const thisGeneration = generation;
         activeRequest = new AbortController();
         const signal = activeRequest.signal;
         results.setAttribute('aria-busy', 'true');
-        notice.textContent = 'Searching invitees…';
+        if (!silent) notice.textContent = 'Searching invitees…';
 
         try {
             const response = await fetch(url.toString(), {
@@ -1194,6 +1196,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const documentResult = new DOMParser().parseFromString(html, 'text/html');
             const updated = documentResult.getElementById('rsvp-live-results');
             if (!updated) throw new Error('Search results missing');
+            // Update counts and the current filtered table from the same response.
+            const nextStats = documentResult.getElementById('rsvp-live-stats');
+            const currentStats = document.getElementById('rsvp-live-stats');
+            const nextResponseCount = documentResult.getElementById('rsvp-live-response-count');
+            const currentResponseCount = document.getElementById('rsvp-live-response-count');
+            if (!nextStats || !currentStats || !nextResponseCount || !currentResponseCount) {
+                throw new Error('Report statistics missing');
+            }
+            currentStats.innerHTML = nextStats.innerHTML;
+            currentResponseCount.textContent = nextResponseCount.textContent;
             results.innerHTML = updated.innerHTML;
             if (historyMode === 'push') {
                 window.history.pushState(null, '', url);
@@ -1204,10 +1216,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const nextClear = documentResult.querySelector('#rsvp-clear-filters');
             const currentClear = document.getElementById('rsvp-clear-filters');
             if (currentClear && nextClear) currentClear.hidden = nextClear.hidden;
-            notice.textContent = '';
+            if (!silent) notice.textContent = '';
         } catch (error) {
             if (!signal.aborted && thisGeneration === generation) {
-                notice.textContent = 'Unable to update results. Press Apply Filters to try again.';
+                if (!silent) notice.textContent = 'Unable to update results. Press Apply Filters to try again.';
             }
         } finally {
             if (thisGeneration === generation) {
@@ -1241,6 +1253,14 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         load(new URL(link.href, window.location.href), 'push');
     });
+
+    // Poll while the report tab is visible. Keep the current URL, page and filters.
+    // A failed background refresh leaves the last successful report visible.
+    window.setInterval(() => {
+        if (!document.hidden && !activeRequest && !debounceTimer) {
+            load(new URL(window.location.href), 'none', true);
+        }
+    }, refreshIntervalMs);
 
     window.addEventListener('popstate', () => {
         const params = new URLSearchParams(window.location.search);
