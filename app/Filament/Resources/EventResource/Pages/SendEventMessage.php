@@ -19,6 +19,7 @@ use Filament\Resources\Pages\Page;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 class SendEventMessage extends Page
@@ -307,14 +308,36 @@ class SendEventMessage extends Page
             return;
         }
 
-        DB::transaction(function () use ($invitees, $languageCode): void {
+        if (! Schema::hasTable('whatsapp_template_sends')) {
+            Notification::make()->title('WhatsApp tracking unavailable')
+                ->body('Run the WhatsApp tracking migrations before sending invitations.')
+                ->danger()->send();
+
+            return;
+        }
+
+        $queued = 0;
+        $skipped = 0;
+
+        DB::transaction(function () use ($invitees, $languageCode, $template, &$queued, &$skipped): void {
             foreach ($invitees as $invitee) {
-                $invitee->forceFill([
-                    'last_message_channel' => 'whatsapp',
-                    'last_message_status' => 'queued',
-                    'message_status' => 'queued',
-                    'whatsapp_status' => 'queued',
-                ])->saveQuietly();
+                $claimed = DB::table('whatsapp_template_sends')->insertOrIgnore([
+                    'event_id' => $invitee->event_id,
+                    'invitee_id' => $invitee->id,
+                    'message_template_id' => $template->id,
+                    'phone_generation' => (int) $invitee->invitation_phone_generation,
+                    'status' => 'pending',
+                    'attempts' => 1,
+                    'last_attempt_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                if ($claimed !== 1) {
+                    $skipped++;
+
+                    continue;
+                }
 
                 SendInvitationWhatsAppJob::dispatch(
                     inviteeId: $invitee->id,
@@ -322,12 +345,21 @@ class SendEventMessage extends Page
                     messageTemplateId: $template->id,
                     phoneGeneration: (int) $invitee->invitation_phone_generation,
                 )->afterCommit();
+
+                $invitee->forceFill([
+                    'last_message_channel' => 'whatsapp',
+                    'last_message_status' => 'queued',
+                    'message_status' => 'queued',
+                    'whatsapp_status' => 'queued',
+                ])->saveQuietly();
+
+                $queued++;
             }
         });
 
         Notification::make()
-            ->title('WhatsApp invitations queued')
-            ->body($invitees->count() . ' WhatsApp invitation(s) queued for background delivery.')
+            ->title($queued ? 'WhatsApp invitations queued' : 'No new WhatsApp invitations queued')
+            ->body($queued . ' queued; ' . $skipped . ' already claimed.')
             ->success()
             ->send();
     }
