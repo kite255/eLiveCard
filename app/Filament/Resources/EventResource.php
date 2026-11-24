@@ -543,11 +543,10 @@ class EventResource extends Resource
                             ->label('Default Manual Recipients')
                             ->options([
                                 'all_active' => 'All Invitees (active cards) — default',
-                                'attending' => 'Confirmed Attending',
-                                'checked_in' => 'Checked-in Guests',
                             ])
                             ->default('all_active')
-                            ->helperText('This preselects recipients when you click Thank You in Invitees. Manual messages are never sent automatically.')
+                            ->afterStateHydrated(fn (Forms\Components\Select $component) => $component->state('all_active'))
+                            ->helperText('Manual thank-you SMS is addressed to all invitees with active cards, regardless of RSVP or check-in. Messages are only sent after confirmation.')
                             ->visible(fn (Forms\Get $get): bool => $get('thank_you_mode') !== 'automatic')
                             ->required(fn (Forms\Get $get): bool => $get('thank_you_mode') !== 'automatic')
                             ->columnSpanFull(),
