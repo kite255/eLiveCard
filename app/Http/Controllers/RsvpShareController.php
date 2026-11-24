@@ -48,7 +48,11 @@ class RsvpShareController extends Controller
             ? now()->addDays((int) $validated['expires_in_days'])
             : null;
 
-        $showPhone = (bool) ($validated['show_phone'] ?? false);
+        $showPhone = array_key_exists('show_phone', $validated)
+            ? (bool) $validated['show_phone']
+            : ($event->hasValidRsvpShareLink()
+                ? (bool) $event->rsvp_share_show_phone
+                : true);
 
         $url = ($validated['regenerate'] ?? false)
             ? $event->generateRsvpShareLink(
