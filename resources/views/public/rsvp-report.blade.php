@@ -862,18 +862,18 @@
             }
             .desktop-table-wrap table {
                 width: max-content;
-                min-width: 640px;
+                min-width: 0;
                 table-layout: auto;
             }
             .desktop-table-wrap th,
             .desktop-table-wrap td {
-                padding: 5px 4px;
+                padding: 5px 2px;
                 font-size: 11px;
                 vertical-align: top;
             }
             .desktop-table-wrap th { font-size: 9px; letter-spacing: 0; }
-            .desktop-table-wrap .name { min-width: 112px; line-height: 1.3; }
-            .desktop-table-wrap .reply-value { max-width: 110px; line-height: 1.25; }
+            .desktop-table-wrap .name { min-width: 0; line-height: 1.3; }
+            .desktop-table-wrap .reply-value { max-width: 100px; line-height: 1.25; }
             .desktop-table-wrap .response-time { font-size: 10px !important; }
             .desktop-table-wrap .badge { padding: 4px 6px; font-size: 10px; }
             .desktop-table-wrap .invitee-phone { white-space: nowrap; }
@@ -892,21 +892,21 @@
             .desktop-sms-channel { display: none; }
             .desktop-reply-heading { display: none; }
             .mobile-reply-heading { display: inline; }
-            .desktop-table-wrap .reply-time-heading { min-width: 100px; white-space: nowrap; }
+            .desktop-table-wrap .reply-time-heading { min-width: 88px; white-space: nowrap; }
             .desktop-table-wrap th:first-child,
             .desktop-table-wrap td:first-child {
-                padding-left: 3px;
-                padding-right: 3px;
-                width: 20px;
+                padding-left: 2px;
+                padding-right: 2px;
+                width: 16px;
                 white-space: nowrap;
             }
             .desktop-table-wrap .mobile-combined-channel-heading {
                 display: table-cell;
-                min-width: 108px;
+                min-width: 100px;
             }
             .desktop-table-wrap .mobile-combined-channel {
                 display: table-cell;
-                min-width: 116px;
+                min-width: 106px;
             }
             .desktop-table-wrap .guest-count-column {
                 width: 54px;
@@ -923,7 +923,7 @@
                 display: grid;
                 grid-template-columns: 16px minmax(0, 1fr);
                 align-items: center;
-                column-gap: 4px;
+                column-gap: 3px;
                 row-gap: 0;
                 min-height: 18px;
             }
