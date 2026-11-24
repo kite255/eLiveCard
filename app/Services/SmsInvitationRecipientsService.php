@@ -63,6 +63,8 @@ class SmsInvitationRecipientsService
             ->where('event_id', $invitee->event_id)->where('invitee_id', $invitee->id)
             ->whereIn('sms_type', ['invitation', 'invitation_card'])
             ->whereIn('status', ['pending', 'queued', 'sending', 'sent', 'accepted', 'submitted', 'logged', 'delivered'])
+            ->when($invitee->invitation_phone_changed_at, fn ($query, $changedAt) =>
+                $query->where('created_at', '>', $changedAt))
             ->exists()) {
             return 'An invitation SMS is already in progress or accepted by the provider.';
         }
@@ -71,6 +73,8 @@ class SmsInvitationRecipientsService
             ->where('event_id', $invitee->event_id)->where('invitee_id', $invitee->id)
             ->where('channel', 'sms')->where('type', 'invitation')
             ->whereIn('status', ['pending', 'queued', 'submitted', 'accepted', 'sent', 'logged', 'delivered'])
+            ->when($invitee->invitation_phone_changed_at, fn ($query, $changedAt) =>
+                $query->where('created_at', '>', $changedAt))
             ->exists()) {
             return 'An invitation SMS has already been logged or submitted.';
         }
