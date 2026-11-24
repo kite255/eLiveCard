@@ -48,6 +48,54 @@ class SharedInviteePhoneService
         return $groups;
     }
 
+    /**
+     * Filter event-scoped shared-contact groups for review and export.
+     * Search supports names and telephone formatting with or without punctuation.
+     *
+     * @param array<string, array<int, array{id: int, name: string}>> $groups
+     * @return array<string, array<int, array{id: int, name: string}>>
+     */
+    public function filterGroups(array $groups, string $search = '', int $minimumInvitees = 2, string $sort = 'count_desc'): array
+    {
+        $search = mb_strtolower(trim($search));
+        $digits = preg_replace('/\\D+/u', '', $search) ?? '';
+        $minimumInvitees = max(2, $minimumInvitees);
+
+        $filtered = array_filter($groups, static function (array $members, string $phone) use ($search, $digits, $minimumInvitees): bool {
+            if (count($members) < $minimumInvitees) {
+                return false;
+            }
+
+            if ($search === '') {
+                return true;
+            }
+
+            $phoneDigits = preg_replace('/\\D+/u', '', $phone) ?? '';
+            if (str_contains(mb_strtolower($phone), $search) || ($digits !== '' && str_contains($phoneDigits, $digits))) {
+                return true;
+            }
+
+            foreach ($members as $member) {
+                if (str_contains(mb_strtolower((string) $member['name']), $search)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }, ARRAY_FILTER_USE_BOTH);
+
+        uksort($filtered, static function (string $a, string $b) use ($filtered, $sort): int {
+            return match ($sort) {
+                'phone_asc' => strcmp($a, $b),
+                'phone_desc' => strcmp($b, $a),
+                'count_asc' => count($filtered[$a]) <=> count($filtered[$b]) ?: strcmp($a, $b),
+                default => count($filtered[$b]) <=> count($filtered[$a]) ?: strcmp($a, $b),
+            };
+        });
+
+        return $filtered;
+    }
+
     /** @return array<int, array{id: int, name: string}> */
     public function others(Invitee $invitee): array
     {
