@@ -43,8 +43,11 @@ Schedule::command('sms:send-event-day-reminders')
 | SMS Delivery Report Synchronization
 |--------------------------------------------------------------------------
 |
-| Checks SMS records that were accepted, submitted, sent, queued, or pending
-| and updates their final delivery status using the eLive SMS provider API.
+| Checks eligible SMS every minute (maximum 25 API lookups per run).
+| Retry intervals: 1 minute for the first 15 minutes, 5 minutes for the
+| remainder of the first hour, then 30 minutes until a final receipt arrives.
+| Confirmed Delivered/Failed messages are excluded by the command.
+| Provider API capacity and scheduler runtime should be monitored.
 |
 | The command updates fields such as:
 | - status
@@ -55,8 +58,8 @@ Schedule::command('sms:send-event-day-reminders')
 |
 */
 
-Schedule::command('sms:sync-delivery-reports --limit=100')
-    ->everyFiveMinutes()
+Schedule::command('sms:sync-delivery-reports --limit=25')
+    ->everyMinute()
     ->withoutOverlapping(10)
     ->onOneServer();
 
