@@ -50,7 +50,6 @@ class InvitationPhoneChangeTest extends TestCase
         $invitee->forceFill([
             'sms_status' => 'delivered',
             'invitation_sms_status' => 'delivered',
-            'invitation_sms_message_id' => 'old-shoot',
             'sms_sent_at' => now()->subHour(),
         ])->save();
 
