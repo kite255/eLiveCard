@@ -1199,6 +1199,8 @@
                                 <a class="pagination-link" aria-label="Go to page {{ $invitees->lastPage() }}" href="{{ $invitees->url($invitees->lastPage()) }}">{{ $invitees->lastPage() }}</a>
                             @endif
 
+                            <span class="pagination-current">Page {{ $invitees->currentPage() }} of {{ $invitees->lastPage() }}</span>
+
                             @if ($invitees->hasMorePages())
                                 <a class="pagination-link" rel="next" href="{{ $invitees->nextPageUrl() }}">Next</a>
                             @else
@@ -1244,6 +1246,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 url.searchParams.set(name, value.trim());
             }
         }
+        const pageSize = results.querySelector('#rsvp-per-page');
+        if (pageSize) url.searchParams.set('per_page', pageSize.value);
         return url;
     };
 
