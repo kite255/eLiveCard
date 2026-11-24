@@ -688,6 +688,46 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('<svg class="w-5 h-5"', false);
     }
 
+    public function test_shared_rsvp_pagination_supports_page_size_and_numbered_links(): void
+    {
+        $event = $this->reportEvent('Selectable RSVP Pagination');
+        $type = $this->reportCardType($event);
+
+        for ($number = 1; $number <= 55; $number++) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => sprintf('Selectable Guest %03d', $number),
+                'phone' => sprintf('25570004%04d', $number),
+                'rsvp_status' => 'pending',
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+
+        $this->get($url.'?status=pending&per_page=25')
+            ->assertOk()
+            ->assertSee('id="rsvp-per-page"', false)
+            ->assertSee('Page 1 of 3')
+            ->assertSee('Showing 1 to 25 of 55 results')
+            ->assertSee('status=pending&amp;per_page=25&amp;page=2', false)
+            ->assertSee('aria-label="Go to page 3"', false);
+
+        $this->get($url.'?status=pending&per_page=25&page=2')
+            ->assertOk()
+            ->assertSee('Page 2 of 3')
+            ->assertSee('Showing 26 to 50 of 55 results')
+            ->assertSee('Selectable Guest 026')
+            ->assertDontSee('Selectable Guest 001');
+
+        $this->get($url.'?per_page=100')
+            ->assertOk()
+            ->assertSee('Page 1 of 1')
+            ->assertSee('Showing 1 to 55 of 55 results');
+
+        $this->get($url.'?per_page=1000')->assertSessionHasErrors('per_page');
+    }
+
     public function test_client_report_paginates_fifty_invitees_without_losing_filters(): void
     {
         $event = $this->reportEvent('Paginated Report');
