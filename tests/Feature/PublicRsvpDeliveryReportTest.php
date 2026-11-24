@@ -258,10 +258,10 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $html = $response->getContent();
 
         $this->assertSame(1, substr_count($html, 'scope="colgroup" class="channel-heading desktop-channel-heading"'));
-        $this->assertSame(1, substr_count($html, 'aria-label="WhatsApp"'));
-        $this->assertSame(1, substr_count($html, 'viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title>'));
+        $this->assertSame(2, substr_count($html, 'aria-label="WhatsApp"'));
+        $this->assertSame(2, substr_count($html, 'viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>WhatsApp</title>'));
         $this->assertStringNotContainsString('M8 24l2-5a11', $html);
-        $this->assertSame(1, substr_count($html, 'aria-label="SMS"'));
+        $this->assertSame(2, substr_count($html, 'aria-label="SMS"'));
         $response->assertSee('CHANNEL')
             ->assertSee('Submitted')
             ->assertSee('Not Sent')
@@ -408,8 +408,8 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('class="mobile-combined-channel"', false)
             ->assertSee('class="desktop-whatsapp-channel"', false)
             ->assertSee('class="desktop-sms-channel"', false)
-            ->assertSee('class="mobile-channel-name">WhatsApp</span>', false)
-            ->assertSee('class="mobile-channel-name">SMS</span>', false)
+            ->assertSee('class="mobile-channel-name"><svg class="channel-icon channel-icon-whatsapp" role="img" aria-label="WhatsApp"', false)
+            ->assertSee('class="mobile-channel-name"><svg class="channel-icon channel-icon-sms" role="img" aria-label="SMS"', false)
             ->assertSee('width: 54px;', false)
             ->assertSee('mobile-combined-channel .delivery-status', false);
     }
