@@ -9,8 +9,11 @@ class RsvpService
 {
     public function confirmAttendance(Invitee $invitee, ?string $source = null, ?string $message = null): Invitee
     {
+        $invitee->loadMissing('cardType');
+
         $invitee->update([
             'rsvp_status' => Invitee::RSVP_STATUS_ATTENDING,
+            'confirmed_guests' => max(1, (int) $invitee->final_allowed_guests),
             'rsvp_confirmed_at' => now(),
             'last_message_channel' => $source ?: $invitee->last_message_channel,
             'last_message_status' => Invitee::MESSAGE_STATUS_REPLIED,
@@ -32,6 +35,7 @@ class RsvpService
     {
         $invitee->update([
             'rsvp_status' => Invitee::RSVP_STATUS_NOT_ATTENDING,
+            'confirmed_guests' => 0,
             'rsvp_confirmed_at' => now(),
             'last_message_channel' => $source ?: $invitee->last_message_channel,
             'last_message_status' => Invitee::MESSAGE_STATUS_REPLIED,
