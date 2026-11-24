@@ -468,7 +468,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('class="guest-count-column"', false)
             ->assertSee('.desktop-table-wrap .guest-count-column {', false)
             ->assertSee('display: none;', false)
-            ->assertSee('class="subtle mobile-channel-timestamp"', false)
+            ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
             ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
             ->assertSee('grid-column: 2;', false)
             ->assertSee('class="mobile-combined-channel"', false);
