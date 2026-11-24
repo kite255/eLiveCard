@@ -911,6 +911,9 @@
             .desktop-table-wrap .guest-count-column {
                 display: none;
             }
+            .desktop-table-wrap .rsvp-status-column {
+                display: none;
+            }
         }
 
         .live-search-status {
@@ -1100,7 +1103,7 @@
                                 <th rowspan="2" class="guest-count-column">Guests</th>
                             @endif
 
-                            <th rowspan="2">RSVP</th>
+                            <th rowspan="2" class="rsvp-status-column">RSVP</th>
                             <th colspan="2" scope="colgroup" class="channel-heading desktop-channel-heading">CHANNEL</th>
                             <th rowspan="2" scope="col" class="mobile-combined-channel-heading">CHANNEL</th>
 
@@ -1169,7 +1172,7 @@
                                     <td class="guest-count-column">{{ $confirmedCount }} / {{ $allowedGuests }}</td>
                                 @endif
 
-                                <td>
+                                <td class="rsvp-status-column">
                                     <span class="badge {{ $badgeClass }}">
                                         {{ str($rsvpStatus)->replace('_', ' ')->title() }}
                                     </span>
