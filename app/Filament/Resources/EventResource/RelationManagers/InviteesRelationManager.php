@@ -2002,7 +2002,7 @@ class InviteesRelationManager extends RelationManager
                 ])
                     ->label('Manage invitee')
                     ->dropdownWidth(\Filament\Support\Enums\MaxWidth::Medium)
-                    ->maxHeight('min(70dvh, 32rem)')
+                    ->dropdownMaxHeight('min(70dvh, 32rem)')
                     ->icon('heroicon-m-ellipsis-horizontal')
                     ->color('primary')
                     ->iconButton()
