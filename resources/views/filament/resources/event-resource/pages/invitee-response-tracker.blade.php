@@ -22,7 +22,7 @@
             copied: false,
             enabled: @js($record->hasValidRsvpShareLink()),
             url: @js($record->rsvp_share_url),
-            showPhone: @js((bool) $record->rsvp_share_show_phone),
+            showPhone: @js($record->hasValidRsvpShareLink() ? (bool) $record->rsvp_share_show_phone : true),
             expiresInDays: '',
 
             notify(title, type = 'success') {
@@ -209,7 +209,7 @@
                 <div class="mt-3 flex flex-wrap gap-4">
                     <label class="inline-flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
                         <input type="checkbox" x-model="showPhone" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
-                        Show phone numbers
+                        Show phone numbers (default for new links)
                     </label>
 
                     <label class="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
