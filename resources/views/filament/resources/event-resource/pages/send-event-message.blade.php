@@ -324,11 +324,11 @@
                 </div>
 
                 {{-- Delivery Overview --}}
-                <div class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5">
+                <div wire:poll.20s class="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-950/5">
                     <div>
                         <h2 class="text-lg font-bold text-[#111827]">Delivery Overview</h2>
                         <p class="mt-1 text-sm text-gray-600">
-                            SMS queue and delivery status for this event.
+                            Refreshes every 20 seconds. Counts are based on SMS logs; newly queued jobs appear once processed.
                         </p>
                     </div>
 
