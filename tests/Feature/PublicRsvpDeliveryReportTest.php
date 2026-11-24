@@ -468,10 +468,33 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('class="guest-count-column"', false)
             ->assertSee('.desktop-table-wrap .guest-count-column {', false)
             ->assertSee('display: none;', false)
-            ->assertSee('class="subtle mobile-channel-timestamp"', false)
+            ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
             ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
             ->assertSee('grid-column: 2;', false)
             ->assertSee('class="mobile-combined-channel"', false);
+    }
+
+    public function test_mobile_report_uses_compact_column_widths_without_hiding_delivery_times(): void
+    {
+        $event = $this->reportEvent('Compact Mobile Table');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Compact Table Guest',
+            'phone' => '255700001122',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())->assertOk()
+            ->assertSee('min-width: 720px;', false)
+            ->assertSee('padding: 7px 6px;', false)
+            ->assertSee('min-width: 108px;', false)
+            ->assertSee('column-gap: 4px;', false)
+            ->assertSee('class="mobile-channel-entry"', false)
+            ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
+            ->assertSee('class="mobile-combined-channel"', false)
+            ->assertSee('.desktop-table-wrap .guest-count-column {', false)
+            ->assertSee('display: none;', false);
     }
 
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
