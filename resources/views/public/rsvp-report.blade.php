@@ -651,6 +651,15 @@
             }
         }
 
+        .invitee-phone {
+            margin-top: 4px;
+            color: #506785;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
         /* Phone-only invitee cards: do not squeeze delivery status into a table column. */
         .mobile-rsvp-cards { display: none; }
 
@@ -887,17 +896,6 @@
                     <option value="maybe" @selected($status === 'maybe')>Maybe</option>
                 </select>
 
-                <select name="sms_delivery" class="select" aria-label="SMS delivery status">
-                    <option value="">All SMS delivery statuses</option>
-                    <option value="not_sent" @selected($smsDelivery === 'not_sent')>Not Sent</option>
-                    <option value="queued" @selected($smsDelivery === 'queued')>Queued</option>
-                    <option value="submitted" @selected($smsDelivery === 'submitted')>Submitted · Awaiting delivery</option>
-                    <option value="delivered" @selected($smsDelivery === 'delivered')>Delivered</option>
-                    <option value="failed" @selected($smsDelivery === 'failed')>Failed</option>
-                    <option value="logged_only" @selected($smsDelivery === 'logged_only')>Logged Only</option>
-                    <option value="unknown" @selected($smsDelivery === 'unknown')>Unknown</option>
-                </select>
-
                 <select name="whatsapp_delivery" class="select" aria-label="WhatsApp delivery status">
                     <option value="">All WhatsApp delivery statuses</option>
                     <option value="not_sent" @selected($whatsappDelivery === 'not_sent')>Not Sent</option>
@@ -913,7 +911,7 @@
                 <div style="display:flex; gap:8px;">
                     <button type="submit" class="button">Apply Filters</button>
 
-                    <a id="rsvp-clear-filters" href="{{ request()->url() }}" class="button secondary" @if ($search === '' && $status === '' && $smsDelivery === '' && $whatsappDelivery === '') hidden @endif>
+                    <a id="rsvp-clear-filters" href="{{ request()->url() }}" class="button secondary" @if ($search === '' && $status === '' && $whatsappDelivery === '') hidden @endif>
                         Clear
                     </a>
                 </div>
@@ -993,7 +991,7 @@
                                 <td>
                                     <div class="name">{{ $invitee->name }}</div>
                                     @if ($showPhoneNumbers)
-                                        <div class="subtle" style="margin-top:3px;color:#617C9E;font-size:11px;font-weight:600;white-space:nowrap">{{ $invitee->phone ?: '—' }}</div>
+                                        <div class="subtle invitee-phone" aria-label="Phone number">Phone: {{ $invitee->phone ?: '—' }}</div>
                                     @endif
                                 </td>
 
@@ -1068,7 +1066,7 @@
                                 <div class="name"><span class="mobile-card-number">{{ $invitees->firstItem() + $loop->index }}.</span> {{ $invitee->name }}</div>
                                 <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
                                 @if ($showPhoneNumbers)
-                                    <div class="subtle">Phone: {{ $invitee->phone ?: '—' }}</div>
+                                    <div class="subtle invitee-phone" aria-label="Phone number">Phone: {{ $invitee->phone ?: '—' }}</div>
                                 @endif
                             </div>
                             <span class="badge {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span>
