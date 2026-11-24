@@ -1071,6 +1071,9 @@
                             <div class="mobile-card-identity">
                                 <div class="name"><span class="mobile-card-number">{{ $invitees->firstItem() + $loop->index }}.</span> {{ $invitee->name }}</div>
                                 <div class="subtle">{{ $invitee->cardType?->name ?: '—' }}</div>
+                                @if ($showPhoneNumbers)
+                                    <div class="subtle">Phone: {{ $invitee->phone ?: '—' }}</div>
+                                @endif
                             </div>
                             <span class="badge {{ $mobileStatus }}">{{ str($mobileRsvp)->replace('_', ' ')->title() }}</span>
                         </div>
