@@ -1306,6 +1306,32 @@ class InviteesRelationManager extends RelationManager
                         );
                     }),
 
+                    Tables\Actions\Action::make('audit_missing_invitation_sms_logs')
+                        ->label('Check Missing SMS Delivery Logs')
+                        ->icon('heroicon-o-magnifying-glass')
+                        ->color('info')
+                        ->visible(fn (): bool => $this->canViewReportsForOwner())
+                        ->modalHeading('Invitees without invitation SMS logs')
+                        ->modalDescription('Read-only check of invitation SMS logs for this event. An absent log does not prove the message was never sent.')
+                        ->modalSubmitAction(false)
+                        ->modalWidth('3xl')
+                        ->modalContent(function (): \Illuminate\Contracts\View\View {
+                            $eventId = $this->getOwnerRecord()->id;
+                            $missingQuery = Invitee::query()
+                                ->where('event_id', $eventId)
+                                ->whereDoesntHave('smsLogs', function (Builder $query) use ($eventId): void {
+                                    $query->where('event_id', $eventId)
+                                        ->whereIn('sms_type', ['invitation', 'invitation_card']);
+                                });
+
+                            return view('filament.resources.event-resource.partials.missing-invitation-sms-logs', [
+                                'missingCount' => (clone $missingQuery)->count(),
+                                'missingInvitees' => $missingQuery->orderBy('name')
+                                    ->limit(20)
+                                    ->get(['id', 'name', 'phone']),
+                            ]);
+                        }),
+
                     Tables\Actions\Action::make('refresh_status')
                         ->label('Refresh Status')
                         ->icon('heroicon-o-arrow-path')
