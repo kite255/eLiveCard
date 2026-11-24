@@ -525,6 +525,7 @@ class InviteesRelationManager extends RelationManager
                             $trackedStatus = DB::table('whatsapp_template_sends')
                                 ->where('invitee_id', $record->id)
                                 ->where('message_template_id', $eventTemplateId)
+                                ->where('phone_generation', (int) $record->invitation_phone_generation)
                                 ->value('status');
                         }
 
@@ -553,7 +554,9 @@ class InviteesRelationManager extends RelationManager
                             default => null,
                         };
 
-                        return 'WhatsApp: '.$whatsapp.($at ? ' • '.$at->format('d M Y, H:i') : '');
+                        return 'WhatsApp: '.($whatsapp === 'Not Sent' && $record->invitation_phone_changed_at
+                            ? 'Not Sent — Phone Updated'
+                            : $whatsapp).($at ? ' • '.$at->format('d M Y, H:i') : '');
                     })
                     ->badge()
                     ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
@@ -605,8 +608,9 @@ class InviteesRelationManager extends RelationManager
                         return $at ? 'Status at '.$at->format('d M Y, H:i') : null;
                     })
                     ->badge()
-                    ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        'not_sent', null, '' => 'Not Sent',
+                    ->formatStateUsing(fn (?string $state, Invitee $record): string => match ($state) {
+                        'not_sent', null, '' => $record->invitation_phone_changed_at
+                            ? 'Not Sent — Phone Updated' : 'Not Sent',
                         'sending' => 'Sending',
                         'submitted' => 'Submitted',
                         'sent' => 'Sent',
