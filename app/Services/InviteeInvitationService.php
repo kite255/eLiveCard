@@ -126,6 +126,8 @@ class InviteeInvitationService
             ->where('channel', 'whatsapp')
             ->where('type', MessageTemplate::TYPE_INVITATION)
             ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+            ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                $query->where('id', '>', (int) $invitee->invitation_message_reset_log_id))
             ->exists()) {
             return $this->result('skipped', 'This WhatsApp invitation was already submitted.');
         }
@@ -134,6 +136,7 @@ class InviteeInvitationService
             'event_id' => $event->id,
             'invitee_id' => $invitee->id,
             'message_template_id' => $template->id,
+            'phone_generation' => (int) $invitee->invitation_phone_generation,
             'status' => 'pending',
             'attempts' => 1,
             'last_attempt_at' => now(),
@@ -150,12 +153,14 @@ class InviteeInvitationService
                 inviteeId: (int) $invitee->id,
                 languageCode: (string) ($template->whatsapp_language_code ?: 'en'),
                 messageTemplateId: (int) $template->id,
+                phoneGeneration: (int) $invitee->invitation_phone_generation,
             );
         } catch (Throwable $exception) {
             DB::table('whatsapp_template_sends')
                 ->where('event_id', $event->id)
                 ->where('invitee_id', $invitee->id)
                 ->where('message_template_id', $template->id)
+                ->where('phone_generation', (int) $invitee->invitation_phone_generation)
                 ->update(['status' => 'failed', 'last_error' => mb_substr($exception->getMessage(), 0, 1000), 'updated_at' => now()]);
 
             return $this->result('failed', 'Could not queue WhatsApp invitation.');
@@ -285,6 +290,7 @@ class InviteeInvitationService
                         'event_id' => $event->id,
                         'invitee_id' => $invitee->id,
                         'message_template_id' => $template->id,
+                        'phone_generation' => (int) $invitee->invitation_phone_generation,
                     ];
                     // A queued worker only processes pending claims.
                     $claimStatus = $resendReason === null ? 'pending' : 'sending';
@@ -295,6 +301,7 @@ class InviteeInvitationService
                         ->where('sends.invitee_id', $invitee->id)
                         ->where('sends.event_id', $event->id)
                         ->where('templates.type', MessageTemplate::TYPE_INVITATION)
+                        ->where('sends.phone_generation', (int) $invitee->invitation_phone_generation)
                         ->whereIn('sends.status', ['pending', 'sending'])
                         ->exists()) {
                         return $this->result('skipped', 'A WhatsApp invitation is already queued or processing.');
