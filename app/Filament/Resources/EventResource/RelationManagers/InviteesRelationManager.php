@@ -3448,6 +3448,7 @@ class InviteesRelationManager extends RelationManager
                     ? (string) $template->whatsapp_language_code
                     : MessageTemplate::LANGUAGE_ENGLISH,
                 messageTemplateId: $template->id,
+                phoneGeneration: (int) $invitee->invitation_phone_generation,
             );
 
             $this->safeUpdateInvitee($invitee, [
