@@ -366,6 +366,30 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('<summary>Details</summary>', false);
     }
 
+    public function test_mobile_uses_full_desktop_columns_with_horizontal_scroll(): void
+    {
+        $event = $this->reportEvent('Mobile All Columns Event');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'All Columns Guest',
+            'phone' => '255700009123',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $response = $this->get($event->generateRsvpShareLink())->assertOk();
+        $response->assertSee('Swipe left or right to view all report columns.')
+            ->assertSee('class="table-wrap desktop-table-wrap"', false)
+            ->assertSee('Card Type')
+            ->assertSee('Guests')
+            ->assertSee('RSVP')
+            ->assertSee('CHANNEL')
+            ->assertSee('WhatsApp Reply / Response Time')
+            ->assertSee('255700009123')
+            ->assertSee('.mobile-rsvp-cards { display: none; }', false)
+            ->assertSee('overflow-x: auto;', false);
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
