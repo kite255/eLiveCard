@@ -436,6 +436,44 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('.mobile-channel-entry + .mobile-channel-entry {', false);
     }
 
+    public function test_mobile_hides_guest_column_and_shows_both_channel_delivery_timestamps(): void
+    {
+        $event = $this->reportEvent('Mobile Guest and Channel Times');
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Timed Channel Guest',
+            'phone' => '255700009998',
+            'rsvp_status' => 'attending',
+        ]);
+
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'read',
+        ]);
+        SmsLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'phone' => $invitee->phone,
+            'sms_type' => 'invitation_card',
+            'message' => 'Invitation',
+            'status' => 'sent',
+            'sent_at' => now(),
+        ]);
+
+        $this->get($event->generateRsvpShareLink())->assertOk()
+            ->assertSee('class="guest-count-column"', false)
+            ->assertSee('.desktop-table-wrap .guest-count-column {', false)
+            ->assertSee('display: none;', false)
+            ->assertSee('class="subtle mobile-channel-timestamp"', false)
+            ->assertSee('.mobile-combined-channel .mobile-channel-timestamp {', false)
+            ->assertSee('grid-column: 2;', false)
+            ->assertSee('class="mobile-combined-channel"', false);
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
