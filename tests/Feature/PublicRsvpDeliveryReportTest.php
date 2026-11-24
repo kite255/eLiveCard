@@ -497,6 +497,26 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('display: none;', false);
     }
 
+    public function test_rsvp_status_column_is_hidden_only_on_phone_widths(): void
+    {
+        $event = $this->reportEvent('Mobile RSVP Column Visibility');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Column Visibility Guest',
+            'phone' => '255700001133',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())->assertOk()
+            ->assertSee('<th rowspan="2" class="rsvp-status-column">RSVP</th>', false)
+            ->assertSee('<td class="rsvp-status-column">', false)
+            ->assertSee('.desktop-table-wrap .rsvp-status-column {', false)
+            ->assertSee('display: none;', false)
+            ->assertSee('class="mobile-combined-channel"', false)
+            ->assertSee('Column Visibility Guest');
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
