@@ -31,10 +31,10 @@ class SharedInviteePhoneServiceTest extends TestCase
         ]);
 
         $cardType = CardType::query()->create([
-            'event_id' => $event->id, 'card_type_id' => $cardType->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
+            'event_id' => $event->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
         ]);
         $otherCardType = CardType::query()->create([
-            'event_id' => $otherEvent->id, 'card_type_id' => $otherCardType->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
+            'event_id' => $otherEvent->id, 'name' => 'Single', 'allowed_people' => 1, 'is_active' => true,
         ]);
 
         $john = Invitee::query()->create([
