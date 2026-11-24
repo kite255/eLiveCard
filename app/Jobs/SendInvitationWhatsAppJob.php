@@ -8,6 +8,7 @@ use App\Services\WhatsAppApiCloudService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Container\Container;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -34,7 +35,10 @@ class SendInvitationWhatsAppJob implements ShouldBeUnique, ShouldQueue
         public string $languageCode = MessageTemplate::LANGUAGE_ENGLISH,
         public ?int $messageTemplateId = null,
     ) {
-        $this->onQueue((string) config('messaging.whatsapp_queue', self::QUEUE));
+        $queue = Container::getInstance()->bound('config')
+            ? (string) config('messaging.whatsapp_queue', self::QUEUE)
+            : self::QUEUE;
+        $this->onQueue($queue);
     }
 
     public function uniqueId(): string
