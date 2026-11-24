@@ -20,8 +20,8 @@ class InvitationSmsDeliveryStatusService
             ? SmsLog::query()->where('event_id', $invitee->event_id)
                 ->where('invitee_id', $invitee->id)
                 ->whereIn('sms_type', [SmsLog::TYPE_INVITATION, SmsLog::TYPE_INVITATION_CARD])
-                ->when($invitee->invitation_phone_changed_at, fn ($query, $changedAt) =>
-                    $query->where('created_at', '>', $changedAt))
+                ->when($invitee->invitation_phone_changed_at, fn ($query) =>
+                    $query->where('id', '>', (int) $invitee->invitation_sms_reset_log_id))
                 ->latest('id')->first()
             : null;
 
