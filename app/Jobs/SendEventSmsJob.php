@@ -7,6 +7,7 @@ use App\Services\SmsService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Container\Container;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
 
@@ -34,7 +35,10 @@ class SendEventSmsJob implements ShouldQueue, ShouldBeUnique
         public string $smsType,
     ) {
         // Keep the existing communications worker compatible by default.
-        $this->onQueue((string) config('messaging.sms_queue', 'communications'));
+        $queue = Container::getInstance()->bound('config')
+            ? (string) config('messaging.sms_queue', 'communications')
+            : 'communications';
+        $this->onQueue($queue);
     }
 
     public function uniqueId(): string
