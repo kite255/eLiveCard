@@ -769,7 +769,6 @@
 
         $visibleColumnCount =
             6
-            + ($showPhoneNumbers ? 1 : 0)
             + ($showCardTypeColumn ? 1 : 0)
             + ($showCategoryColumn ? 1 : 0)
             + ($showTableColumn ? 1 : 0)
@@ -929,9 +928,6 @@
                             <th rowspan="2">#</th>
                             <th rowspan="2">Invitee</th>
 
-                            @if ($showPhoneNumbers)
-                                <th rowspan="2">Phone</th>
-                            @endif
 
                             @if ($showCardTypeColumn)
                                 <th rowspan="2">Card Type</th>
@@ -996,11 +992,10 @@
 
                                 <td>
                                     <div class="name">{{ $invitee->name }}</div>
+                                    @if ($showPhoneNumbers)
+                                        <div class="subtle" style="margin-top:3px;color:#617C9E;font-size:11px;font-weight:600;white-space:nowrap">{{ $invitee->phone ?: '—' }}</div>
+                                    @endif
                                 </td>
-
-                                @if ($showPhoneNumbers)
-                                    <td>{{ $invitee->phone ?: '—' }}</td>
-                                @endif
 
                                 @if ($showCardTypeColumn)
                                     <td>{{ $invitee->cardType?->name ?: '—' }}</td>
