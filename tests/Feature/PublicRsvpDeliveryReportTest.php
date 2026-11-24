@@ -928,7 +928,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
                 )
                 ->assertSee('id="rsvp-report-per-page"', false)
                 ->assertSee('Rows per page')
-                ->assertSee('per_page='.$size, false);
+                ->assertSee('value="'.$size.'" selected', false);
         }
 
         $this->get($url.'?status=pending&per_page=10&page=2')
