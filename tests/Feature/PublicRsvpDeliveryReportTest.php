@@ -414,6 +414,28 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('mobile-combined-channel .delivery-status', false);
     }
 
+    public function test_mobile_channel_is_two_compact_icon_status_rows_without_timestamps(): void
+    {
+        $event = $this->reportEvent('Compact Mobile Channel');
+        Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $this->reportCardType($event)->id,
+            'name' => 'Compact Guest',
+            'phone' => '255700000100',
+            'rsvp_status' => 'attending',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())->assertOk()
+            ->assertSee('class="mobile-channel-entry"', false)
+            ->assertSee('class="channel-icon channel-icon-whatsapp"', false)
+            ->assertSee('class="channel-icon channel-icon-sms"', false)
+            ->assertSee('.mobile-channel-entry {', false)
+            ->assertSee('display: flex;', false)
+            ->assertSee('.mobile-combined-channel .subtle {', false)
+            ->assertSee('display: none;', false)
+            ->assertSee('.mobile-channel-entry + .mobile-channel-entry {', false);
+    }
+
     public function test_mobile_report_displays_row_numbers_across_paginated_pages(): void
     {
         $event = $this->reportEvent('Numbered Mobile Report');
