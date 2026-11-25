@@ -23,6 +23,33 @@ class RecoverOrphanWhatsAppInvitationsTest extends TestCase
         ])->assertExitCode(1);
     }
 
+    public function test_global_invitation_template_is_accepted_for_an_event_dry_run(): void
+    {
+        $event = Event::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'title' => 'Shared Template Recovery',
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        $template = MessageTemplate::query()->create([
+            'event_id' => null,
+            'channel' => 'whatsapp',
+            'type' => MessageTemplate::TYPE_INVITATION,
+            'name' => 'Global Invitation',
+            'content' => 'Invitation',
+            'whatsapp_template_name' => 'global_invitation',
+            'whatsapp_language_code' => 'sw',
+            'status' => 'active',
+        ]);
+
+        $this->artisan('whatsapp:recover-orphan-invitations', [
+            '--event' => $event->id,
+            '--template' => $template->id,
+        ])->assertExitCode(0);
+
+        $this->assertSame(0, DB::table('jobs')->count());
+    }
+
     public function test_dry_run_does_not_change_claims_or_create_jobs(): void
     {
         $event = Event::query()->create([
