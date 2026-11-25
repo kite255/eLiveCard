@@ -142,7 +142,7 @@ class ReminderSmsService
         $batchId = (string) Str::uuid();
 
         foreach ($invitees as $invitee) {
-            if (! $invitee instanceof Invitee) {
+            if (! $invitee instanceof Invitee || ! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)) {
                 $skipped++;
                 continue;
             }
@@ -168,7 +168,7 @@ class ReminderSmsService
         $batchId = (string) Str::uuid();
 
         foreach ($invitees as $invitee) {
-            if (! $invitee instanceof Invitee) {
+            if (! $invitee instanceof Invitee || ! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)) {
                 $skipped++;
                 continue;
             }
@@ -199,6 +199,10 @@ class ReminderSmsService
         string $sendSource = SmsLog::SOURCE_MANUAL,
         ?string $batchId = null
     ): bool {
+        if (! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)) {
+            return false;
+        }
+
         $batchId ??= (string) Str::uuid();
         $message = trim($message);
 
