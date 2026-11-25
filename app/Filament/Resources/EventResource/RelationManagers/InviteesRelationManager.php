@@ -3583,19 +3583,51 @@ class InviteesRelationManager extends RelationManager
                 ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
                     && $record->card_status === Invitee::CARD_STATUS_ACTIVE
                     && filled($record->phone) && filled($record->short_code)
-                    && $this->displayHasInvitationSubmission($record, $channel))
+                    && $this->displayHasInvitationSubmission($record, 'whatsapp'))
                 ->requiresConfirmation()
                 ->modalIcon('heroicon-o-paper-airplane')
                 ->modalIconColor('warning')
-                ->modalHeading('Send Invitation Again?')
-                ->modalDescription(fn (Invitee $record): string => 'Send a fresh WhatsApp invitation to '.$record->name.'? This sends another copy and may incur an additional messaging charge.')
-                ->modalSubmitActionLabel('Yes, Resend Invitation')
-                ->modalCancelActionLabel('Keep Existing Invitation')
-                ->action(fn (Invitee $record) => $this->processInviteeInvitation(
-                    $record,
-                    $channel,
-                    'Manual WhatsApp invitation resend from invitee actions.',
-                ));
+                ->modalHeading(fn (Invitee $record): string => 'Resend WhatsApp Invitation to '.$record->name.'?')
+                ->modalDescription('This is an intentional resend to one contact. It may result in a duplicate message and an additional provider charge.')
+                ->modalSubmitActionLabel('Confirm Intentional Resend')
+                ->modalCancelActionLabel('Cancel Resend')
+                ->form([
+                    Forms\Components\Placeholder::make('previous_whatsapp_status')
+                        ->label('Previous invitation status')
+                        ->content(fn (Invitee $record): string => ucfirst(
+                            (string) ($this->displayWhatsAppStatus($record) ?? 'Unverified')
+                        ).' — the original message history is preserved.'),
+                    Forms\Components\Textarea::make('resend_reason')
+                        ->label('Reason for resending')
+                        ->placeholder('E.g. The recipient requested another copy.')
+                        ->required()
+                        ->minLength(10)
+                        ->maxLength(500)
+                        ->rows(2),
+                    Forms\Components\Checkbox::make('confirm_duplicate')
+                        ->label('I understand this may send another invitation and incur a charge.')
+                        ->accepted()
+                        ->required(),
+                ])
+                ->action(function (Invitee $record, array $data): void {
+                    abort_unless($this->canSendMessagesForOwner()
+                        && (int) $record->event_id === (int) $this->getOwnerRecord()->id, 403);
+
+                    $status = $this->displayWhatsAppStatus($record);
+                    if (! in_array($status, ['submitted', 'delivered', 'read', 'failed', 'sent'], true)) {
+                        $this->brandedNotification()
+                            ->title('WhatsApp resend blocked')
+                            ->body('The previous invitation is queued or unverified. Review provider evidence before resending.')
+                            ->warning()->send();
+                        return;
+                    }
+
+                    $this->processInviteeInvitation(
+                        $record,
+                        'whatsapp',
+                        trim((string) $data['resend_reason']),
+                    );
+                });
         }
 
         return Tables\Actions\Action::make('force_resend_'.$channel.'_invitation')
