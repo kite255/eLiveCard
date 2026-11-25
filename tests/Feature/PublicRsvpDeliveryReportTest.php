@@ -1279,6 +1279,68 @@ class PublicRsvpDeliveryReportTest extends TestCase
         }
     }
 
+    public function test_shared_report_summarizes_card_types_for_the_whole_event(): void
+    {
+        $event = $this->reportEvent('Card Type Counts');
+        $single = $this->reportCardType($event);
+        $double = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Double',
+            'allowed_people' => 2,
+            'is_active' => false,
+        ]);
+
+        foreach ([
+            ['First Single', $single->id, 'pending'],
+            ['Second Single', $single->id, 'attending'],
+            ['Third Double', $double->id, 'not_attending'],
+        ] as [$name, $cardTypeId, $status]) {
+            Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $cardTypeId,
+                'name' => $name,
+                'phone' => '255700000019',
+                'rsvp_status' => $status,
+            ]);
+        }
+
+        $otherEvent = $this->reportEvent('Another Card Summary Event');
+        Invitee::query()->create([
+            'event_id' => $otherEvent->id,
+            'card_type_id' => $this->reportCardType($otherEvent)->id,
+            'name' => 'Outside Event',
+            'phone' => '255700000020',
+        ]);
+
+        $url = $event->generateRsvpShareLink();
+
+        foreach ([$url, $url.'?status=attending&per_page=10', $url.'?search=Second'] as $requestUrl) {
+            $this->get($requestUrl)
+                ->assertOk()
+                ->assertViewHas('cardTypeSummary', fn (array $types): bool =>
+                    $types === [
+                        ['name' => 'Double', 'count' => 1],
+                        ['name' => 'Single', 'count' => 2],
+                    ]
+                )
+                ->assertSee('Card Types Used')
+                ->assertSee('class="card-types-summary"', false)
+                ->assertSee('class="card-type-name">Double</span>', false)
+                ->assertSee('class="card-type-name">Single</span>', false)
+                ->assertDontSee('Outside Event');
+        }
+    }
+
+    public function test_card_type_summary_displays_empty_state_for_event_without_invitees(): void
+    {
+        $event = $this->reportEvent('Empty Card Summary');
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertViewHas('cardTypeSummary', fn (array $types): bool => $types === [])
+            ->assertSee('No card types assigned yet.');
+    }
+
     private function reportEvent(string $title): Event
     {
         return Event::query()->create([
