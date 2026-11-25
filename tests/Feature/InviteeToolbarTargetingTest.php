@@ -47,7 +47,7 @@ class InviteeToolbarTargetingTest extends TestCase
         ]);
     }
 
-    private function component(Event $event)
+    private function inviteeTableComponent(Event $event)
     {
         return Livewire::test(InviteesRelationManager::class, [
             'ownerRecord' => $event,
@@ -98,7 +98,7 @@ class InviteeToolbarTargetingTest extends TestCase
         $this->invitee($this->event($user), 'Asha Unique', '255700000023');
         $this->template($event);
 
-        $this->component($event)
+        $this->inviteeTableComponent($event)
             ->searchTable('Asha Unique')
             ->callTableAction('send_message', data: [
                 'target_scope' => 'filtered',
@@ -121,7 +121,7 @@ class InviteeToolbarTargetingTest extends TestCase
         $this->invitee($event, 'Asha', '255700000031');
         $this->template($event);
 
-        $this->component($event)
+        $this->inviteeTableComponent($event)
             ->callTableAction('send_message', data: [
                 'target_scope' => 'selected',
                 'target_confirmed' => true,
