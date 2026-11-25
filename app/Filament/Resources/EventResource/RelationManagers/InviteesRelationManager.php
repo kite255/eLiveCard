@@ -617,7 +617,7 @@ class InviteesRelationManager extends RelationManager
                         $sms = $this->displaySmsStatus($record);
                         $whatsapp = match ($record->report_whatsapp_status) {
                             'queued' => 'Pending',
-                            'unknown' => 'Unverified',
+                            'unknown' => 'Needs Review',
                             'logged_only' => 'Logged Only',
                             default => ucfirst(str_replace('_', ' ', $record->report_whatsapp_status ?? 'not_sent')),
                         };
@@ -626,9 +626,18 @@ class InviteesRelationManager extends RelationManager
                             ? \Illuminate\Support\Carbon::parse($record->report_whatsapp_status_at)->timezone('Africa/Dar_es_Salaam')
                             : null;
 
-                        $whatsappLabel = $whatsapp === 'Not Sent' && $record->invitation_phone_changed_at
-                            ? 'Not Sent — Phone Updated'
+                        // Imported invitees have no delivery outcome until an invitation is attempted.
+                        $whatsappLabel = $whatsapp === 'Not Sent'
+                            ? ($record->invitation_phone_changed_at ? 'Not Sent — Phone Updated' : '')
                             : $whatsapp;
+
+                        // No SMS log or sending attempt: do not label a new import as unverified.
+                        $smsLabel = (string) $sms['label'];
+                        if ($smsLabel === 'Unverified') {
+                            $smsLabel = $record->last_message_channel === 'sms'
+                                ? 'Needs Review'
+                                : '';
+                        }
 
                         $whatsappColor = match ($whatsapp) {
                             'Read' => 'info',
@@ -641,7 +650,7 @@ class InviteesRelationManager extends RelationManager
                         return [
                             [
                                 'name' => 'SMS',
-                                'label' => (string) $sms['label'],
+                                'label' => $smsLabel,
                                 'color' => (string) $sms['color'],
                                 'time' => $sms['status_time'] ? (string) $sms['status_time'] : null,
                             ],
@@ -685,7 +694,7 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('whatsapp_status')
                     ->label('WhatsApp Status')
-                    ->state(fn (Invitee $record): string => $record->report_whatsapp_status ?? 'unknown')
+                    ->state(fn (Invitee $record): ?string => $record->report_whatsapp_status === 'not_sent' && ! $record->invitation_phone_changed_at ? null : ($record->report_whatsapp_status ?? 'unknown'))
                     ->description(function (Invitee $record): ?string {
                         $at = $record->report_whatsapp_status_at
                             ? \Illuminate\Support\Carbon::parse($record->report_whatsapp_status_at)->timezone('Africa/Dar_es_Salaam')
@@ -695,9 +704,9 @@ class InviteesRelationManager extends RelationManager
                     ->badge()
                     ->formatStateUsing(fn (?string $state, Invitee $record): string => match ($state) {
                         'not_sent', null, '' => $record->invitation_phone_changed_at
-                            ? 'Not Sent — Phone Updated' : 'Not Sent',
+                            ? 'Not Sent — Phone Updated' : '',
                         'sending', 'queued' => 'Pending',
-                        'unknown' => 'Unverified',
+                        'unknown' => 'Needs Review',
                         'logged_only' => 'Logged Only',
                         'submitted' => 'Submitted',
                         'sent' => 'Sent',
@@ -864,7 +873,7 @@ class InviteesRelationManager extends RelationManager
                         'submitted' => 'Submitted',
                         'pending' => 'Pending / Queued / Processing',
                         'logged' => 'Logged Only',
-                        'unverified' => 'Unverified / Not Sent',
+                        'unverified' => 'No SMS Record',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         $value = $data['value'] ?? null;
@@ -928,7 +937,7 @@ class InviteesRelationManager extends RelationManager
                         'delivered' => 'Delivered',
                         'read' => 'Read',
                         'failed' => 'Failed',
-                        'unknown' => 'Unverified',
+                        'unknown' => 'Needs Review',
                         'logged_only' => 'Logged Only',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
@@ -3593,7 +3602,7 @@ class InviteesRelationManager extends RelationManager
                     Forms\Components\Placeholder::make('previous_whatsapp_status')
                         ->label('Previous invitation status')
                         ->content(fn (Invitee $record): string => ucfirst(
-                            (string) ($this->displayWhatsAppStatus($record) ?? 'Unverified')
+                            (string) ($this->displayWhatsAppStatus($record) ?? 'Needs Review')
                         ).' — the original message history is preserved.'),
                     Forms\Components\Textarea::make('resend_reason')
                         ->label('Reason for resending')
@@ -3615,7 +3624,7 @@ class InviteesRelationManager extends RelationManager
                     if (! in_array($status, ['submitted', 'delivered', 'read', 'failed', 'sent'], true)) {
                         $this->brandedNotification()
                             ->title('WhatsApp resend blocked')
-                            ->body('The previous invitation is queued or unverified. Review provider evidence before resending.')
+                            ->body('The previous invitation is queued or its outcome is unknown. Review provider evidence before resending.')
                             ->warning()->send();
                         return;
                     }
