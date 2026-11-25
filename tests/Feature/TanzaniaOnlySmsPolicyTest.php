@@ -104,6 +104,23 @@ class TanzaniaOnlySmsPolicyTest extends TestCase
         ]);
     }
 
+    public function test_queued_event_sms_skips_unsupported_recipient_without_sending(): void
+    {
+        $invitee = $this->welcomeInvitee('+254700000001');
+        $service = \Mockery::mock(SmsService::class)->makePartial();
+        $service->shouldNotReceive('sendCustomMessage');
+
+        (new \App\Jobs\SendEventSmsJob(
+            $invitee->event_id,
+            $invitee->id,
+            'Test campaign',
+            'custom_sms',
+        ))->handle($service);
+
+        $this->assertDatabaseMissing('sms_logs', ['invitee_id' => $invitee->id]);
+        $this->assertSame('+254700000001', $invitee->fresh()->phone);
+    }
+
     private function welcomeInvitee(string $phone): Invitee
     {
         $event = Event::query()->create([
