@@ -10,7 +10,7 @@ class TargetedWhatsAppResendActionTest extends TestCase
     {
         $source = file_get_contents(app_path('Filament/Resources/EventResource/RelationManagers/InviteesRelationManager.php'));
         $start = strpos($source, "Action::make('force_resend_whatsapp_invitation')");
-        $end = strpos($source, "return Tables\\Actions\\Action::make('force_resend_'.$channel", $start);
+        $end = strpos($source, "return Tables\\Actions\\Action::make('force_resend_'.\$channel", $start);
         $this->assertNotFalse($start);
         $this->assertNotFalse($end);
         $action = substr($source, $start, $end - $start);
