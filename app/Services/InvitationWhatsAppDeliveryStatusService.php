@@ -15,8 +15,18 @@ class InvitationWhatsAppDeliveryStatusService
                 AND ml.channel = 'whatsapp' AND ml.type = 'invitation'
                 AND (invitees.invitation_phone_changed_at IS NULL OR ml.id > COALESCE(invitees.invitation_message_reset_log_id, 0))
                 ORDER BY ml.id DESC LIMIT 1)" : 'NULL';
+        // A template-send claim is a duplicate-prevention lock, NOT proof of
+        // provider delivery. If it remains pending for over 24 hours, surface
+        // that uncertainty to operators without changing the claim or retrying.
+        // Keep newer message_log receipts authoritative over the claim.
+        $staleCutoff = now()->subDay()->toDateTimeString();
         $claim = Schema::hasTable('whatsapp_template_sends')
-            ? "(SELECT wt.status FROM whatsapp_template_sends wt
+            ? "(SELECT CASE
+                    WHEN LOWER(TRIM(wt.status)) IN ('pending', 'queued', 'sending', 'processing')
+                        AND wt.updated_at < '{$staleCutoff}'
+                    THEN 'unverified'
+                    ELSE wt.status
+                END FROM whatsapp_template_sends wt
                 WHERE wt.event_id = invitees.event_id AND wt.invitee_id = invitees.id
                 AND wt.phone_generation = invitees.invitation_phone_generation
                 AND wt.message_template_id = (SELECT e.default_whatsapp_template_id FROM events e WHERE e.id = invitees.event_id)
@@ -32,7 +42,7 @@ class InvitationWhatsAppDeliveryStatusService
             WHEN 'expired' THEN 'failed' WHEN 'rejected' THEN 'failed'
             WHEN 'queued' THEN 'queued' WHEN 'pending' THEN 'queued'
             WHEN 'sending' THEN 'queued' WHEN 'processing' THEN 'queued'
-            WHEN 'logged' THEN 'logged_only' WHEN 'not_sent' THEN 'not_sent'
+            WHEN 'logged' THEN 'logged_only' WHEN 'unverified' THEN 'unknown' WHEN 'not_sent' THEN 'not_sent'
             ELSE 'unknown' END";
     }
 

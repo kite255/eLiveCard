@@ -1375,6 +1375,122 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Card Types Used');
     }
 
+    public function test_stale_whatsapp_pending_claims_show_unverified_without_changing_tracking(): void
+    {
+        $event = $this->reportEvent('WhatsApp Queue Evidence');
+        $type = $this->reportCardType($event);
+        $template = \App\Models\MessageTemplate::query()->create([
+            'event_id' => $event->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'name' => 'Queue Audit',
+            'content' => 'Invitation',
+            'whatsapp_template_name' => 'queue_audit',
+            'whatsapp_language_code' => 'sw',
+            'status' => 'active',
+        ]);
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+
+        $fixtures = [
+            ['name' => 'Very Old Pending', 'status' => 'pending', 'age' => 3, 'expected' => 'Unverified'],
+            ['name' => 'Recent Pending', 'status' => 'pending', 'age' => 0, 'expected' => 'Queued'],
+            ['name' => 'Old Submitted', 'status' => 'submitted', 'age' => 3, 'expected' => 'Submitted'],
+        ];
+
+        $ids = [];
+        foreach ($fixtures as $fixture) {
+            $invitee = Invitee::query()->create([
+                'event_id' => $event->id,
+                'card_type_id' => $type->id,
+                'name' => $fixture['name'],
+                'phone' => '255700000999',
+            ]);
+            $ids[$fixture['name']] = $invitee->id;
+            $at = now()->subDays($fixture['age']);
+            \Illuminate\Support\Facades\DB::table('whatsapp_template_sends')->insert([
+                'event_id' => $event->id,
+                'invitee_id' => $invitee->id,
+                'message_template_id' => $template->id,
+                'phone_generation' => (int) $invitee->invitation_phone_generation,
+                'status' => $fixture['status'],
+                'attempts' => 1,
+                'created_at' => $at,
+                'updated_at' => $at,
+            ]);
+        }
+
+        $url = $event->generateRsvpShareLink();
+        $this->get($url.'?whatsapp_delivery=unknown')
+            ->assertOk()
+            ->assertSee('Very Old Pending')
+            ->assertDontSee('Recent Pending')
+            ->assertDontSee('Old Submitted')
+            ->assertViewHas('deliveryStatuses', fn (array $statuses): bool =>
+                $statuses[$ids['Very Old Pending']]['whatsapp'] === 'Unverified'
+            );
+
+        $this->get($url.'?whatsapp_delivery=queued')
+            ->assertOk()
+            ->assertSee('Recent Pending')
+            ->assertDontSee('Very Old Pending');
+        $this->get($url.'?whatsapp_delivery=submitted')
+            ->assertOk()
+            ->assertSee('Old Submitted')
+            ->assertDontSee('Very Old Pending');
+
+        // Display-only classification must not unlock or resend a claimed invitation.
+        $this->assertSame(2, \Illuminate\Support\Facades\DB::table('whatsapp_template_sends')
+            ->where('event_id', $event->id)
+            ->where('status', 'pending')
+            ->count());
+    }
+
+    public function test_provider_receipt_overrides_stale_whatsapp_claim(): void
+    {
+        $event = $this->reportEvent('Old Claim With Confirmed Receipt');
+        $type = $this->reportCardType($event);
+        $template = \App\Models\MessageTemplate::query()->create([
+            'event_id' => $event->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'name' => 'Receipt Audit',
+            'content' => 'Invitation',
+            'whatsapp_template_name' => 'receipt_audit',
+            'whatsapp_language_code' => 'sw',
+            'status' => 'active',
+        ]);
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+        $invitee = Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $type->id,
+            'name' => 'Confirmed Despite Old Claim',
+            'phone' => '255700000998',
+        ]);
+        \Illuminate\Support\Facades\DB::table('whatsapp_template_sends')->insert([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'message_template_id' => $template->id,
+            'phone_generation' => (int) $invitee->invitation_phone_generation,
+            'status' => 'pending',
+            'attempts' => 1,
+            'created_at' => now()->subDays(3),
+            'updated_at' => now()->subDays(3),
+        ]);
+        MessageLog::query()->create([
+            'event_id' => $event->id,
+            'invitee_id' => $invitee->id,
+            'channel' => 'whatsapp',
+            'type' => 'invitation',
+            'status' => 'delivered',
+        ]);
+
+        $this->get($event->generateRsvpShareLink())
+            ->assertOk()
+            ->assertViewHas('deliveryStatuses', fn (array $statuses): bool =>
+                $statuses[$invitee->id]['whatsapp'] === 'Delivered'
+            );
+    }
+
     private function reportEvent(string $title): Event
     {
         return Event::query()->create([
