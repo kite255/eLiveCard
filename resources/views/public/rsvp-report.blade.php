@@ -1317,13 +1317,27 @@
                     <option value="read" @selected($whatsappDelivery === 'read')>Read</option>
                     <option value="failed" @selected($whatsappDelivery === 'failed')>Failed</option>
                     <option value="logged_only" @selected($whatsappDelivery === 'logged_only')>Logged Only</option>
-                    <option value="unknown" @selected($whatsappDelivery === 'unknown')>Unknown</option>
+                    <option value="unknown" @selected($whatsappDelivery === 'unknown')>Unverified</option>
+                </select>
+
+                <select name="sms_delivery" class="select" aria-label="SMS delivery status">
+                    <option value="">All SMS delivery statuses</option>
+                    @foreach (['not_sent' => 'Not Sent', 'queued' => 'Queued', 'submitted' => 'Submitted', 'delivered' => 'Delivered', 'failed' => 'Failed', 'logged_only' => 'Logged Only', 'unknown' => 'Unverified'] as $value => $label)
+                        <option value="{{ $value }}" @selected($smsDelivery === $value)>{{ $label }}</option>
+                    @endforeach
+                </select>
+
+                <select name="overall_delivery" class="select" aria-label="Overall invitation delivery">
+                    <option value="">All invitation delivery</option>
+                    <option value="delivered" @selected($overallDelivery === 'delivered')>Delivered via either channel</option>
+                    <option value="not_sent" @selected($overallDelivery === 'not_sent')>Not sent via either channel</option>
+                    <option value="unconfirmed" @selected($overallDelivery === 'unconfirmed')>No confirmed delivery</option>
                 </select>
 
                 <div class="filter-actions">
                     <button type="submit" class="button apply-filters">Apply Filters</button>
 
-                    <a id="rsvp-clear-filters" href="{{ request()->url() }}" class="button secondary" @if ($search === '' && $status === '' && $whatsappDelivery === '') hidden @endif>
+                    <a id="rsvp-clear-filters" href="{{ request()->url() }}" class="button secondary" @if ($search === '' && $status === '' && $whatsappDelivery === '' && $smsDelivery === '' && $overallDelivery === '') hidden @endif>
                         Clear
                     </a>
                 </div>
