@@ -39,7 +39,7 @@ class RecoverOrphanWhatsAppInvitations extends Command
         }
 
         $template = MessageTemplate::query()
-            ->whereKey($templateId)->where('event_id', $eventId)
+            ->whereKey($templateId)->forEventOrGlobal($eventId)
             ->where('channel', 'whatsapp')->where('type', MessageTemplate::TYPE_INVITATION)
             ->first();
         if (! $template) {
