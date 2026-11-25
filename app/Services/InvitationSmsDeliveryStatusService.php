@@ -25,6 +25,12 @@ class InvitationSmsDeliveryStatusService
                 ->latest('id')->first()
             : null;
 
+        return $this->fromLog($invitee, $log);
+    }
+
+    /** Format an already loaded receipt without issuing another query. */
+    public function fromLog(Invitee $invitee, ?SmsLog $log): array
+    {
         if ($invitee->last_message_channel === 'sms'
             && in_array((string) $invitee->last_message_status, ['queued', 'pending', 'sending', 'processing'], true)
             && (string) $invitee->sms_status === Invitee::SMS_STATUS_PENDING) {

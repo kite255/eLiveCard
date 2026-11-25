@@ -162,4 +162,22 @@ class InviteeToolbarTargetingTest extends TestCase
         $component->set('tableRecordsPerPage', '999');
         $this->assertSame(25, $component->instance()->getTableRecords()->perPage());
     }
+
+    public function test_batched_display_renders_invitees_without_receipts(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN, 'is_active' => true]);
+        $this->actingAs($user);
+        $event = $this->event($user);
+        $a = $this->invitee($event, 'Receipt Guest', '255700000051');
+        $b = $this->invitee($event, 'No Receipt Guest', '255700000052');
+
+        // The existing receipt service remains the reference for all delivery
+        // labels, including the distinction between submitted and delivered.
+        $service = app(\App\Services\InvitationSmsDeliveryStatusService::class);
+        $this->assertSame($service->forInvitee($a), $service->fromLog($a, null));
+        $this->assertSame($service->forInvitee($b), $service->fromLog($b, null));
+
+        $component = $this->inviteeTableComponent($event);
+        $component->assertSuccessful()->assertCanSeeTableRecords([$a, $b]);
+    }
 }

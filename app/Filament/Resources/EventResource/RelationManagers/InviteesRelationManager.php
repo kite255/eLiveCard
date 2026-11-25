@@ -319,6 +319,86 @@ class InviteesRelationManager extends RelationManager
             ]);
     }
 
+    /** Render-only data, never persisted in Livewire state or used to authorize sends. */
+    protected ?array $inviteeDisplayData = null;
+
+    protected function inviteeDisplayData(): array
+    {
+        if ($this->inviteeDisplayData !== null) {
+            return $this->inviteeDisplayData;
+        }
+
+        $records = $this->getTableRecords();
+        $rows = $records instanceof \Illuminate\Database\Eloquent\Collection
+            ? $records
+            : collect($records->items());
+        $ids = $rows->pluck('id')->all();
+        $event = $this->getOwnerRecord();
+        $sms = collect();
+        $whatsapp = collect();
+
+        if ($ids !== [] && Schema::hasTable('sms_logs')) {
+            $latestIds = DB::table('sms_logs as receipt')
+                ->join('invitees as recipient', 'recipient.id', '=', 'receipt.invitee_id')
+                ->where('receipt.event_id', $event->getKey())
+                ->where('recipient.event_id', $event->getKey())
+                ->whereIn('receipt.invitee_id', $ids)
+                ->whereIn('receipt.sms_type', [\App\Models\SmsLog::TYPE_INVITATION, \App\Models\SmsLog::TYPE_INVITATION_CARD])
+                ->where(function ($query): void {
+                    $query->whereNull('recipient.invitation_phone_changed_at')
+                        ->orWhereRaw('receipt.id > COALESCE(recipient.invitation_sms_reset_log_id, 0)');
+                })
+                ->groupBy('receipt.invitee_id')
+                ->selectRaw('MAX(receipt.id)');
+            $sms = \App\Models\SmsLog::query()->whereIn('id', $latestIds)->get()->keyBy('invitee_id');
+        }
+
+        if ($ids !== [] && $event->default_whatsapp_template_id && Schema::hasTable('whatsapp_template_sends')) {
+            $whatsapp = DB::table('whatsapp_template_sends as tracked')
+                ->join('invitees as recipient', 'recipient.id', '=', 'tracked.invitee_id')
+                ->where('tracked.event_id', $event->getKey())
+                ->where('recipient.event_id', $event->getKey())
+                ->whereIn('tracked.invitee_id', $ids)
+                ->where('tracked.message_template_id', $event->default_whatsapp_template_id)
+                ->whereColumn('tracked.phone_generation', 'recipient.invitation_phone_generation')
+                ->pluck('tracked.status', 'tracked.invitee_id');
+        }
+
+        return $this->inviteeDisplayData = [
+            'ids' => array_fill_keys($ids, true),
+            'sms' => $sms,
+            'whatsapp' => $whatsapp,
+        ];
+    }
+
+    protected function displaySmsStatus(Invitee $record): array
+    {
+        $data = $this->inviteeDisplayData();
+        $service = app(\App\Services\InvitationSmsDeliveryStatusService::class);
+        if (! isset($data['ids'][$record->id])) {
+            return $service->forInvitee($record);
+        }
+        return $service->fromLog($record, $data['sms']->get($record->id));
+    }
+
+    protected function displayWhatsAppStatus(Invitee $record): ?string
+    {
+        $data = $this->inviteeDisplayData();
+        if (isset($data['ids'][$record->id])) {
+            return $data['whatsapp']->get($record->id);
+        }
+        $templateId = $this->getOwnerRecord()->default_whatsapp_template_id;
+        if (! $templateId || ! Schema::hasTable('whatsapp_template_sends')) {
+            return null;
+        }
+        return DB::table('whatsapp_template_sends')
+            ->where('event_id', $record->event_id)
+            ->where('invitee_id', $record->id)
+            ->where('message_template_id', $templateId)
+            ->where('phone_generation', (int) $record->invitation_phone_generation)
+            ->value('status');
+    }
+
     public function table(Table $table): Table
     {
         return $table
@@ -347,6 +427,7 @@ class InviteesRelationManager extends RelationManager
                     ->sortable()
                     ->weight('bold')
                     ->description(function (Invitee $record): ?string {
+                        $record->setRelation('event', $this->getOwnerRecord());
                         $others = app(\App\Services\SharedInviteePhoneService::class)->others($record);
                         $parts = array_filter([$record->phone, $record->email]);
                         if ($others !== []) {
@@ -533,19 +614,8 @@ class InviteesRelationManager extends RelationManager
                     ->label('Delivery Status')
                     ->view('filament.tables.columns.invitation-delivery-status')
                     ->state(function (Invitee $record): array {
-                        $sms = app(\App\Services\InvitationSmsDeliveryStatusService::class)
-                            ->forInvitee($record);
-
-                        $trackedStatus = null;
-                        $eventTemplateId = $this->getOwnerRecord()->default_whatsapp_template_id;
-
-                        if ($eventTemplateId && Schema::hasTable('whatsapp_template_sends')) {
-                            $trackedStatus = DB::table('whatsapp_template_sends')
-                                ->where('invitee_id', $record->id)
-                                ->where('message_template_id', $eventTemplateId)
-                                ->where('phone_generation', (int) $record->invitation_phone_generation)
-                                ->value('status');
-                        }
+                        $sms = $this->displaySmsStatus($record);
+                        $trackedStatus = $this->displayWhatsAppStatus($record);
 
                         $whatsapp = match ($record->whatsapp_status) {
                             'delivered' => 'Delivered',
@@ -602,18 +672,16 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('sms_delivery_status')
                     ->label('SMS Delivery')
-                    ->state(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
-                        ->forInvitee($record)['label'])
+                    ->state(fn (Invitee $record): string => $this->displaySmsStatus($record)['label'])
                     ->description(function (Invitee $record): string {
-                        $state = app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record);
+                        $state = $this->displaySmsStatus($record);
                         return ($state['status_time'] ? ($state['status_time_label'].' at '.$state['status_time'].' | ') : '')
                             .$state['description'];
                     })
-                    ->color(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)
-                        ->forInvitee($record)['color'])
+                    ->color(fn (Invitee $record): string => $this->displaySmsStatus($record)['color'])
                     ->badge()
                     ->wrap()
-                    ->tooltip(fn (Invitee $record): string => app(\App\Services\InvitationSmsDeliveryStatusService::class)->forInvitee($record)['description'])
+                    ->tooltip(fn (Invitee $record): string => $this->displaySmsStatus($record)['description'])
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('sms_status')
@@ -1843,7 +1911,7 @@ class InviteesRelationManager extends RelationManager
                         ->color('success')
                         ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
                             && filled($record->short_code)
-                            && ! $this->hasCurrentInvitationSubmission($record, 'whatsapp'))
+                            && ! $this->displayHasInvitationSubmission($record, 'whatsapp'))
                         ->modalHeading(fn (Invitee $record): string => 'Send WhatsApp invitation to '.$record->name)
                         ->modalDescription('Sends this invitation immediately using the WhatsApp template selected in Event Settings. The provider response will appear after submission; accepted does not mean delivered. Previously submitted invitations will not be resent.')
                         ->modalSubmitActionLabel('Send WhatsApp Now')
@@ -1861,7 +1929,7 @@ class InviteesRelationManager extends RelationManager
                         ->color('primary')
                         ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
                             && filled($record->short_code)
-                            && ! $this->hasCurrentInvitationSubmission($record, 'sms'))
+                            && ! $this->displayHasInvitationSubmission($record, 'sms'))
                         ->modalHeading(fn (Invitee $record): string => 'Send SMS invitation to '.$record->name)
                         ->modalDescription('Sends this invitation immediately using the active SMS Invitation template. The provider response will appear after submission; accepted does not mean delivered. Already sent or pending invitations are skipped.')
                         ->modalSubmitActionLabel('Send SMS Now')
@@ -2961,15 +3029,21 @@ class InviteesRelationManager extends RelationManager
     }
 
 
+    protected ?array $inviteePageSizes = null;
+
     protected function allowedInviteePageSizes(): array
     {
+        if ($this->inviteePageSizes !== null) {
+            return $this->inviteePageSizes;
+        }
+
         $sizes = [10, 25, 50, 100, 250];
 
         if (Invitee::query()->where('event_id', $this->getOwnerRecord()->getKey())->count() <= 500) {
             $sizes[] = 'all';
         }
 
-        return $sizes;
+        return $this->inviteePageSizes = $sizes;
     }
 
     public function getTableRecordsPerPage(): int | string | null
@@ -2984,6 +3058,13 @@ class InviteesRelationManager extends RelationManager
         }
 
         return 25;
+    }
+
+    public function flushCachedTableRecords(): void
+    {
+        $this->inviteeDisplayData = null;
+        $this->inviteePageSizes = null;
+        parent::flushCachedTableRecords();
     }
 
     public function updatedTableRecordsPerPage(): void
@@ -3447,6 +3528,13 @@ class InviteesRelationManager extends RelationManager
      * Decide whether the current phone already has a provider-submitted invitation.
      * A changed number is a fresh invitation; old sends must not force Resend.
      */
+    protected function displayHasInvitationSubmission(Invitee $record, string $channel): bool
+    {
+        return $channel === 'sms'
+            ? in_array($this->displaySmsStatus($record)['label'], ['Submitted', 'Delivered'], true)
+            : in_array($this->displayWhatsAppStatus($record), ['submitted', 'delivered', 'read'], true);
+    }
+
     protected function hasCurrentInvitationSubmission(Invitee $record, string $channel): bool
     {
         if ($channel === 'sms') {
@@ -3480,7 +3568,7 @@ class InviteesRelationManager extends RelationManager
                 ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
                     && $record->card_status === Invitee::CARD_STATUS_ACTIVE
                     && filled($record->phone) && filled($record->short_code)
-                    && $this->hasCurrentInvitationSubmission($record, $channel))
+                    && $this->displayHasInvitationSubmission($record, $channel))
                 ->requiresConfirmation()
                 ->modalIcon('heroicon-o-paper-airplane')
                 ->modalIconColor('warning')
@@ -3502,7 +3590,7 @@ class InviteesRelationManager extends RelationManager
             ->visible(fn (Invitee $record): bool => $this->canSendMessagesForOwner()
                 && $record->card_status === Invitee::CARD_STATUS_ACTIVE
                 && filled($record->phone) && filled($record->short_code)
-                && $this->hasCurrentInvitationSubmission($record, $channel))
+                && $this->displayHasInvitationSubmission($record, $channel))
             ->requiresConfirmation()
             ->modalIcon('heroicon-o-paper-airplane')
             ->modalIconColor('warning')
