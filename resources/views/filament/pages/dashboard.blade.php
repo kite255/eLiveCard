@@ -1385,6 +1385,13 @@
                 grid-template-columns: 1fr;
             }
         }
+        .elive-management-header { padding: 16px 20px; }
+        .elive-management-header .elive-hero-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+        .elive-management-header .elive-hero-icon { display: none; }
+        .elive-management-header h1 { font-size: 24px; }
+        .elive-type-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(120px,100%),1fr)); gap: 8px; }
+        .elive-type-grid .elive-mini-label { overflow-wrap: anywhere; }
+        @media (max-width: 640px) { .elive-management-header { padding: 14px; } }
     </style>
 
     <div class="elive-dashboard">
@@ -1733,7 +1740,7 @@
 
             @else
 
-            <section class="elive-hero">
+            <section class="elive-hero elive-management-header">
                 <div class="elive-hero-grid">
                     <div class="elive-hero-icon">
                         <x-heroicon-o-calendar-days />
@@ -1772,22 +1779,6 @@
                         </div>
                     </div>
 
-                    <div class="elive-hero-stats">
-                        <div class="elive-hero-stat">
-                            <div class="elive-hero-number">{{ $eventsThisMonth ?? $totalEvents }}</div>
-                            <div class="elive-hero-label">Events This Month</div>
-                        </div>
-
-                        <div class="elive-hero-stat">
-                            <div class="elive-hero-number">{{ number_format($totalInvitees) }}</div>
-                            <div class="elive-hero-label">{{ $selectedEventId ? 'Event Invitees' : 'Invitees' }}</div>
-                        </div>
-
-                        <div class="elive-hero-stat">
-                            <div class="elive-hero-number">{{ $responseRate }}%</div>
-                            <div class="elive-hero-label">Response Rate</div>
-                        </div>
-                    </div>
                 </div>
             </section>
 
@@ -1981,38 +1972,20 @@
                     </div>
                 </div>
 
+                @if ($isSuperAdmin)
+                    <livewire:dashboard-sms-balance lazy />
+                @endif
+
                 <div class="elive-card elive-kpi">
                     <div class="elive-kpi-inner">
-                        <div class="elive-icon green">
-                            <x-heroicon-o-chat-bubble-left-right />
-                        </div>
+                        <div class="elive-icon blue"><x-heroicon-o-credit-card /></div>
                         <div>
-                            <div class="elive-kpi-label">SMS Balance</div>
-                            <div
-                                class="elive-kpi-value"
-                                @style([
-                                    'font-size:16px' => ! is_numeric(str_replace(',', '', (string) $smsBalance)),
-                                    'color:#DC2626' => in_array($smsBalance, ['Unavailable', 'Check provider'], true),
-                                    'color:#C2410C' => $smsBalance === 'Not configured',
-                                ])
-                            >
-                                {{ $smsBalance }}
-                            </div>
-                            <div class="elive-kpi-note">
-                                @if ($smsBalance === 'Restricted')
-                                    Administrator access only
-                                @elseif ($smsBalance === 'Not configured')
-                                    Configure balance API
-                                @elseif (in_array($smsBalance, ['Unavailable', 'Check provider'], true))
-                                    Provider connection issue
-                                @else
-                                    Available SMS credits
-                                @endif
-                            </div>
+                            <div class="elive-kpi-label">Generated Cards</div>
+                            <div class="elive-kpi-value">{{ number_format($cardSummary['generated']) }}</div>
+                            <div class="elive-kpi-note">{{ number_format($cardSummary['not_generated']) }} not generated</div>
                         </div>
                     </div>
                 </div>
-
                 <div class="elive-card elive-kpi">
                     <div class="elive-kpi-inner">
                         <div class="elive-icon purple">
@@ -2032,9 +2005,9 @@
                             <x-heroicon-o-chart-pie />
                         </div>
                         <div>
-                            <div class="elive-kpi-label">Response Rate</div>
-                            <div class="elive-kpi-value">{{ $responseRate }}%</div>
-                            <div class="elive-kpi-note">{{ number_format($attending + $notAttending) }} responded</div>
+                            <div class="elive-kpi-label">Confirmed Guests</div>
+                            <div class="elive-kpi-value">{{ number_format($confirmedGuests) }}</div>
+                            <div class="elive-kpi-note">Based on RSVP</div>
                         </div>
                     </div>
                 </div>
@@ -2164,6 +2137,22 @@
                     </div>
                 </div>
 
+                @if (count($cardSummary['types']) > 0)
+                    <div class="elive-card elive-section">
+                        <div class="elive-section-header">
+                            <div class="elive-section-title">Card Types Used</div>
+                        </div>
+                        <div class="elive-type-grid">
+                            @foreach ($cardSummary['types'] as $type)
+                                <div class="elive-mini-card">
+                                    <div class="elive-mini-label">{{ $type['name'] }}</div>
+                                    <div class="elive-mini-value">{{ number_format($type['count']) }}</div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
@@ -2188,27 +2177,27 @@
                             </a>
                         @endif
 
-                        <a href="{{ url('/admin/events') }}" class="elive-action-item">
+                        <a href="{{ $eventWorkspaceUrl ?? url('/admin/events') }}" class="elive-action-item">
                             <span class="elive-action-left">
                                 <span class="elive-small-icon orange">
                                     <x-heroicon-o-users />
                                 </span>
                                 <span>
-                                    <span class="elive-action-title">Import Invitees</span>
+                                    <span class="elive-action-title">Manage Invitees</span>
                                     <span class="elive-action-subtitle">Upload or import invitee list</span>
                                 </span>
                             </span>
                             <span style="color:#213B73;font-weight:900;">›</span>
                         </a>
 
-                        <a href="{{ url('/admin/sms-logs') }}" class="elive-action-item">
+                        <a href="{{ $eventWorkspaceUrl ?? url('/admin/events') }}" class="elive-action-item">
                             <span class="elive-action-left">
                                 <span class="elive-small-icon blue">
                                     <x-heroicon-o-paper-airplane />
                                 </span>
                                 <span>
-                                    <span class="elive-action-title">Send Message</span>
-                                    <span class="elive-action-subtitle">Send SMS to invitees</span>
+                                    <span class="elive-action-title">Manage Invitations</span>
+                                    <span class="elive-action-subtitle">Generate cards and send invitations</span>
                                 </span>
                             </span>
                             <span style="color:#213B73;font-weight:900;">›</span>
@@ -2366,13 +2355,13 @@
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
-                            <div class="elive-section-title">System Alerts</div>
+                            <div class="elive-section-title">Actions Required</div>
                             <div class="elive-section-subtitle">Issues and pending actions requiring attention</div>
                         </div>
                     </div>
 
                     <div class="elive-alert-list">
-                        @foreach (array_slice($systemAlerts, 0, 4) as $alert)
+                        @forelse ($systemAlerts as $alert)
                             @php
                                 $alertClass = 'alert-'.($alert['level'] ?? 'info');
                             @endphp
@@ -2392,9 +2381,12 @@
                             @else
                                 </div>
                             @endif
-                        @endforeach
+                        @empty
+                            <div class="elive-mini-card">No outstanding invitation or RSVP actions.</div>
+                        @endforelse
                     </div>
 
+                    @if ($pendingPhotos + $pendingWishes > 0)
                     <div class="elive-rsvp-summary" style="grid-template-columns:repeat(2,minmax(0,1fr));">
                         <div class="elive-mini-card">
                             <div class="elive-mini-label">Pending Photos</div>
@@ -2405,6 +2397,7 @@
                             <div class="elive-mini-value">{{ number_format($pendingWishes) }}</div>
                         </div>
                     </div>
+                    @endif
                 </div>
                 </section>
             </div>

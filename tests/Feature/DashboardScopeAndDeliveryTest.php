@@ -48,16 +48,37 @@ class DashboardScopeAndDeliveryTest extends TestCase
                     'invitees' => $this->countInvitees(),
                     'pending' => $this->countPendingRsvpInvitees(),
                     'delivery' => $this->invitationDeliveryCounts(),
+                    'cards' => $this->cardSummary(),
                 ];
             }
         };
         $this->assertSame(1, $page->metrics()['invitees']);
         $this->assertSame(1, $page->metrics()['pending']);
+        $this->assertSame(['generated' => 0, 'not_generated' => 1, 'types' => [['name' => 'Single', 'count' => 1]]], $page->metrics()['cards']);
         $this->assertSame(['read' => 1], $page->metrics()['delivery']['whatsapp']);
         $page->selectedEventId = $denied->id;
         $this->assertSame(0, $page->metrics()['invitees']);
+        $this->assertSame(['generated' => 0, 'not_generated' => 0, 'types' => []], $page->metrics()['cards']);
         $this->assertSame([], $page->metrics()['delivery']['whatsapp']);
         $page->selectedEventId = $allowed->id;
         $this->assertSame(['read' => 1], $page->metrics()['delivery']['whatsapp']);
+    }
+
+    public function test_balance_component_denies_event_manager_access(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_EVENT_ADMIN]));
+        \Livewire\Livewire::test(\App\Livewire\DashboardSmsBalance::class)->assertForbidden();
+    }
+
+    public function test_balance_component_reads_provider_credit_not_response_code(): void
+    {
+        $this->actingAs(User::factory()->create(['role' => User::ROLE_SUPER_ADMIN]));
+        \Illuminate\Support\Facades\Cache::forget('elive.dashboard.sms_balance');
+        config(['services.sms_balance.url' => 'https://sms.example.test/balance',
+            'services.sms_balance.api_key' => 'test-key', 'services.sms_balance.api_secret' => 'test-secret']);
+        \Illuminate\Support\Facades\Http::fake([
+            'https://sms.example.test/*' => \Illuminate\Support\Facades\Http::response(['code' => 200, 'data' => ['totalSms' => 4520]]),
+        ]);
+        \Livewire\Livewire::test(\App\Livewire\DashboardSmsBalance::class)->assertSee('4,520');
     }
 }
