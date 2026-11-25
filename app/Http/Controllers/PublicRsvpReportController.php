@@ -280,16 +280,21 @@ class PublicRsvpReportController extends Controller
             ? (int) round(($responded / $total) * 100)
             : 0;
 
-        // Count distinct configured card types actually assigned to invitees.
-        // Unassigned invitees are not card types and must not inflate this count.
-        $cardTypesUsed = DB::table('invitees')
+        // Only types assigned to this event's invitees are identified.
+        // Retrieve each actual card type once, including inactive types if used.
+        $usedCardTypes = DB::table('invitees')
             ->join('card_types', function ($join) use ($event): void {
                 $join->on('card_types.id', '=', 'invitees.card_type_id')
                     ->where('card_types.event_id', '=', $event->id);
             })
             ->where('invitees.event_id', $event->id)
+            ->select('card_types.id', 'card_types.name')
             ->distinct()
-            ->count('invitees.card_type_id');
+            ->orderBy('card_types.name')
+            ->orderBy('card_types.id')
+            ->get();
+        $cardTypesUsed = $usedCardTypes->count();
+        $usedCardTypeNames = $usedCardTypes->pluck('name')->all();
 
         /*
         |--------------------------------------------------------------------------
@@ -340,6 +345,7 @@ class PublicRsvpReportController extends Controller
             'responseRate' => $responseRate,
             'confirmedGuests' => $confirmedGuests,
             'cardTypesUsed' => $cardTypesUsed,
+            'usedCardTypeNames' => $usedCardTypeNames,
             'search' => $search,
             'status' => $status,
             'smsDelivery' => $smsDelivery,
