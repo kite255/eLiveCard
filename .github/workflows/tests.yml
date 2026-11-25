@@ -17,6 +17,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Validate production shell entrypoints
+        run: sh -n docker/elive-entrypoint docker/elive-worker-entrypoint
+
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
