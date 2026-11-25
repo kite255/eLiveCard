@@ -39,6 +39,32 @@ class Dashboard extends Page
 
     protected array $dashboardColumnChecks = [];
 
+    protected array $dashboardMessageCounts = [];
+
+    /**
+     * Reuse grouped counts within the current render and event scope.
+     * No message counts are persisted in the application cache.
+     */
+    protected function countGroupedMessages($query, string $column, string $source, array $values): int
+    {
+        $key = $source.':'.$column.':'.(Auth::id() ?? 'guest').':'.($this->selectedEventId ?? 'all');
+
+        if (! array_key_exists($key, $this->dashboardMessageCounts)) {
+            $this->dashboardMessageCounts[$key] = $query
+                ->whereNotNull($column)
+                ->select($column)
+                ->selectRaw('COUNT(*) AS total')
+                ->groupBy($column)
+                ->pluck('total', $column)
+                ->all();
+        }
+
+        return (int) array_sum(array_intersect_key(
+            $this->dashboardMessageCounts[$key],
+            array_fill_keys($values, true),
+        ));
+    }
+
     protected function dashboardHasTable(string $table): bool
     {
         return $this->dashboardTableChecks[$table] ??= Schema::hasTable($table);
@@ -112,6 +138,8 @@ class Dashboard extends Page
 
     protected function getViewData(): array
     {
+        $this->dashboardMessageCounts = [];
+
         $user = Auth::user();
         $isSuperAdmin = $this->isSuperAdmin();
         $isEventManager = $this->isEventManager();
@@ -630,9 +658,7 @@ class Dashboard extends Page
                 return 0;
             }
 
-            return $this->smsQuery()
-                ->whereIn('status', $statuses)
-                ->count();
+            return $this->countGroupedMessages($this->smsQuery(), 'status', 'sms', $statuses);
         } catch (\Throwable $e) {
             report($e);
 
@@ -649,9 +675,7 @@ class Dashboard extends Page
 
             foreach (['sms_type', 'message_type', 'type', 'category'] as $column) {
                 if ($this->dashboardHasColumn('sms_logs', $column)) {
-                    return $this->smsQuery()
-                        ->whereIn($column, $types)
-                        ->count();
+                    return $this->countGroupedMessages($this->smsQuery(), $column, 'sms', $types);
                 }
             }
 
@@ -877,7 +901,7 @@ class Dashboard extends Page
             $query = $this->whatsAppQuery();
 
             return $query
-                ? $query->whereIn('status', $statuses)->count()
+                ? $this->countGroupedMessages($query, 'status', 'whatsapp', $statuses)
                 : 0;
         } catch (\Throwable $e) {
             report($e);
