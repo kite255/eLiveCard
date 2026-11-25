@@ -41,7 +41,7 @@ class ListEvents extends ListRecords
     {
         return [
             Actions\CreateAction::make()
-                ->label('Create New Event')
+                ->label('Create Event')
                 ->icon('heroicon-o-plus-circle')
                 ->color('primary')
                 ->visible(fn (): bool => EventResource::canCreate()),
@@ -148,27 +148,43 @@ class ListEvents extends ListRecords
                     trim($this->search),
                 ),
             )
-            ->orderByRaw(
-                '
-                    CASE
-                        WHEN status = ? THEN 0
-                        WHEN event_date >= CURRENT_DATE THEN 1
-                        WHEN status = ? THEN 3
-                        ELSE 2
-                    END
-                ',
-                [
-                    Event::STATUS_ACTIVE,
-                    Event::STATUS_COMPLETED,
-                ],
-            )
+            ->tap(fn (Builder $query) => $this->applyEventOrdering($query, $statusIds))
+            ->paginate(8)
+            ->withQueryString();
+    }
+
+    /**
+     * Use the same time-aware classification as the status tabs.
+     * The stored active status alone cannot distinguish future events.
+     */
+    protected function applyEventOrdering(Builder $query, array $statusIds): Builder
+    {
+        $clauses = [];
+        foreach (['active', 'upcoming', 'draft', 'completed'] as $rank => $status) {
+            $ids = $statusIds[$status]->all();
+            if ($ids === []) {
+                continue;
+            }
+            // IDs originate from the authorized event query, not user input.
+            $integerIds = implode(',', array_map('intval', $ids));
+            $clauses[] = "WHEN events.id IN ({$integerIds}) THEN {$rank}";
+        }
+        if ($clauses !== []) {
+            $query->orderByRaw('CASE '.implode(' ', $clauses).' ELSE 4 END');
+        }
+
+        $draftIds = implode(',', array_map('intval', $statusIds['draft']->all())) ?: 'NULL';
+        $completedIds = implode(',', array_map('intval', $statusIds['completed']->all())) ?: 'NULL';
+
+        return $query
+            ->orderByRaw("CASE WHEN events.id IN ({$draftIds}) THEN updated_at END DESC")
             ->orderByRaw('CASE WHEN event_date IS NULL THEN 1 ELSE 0 END')
+            ->orderByRaw("CASE WHEN events.id IN ({$completedIds}) THEN event_date END DESC")
+            ->orderByRaw("CASE WHEN events.id IN ({$completedIds}) THEN start_time END DESC")
             ->orderBy('event_date')
             ->orderByRaw('CASE WHEN start_time IS NULL THEN 1 ELSE 0 END')
             ->orderBy('start_time')
-            ->orderByDesc('id')
-            ->paginate(8)
-            ->withQueryString();
+            ->orderByDesc('id');
     }
 
     protected function baseEventQuery(): Builder

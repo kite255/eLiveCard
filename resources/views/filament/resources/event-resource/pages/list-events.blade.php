@@ -21,7 +21,7 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 18px;
-            margin-bottom: 18px;
+            margin-bottom: 14px;
         }
 
         .events-title {
@@ -53,13 +53,13 @@
             font-weight: 850;
             text-decoration: none;
             white-space: nowrap;
-            box-shadow: 0 8px 20px rgba(33, 59, 115, .18);
+            box-shadow: none;
             transition: .18s ease;
         }
 
         .events-create:hover {
             background: #182D59;
-            transform: translateY(-1px);
+            transform: none;
         }
 
         .events-create svg {
@@ -101,7 +101,7 @@
         .events-tab:hover {
             color: #213B73;
             border-color: #B8C5DD;
-            transform: translateY(-1px);
+            transform: none;
         }
 
         .events-tab-active {
@@ -209,26 +209,26 @@
 
         .event-card {
             display: grid;
-            grid-template-columns: 112px minmax(0, 1fr) auto;
+            grid-template-columns: 96px minmax(0, 1fr) auto;
             gap: 18px;
             align-items: center;
-            min-height: 124px;
+            min-height: 108px;
             padding: 14px;
             border: 1px solid #E5E7EB;
             border-radius: 18px;
             background: #FFFFFF;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+            box-shadow: none;
             transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
         }
 
         .event-card:hover {
             border-color: #D7DFEA;
-            transform: translateY(-1px);
-            box-shadow: 0 12px 28px rgba(15, 23, 42, .08);
+            transform: none;
+            box-shadow: none;
         }
 
         .event-date-box {
-            min-height: 96px;
+            min-height: 84px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -401,9 +401,9 @@
             display: inline-flex;
             align-items: center;
             gap: 5px;
-            padding: 5px 8px;
-            border: 1px solid #E5E7EB;
-            border-radius: 9px;
+            padding: 4px 6px;
+            border: 0;
+            border-radius: 6px;
             color: #475569;
             background: #F8FAFC;
             font-size: 10px;
@@ -442,7 +442,7 @@
 
         .event-open:hover {
             background: #182D59;
-            transform: translateY(-1px);
+            transform: none;
         }
 
         .event-menu {
@@ -463,7 +463,7 @@
             color: #213B73;
             border-color: #B8C5DD;
             background: #F8FAFC;
-            transform: translateY(-1px);
+            transform: none;
         }
 
         .event-menu svg {
@@ -506,7 +506,7 @@
             }
 
             .event-card {
-                grid-template-columns: 104px minmax(0, 1fr) auto;
+                grid-template-columns: 92px minmax(0, 1fr) auto;
                 gap: 14px;
             }
         }
@@ -686,7 +686,7 @@
                         class="events-create"
                     >
                         <x-heroicon-o-plus />
-                        Create New Event
+                        Create Event
                     </a>
                 @endif
             </div>
