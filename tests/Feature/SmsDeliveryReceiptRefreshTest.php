@@ -282,6 +282,62 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
         Http::assertSentCount(3);
     }
 
+    public function test_older_receipts_back_off_and_explicit_refresh_bypasses_age_limit(): void
+    {
+        $seed = $this->sentSms();
+        $seed->update(['sent_at' => now()->subDays(2), 'delivery_report_checked_at' => now()->subMinutes(121)]);
+        $cases = [
+            ['two-days-not-due', 2, 119, false],
+            ['five-days-due', 5, 361, true],
+            ['five-days-not-due', 5, 359, false],
+            ['ten-days-due', 10, 1441, true],
+            ['ten-days-not-due', 10, 1439, false],
+            ['expired-window', 31, null, false],
+        ];
+        $records = [];
+        foreach ($cases as [$id, $days, $minutes, $due]) {
+            $record = $seed->replicate();
+            $record->fill([
+                'provider_message_id' => $id,
+                'sent_at' => now()->subDays($days),
+                'delivery_report_checked_at' => $minutes === null ? null : now()->subMinutes($minutes),
+            ])->save();
+            $records[] = [$record, $due];
+        }
+
+        Http::fake(['*/deliver/*' => Http::response(['data' => [
+            ['status' => 'Delivered', 'mobile' => '255700000001'],
+        ]])]);
+
+        $this->artisan('sms:sync-delivery-reports')->assertSuccessful();
+        $this->assertSame('delivered', $seed->fresh()->status);
+        foreach ($records as [$record, $due]) {
+            $this->assertSame($due ? 'delivered' : 'sent', $record->fresh()->status);
+        }
+        Http::assertSentCount(3);
+
+        $this->artisan('sms:sync-delivery-reports', ['--shoot-id' => 'expired-window'])->assertSuccessful();
+        $this->assertSame('delivered', $records[5][0]->fresh()->status);
+        Http::assertSentCount(4);
+    }
+
+    public function test_sync_requests_a_shared_provider_shoot_id_only_once_per_run(): void
+    {
+        $first = $this->sentSms();
+        $second = $first->replicate();
+        $second->fill(['phone' => '255700000002'])->save();
+
+        Http::fake(['*/deliver/test-shoot' => Http::response(['data' => [
+            ['status' => 'Delivered', 'mobile' => $first->phone],
+            ['status' => 'Delivered', 'mobile' => $second->phone],
+        ]])]);
+
+        $this->artisan('sms:sync-delivery-reports')->assertSuccessful();
+        $this->assertSame('delivered', $first->fresh()->status);
+        $this->assertSame('delivered', $second->fresh()->status);
+        Http::assertSentCount(1);
+    }
+
     private function sentSms(): SmsLog
     {
         config([
