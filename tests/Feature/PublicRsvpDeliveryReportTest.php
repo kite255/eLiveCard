@@ -1279,7 +1279,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         }
     }
 
-    public function test_shared_report_summarizes_card_types_for_the_whole_event(): void
+    public function test_shared_report_counts_only_distinct_card_types_assigned_to_invitees(): void
     {
         $event = $this->reportEvent('Card Type Counts');
         $single = $this->reportCardType($event);
@@ -1330,43 +1330,34 @@ class PublicRsvpDeliveryReportTest extends TestCase
         foreach ([$url, $url.'?status=attending&per_page=10', $url.'?search=Second'] as $requestUrl) {
             $this->get($requestUrl)
                 ->assertOk()
-                ->assertViewHas('cardTypeSummary', fn (array $types): bool =>
-                    $types === [
-                        ['name' => 'Double', 'count' => 1],
-                        ['name' => 'Single', 'count' => 2],
-                    ]
-                )
-                ->assertSee('Card Types Summary')
-                ->assertSee('class="card-types-summary"', false)
-                ->assertDontSee('class="card-type-name">Customized</span>', false)
-                ->assertDontSee('class="card-type-name">Family</span>', false)
-                ->assertSee('class="card-type-name">Double</span>', false)
-                ->assertSee('class="card-type-name">Single</span>', false)
+                ->assertViewHas('cardTypesUsed', 2)
+                ->assertSee('Card Types Used')
+                ->assertSee('<strong>2</strong>', false)
+                ->assertDontSee('class="card-type-name"', false)
                 ->assertDontSee('Outside Event');
         }
     }
 
-    public function test_card_type_summary_hides_all_zero_count_types(): void
+    public function test_card_types_used_is_zero_when_all_configured_types_are_unused(): void
     {
         $event = $this->reportEvent('Empty Card Summary');
         $this->reportCardType($event);
 
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
-            ->assertViewHas('cardTypeSummary', fn (array $types): bool => $types === [])
-            ->assertSee('Card Types Summary')
-            ->assertDontSee('class="card-type-name">Single</span>', false)
-            ->assertSee('No card types in use yet.');
+            ->assertViewHas('cardTypesUsed', 0)
+            ->assertSee('Card Types Used')
+            ->assertSee('<strong>0</strong>', false);
     }
 
-    public function test_card_type_summary_has_empty_state_without_configured_types(): void
+    public function test_card_types_used_is_zero_without_configured_types(): void
     {
         $event = $this->reportEvent('No Configured Types');
 
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
-            ->assertViewHas('cardTypeSummary', fn (array $types): bool => $types === [])
-            ->assertSee('No card types in use yet.');
+            ->assertViewHas('cardTypesUsed', 0)
+            ->assertSee('Card Types Used');
     }
 
     private function reportEvent(string $title): Event

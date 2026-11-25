@@ -280,36 +280,16 @@ class PublicRsvpReportController extends Controller
             ? (int) round(($responded / $total) * 100)
             : 0;
 
-        // Show only card types assigned to at least one invitee.
-        // Counts represent invitee records, not card capacity.
-        // Join on event ID as well as card type to keep the report event-scoped.
-        $cardTypeSummary = DB::table('card_types')
-            ->leftJoin('invitees', function ($join) use ($event): void {
-                $join->on('invitees.card_type_id', '=', 'card_types.id')
-                    ->where('invitees.event_id', '=', $event->id);
+        // Count distinct configured card types actually assigned to invitees.
+        // Unassigned invitees are not card types and must not inflate this count.
+        $cardTypesUsed = DB::table('invitees')
+            ->join('card_types', function ($join) use ($event): void {
+                $join->on('card_types.id', '=', 'invitees.card_type_id')
+                    ->where('card_types.event_id', '=', $event->id);
             })
-            ->where('card_types.event_id', $event->id)
-            ->select('card_types.id', 'card_types.name')
-            ->selectRaw('COUNT(invitees.id) AS invitee_count')
-            ->groupBy('card_types.id', 'card_types.name')
-            ->havingRaw('COUNT(invitees.id) > 0')
-            ->orderBy('card_types.name')
-            ->orderBy('card_types.id')
-            ->get()
-            ->map(fn ($row): array => [
-                'name' => (string) $row->name,
-                'count' => (int) $row->invitee_count,
-            ])
-            ->all();
-
-        // Include invitations missing a card type, when present.
-        $unassignedCount = $event->invitees()->whereNull('card_type_id')->count();
-        if ($unassignedCount > 0) {
-            $cardTypeSummary[] = [
-                'name' => 'Unassigned',
-                'count' => $unassignedCount,
-            ];
-        }
+            ->where('invitees.event_id', $event->id)
+            ->distinct()
+            ->count('invitees.card_type_id');
 
         /*
         |--------------------------------------------------------------------------
@@ -359,7 +339,7 @@ class PublicRsvpReportController extends Controller
             'responded' => $responded,
             'responseRate' => $responseRate,
             'confirmedGuests' => $confirmedGuests,
-            'cardTypeSummary' => $cardTypeSummary,
+            'cardTypesUsed' => $cardTypesUsed,
             'search' => $search,
             'status' => $status,
             'smsDelivery' => $smsDelivery,
