@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\SendInvitationWhatsAppJob;
+use App\Models\CardType;
 use App\Models\Event;
 use App\Models\Invitee;
 use App\Models\MessageTemplate;
@@ -26,8 +27,16 @@ class WhatsAppInvitationQueueServiceTest extends TestCase
             'status' => Event::STATUS_ACTIVE,
         ]);
 
+        $type = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Single',
+            'allowed_people' => 1,
+            'is_active' => true,
+        ]);
+
         $invitee = Invitee::query()->create([
             'event_id' => $event->id,
+            'card_type_id' => $type->id,
             'name' => 'Test Queue Recipient',
             'phone' => '255700000123',
         ]);
