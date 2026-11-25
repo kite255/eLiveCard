@@ -280,8 +280,8 @@ class PublicRsvpReportController extends Controller
             ? (int) round(($responded / $total) * 100)
             : 0;
 
-        // List every card type configured for this event, even if no invitee
-        // has been assigned to it. Count actual invitee records (not capacity).
+        // Show only card types assigned to at least one invitee.
+        // Counts represent invitee records, not card capacity.
         // Join on event ID as well as card type to keep the report event-scoped.
         $cardTypeSummary = DB::table('card_types')
             ->leftJoin('invitees', function ($join) use ($event): void {
@@ -292,6 +292,7 @@ class PublicRsvpReportController extends Controller
             ->select('card_types.id', 'card_types.name')
             ->selectRaw('COUNT(invitees.id) AS invitee_count')
             ->groupBy('card_types.id', 'card_types.name')
+            ->havingRaw('COUNT(invitees.id) > 0')
             ->orderBy('card_types.name')
             ->orderBy('card_types.id')
             ->get()
