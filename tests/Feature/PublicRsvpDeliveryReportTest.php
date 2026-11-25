@@ -1434,4 +1434,43 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee($wa->name)
             ->assertViewHas('deliveryStatuses', fn (array $statuses) => $statuses[$wa->id]['whatsapp'] === 'Submitted');
     }
+
+    public function test_current_invitation_receipts_override_submitted_tracking_without_mutating_claim(): void
+    {
+        $event = $this->reportEvent('Receipt precedence');
+        $type = $this->reportCardType($event);
+        $template = \App\Models\MessageTemplate::query()->create([
+            'event_id' => $event->id, 'channel' => 'whatsapp',
+            'type' => 'invitation', 'name' => 'Invitation',
+            'content' => 'Invitation', 'whatsapp_template_name' => 'event_invitation',
+            'whatsapp_language_code' => 'sw', 'status' => 'active',
+        ]);
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+        $url = $event->generateRsvpShareLink();
+
+        foreach (['sent', 'delivered', 'read', 'failed'] as $status) {
+            $invitee = Invitee::query()->create([
+                'event_id' => $event->id, 'card_type_id' => $type->id,
+                'name' => 'Receipt '.$status, 'phone' => '255700000999',
+            ]);
+            \Illuminate\Support\Facades\DB::table('whatsapp_template_sends')->insert([
+                'event_id' => $event->id, 'invitee_id' => $invitee->id,
+                'message_template_id' => $template->id, 'phone_generation' => (int) $invitee->invitation_phone_generation,
+                'status' => 'submitted', 'attempts' => 1, 'created_at' => now(), 'updated_at' => now(),
+            ]);
+            MessageLog::query()->create([
+                'event_id' => $event->id, 'invitee_id' => $invitee->id,
+                'channel' => 'whatsapp', 'type' => 'invitation', 'status' => $status,
+            ]);
+            MessageLog::query()->create([
+                'event_id' => $event->id, 'invitee_id' => $invitee->id,
+                'channel' => 'whatsapp', 'type' => 'reminder', 'status' => 'submitted',
+            ]);
+            $this->get($url.'?whatsapp_delivery='.$status)->assertOk()
+                ->assertViewHas('deliveryStatuses', fn (array $statuses) => $statuses[$invitee->id]['whatsapp'] === ucfirst($status));
+            $this->get($url.'?whatsapp_delivery=submitted')->assertOk()->assertDontSee($invitee->name);
+        }
+        $this->assertSame(4, \Illuminate\Support\Facades\DB::table('whatsapp_template_sends')
+            ->where('event_id', $event->id)->where('status', 'submitted')->count());
+    }
 }
