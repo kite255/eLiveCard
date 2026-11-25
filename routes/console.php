@@ -89,3 +89,9 @@ Schedule::command('sms:send-automatic-thank-you')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)
     ->onOneServer();
+
+// Read-only monitoring; never automatically resends pending WhatsApp invitations.
+Schedule::command('whatsapp:monitor-invitations --minutes=30 --alert')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->onOneServer();
