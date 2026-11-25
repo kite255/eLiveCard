@@ -326,11 +326,7 @@ class InviteesRelationManager extends RelationManager
             ->searchPlaceholder('Search name, phone, serial number or card type')
             ->searchDebounce('500ms')
             ->striped()
-            ->paginated(fn (): array => Invitee::query()
-                ->where('event_id', $this->getOwnerRecord()->getKey())
-                ->count() <= 500
-                    ? [10, 25, 50, 100, 250, 'all']
-                    : [10, 25, 50, 100, 250])
+            ->paginated(fn (): array => $this->allowedInviteePageSizes())
             ->defaultPaginationPageOption(25)
             ->emptyStateHeading('No invitees yet')
             ->emptyStateDescription('Add invitees manually or import them from Excel for this event.')
@@ -2961,6 +2957,31 @@ class InviteesRelationManager extends RelationManager
         return $matches;
     }
 
+
+    protected function allowedInviteePageSizes(): array
+    {
+        $sizes = [10, 25, 50, 100, 250];
+
+        if (Invitee::query()->where('event_id', $this->getOwnerRecord()->getKey())->count() <= 500) {
+            $sizes[] = 'all';
+        }
+
+        return $sizes;
+    }
+
+    public function getTableRecordsPerPage(): int | string | null
+    {
+        $value = parent::getTableRecordsPerPage();
+        $sizes = $this->allowedInviteePageSizes();
+
+        foreach ($sizes as $size) {
+            if ((string) $size === (string) $value) {
+                return $size;
+            }
+        }
+
+        return 25;
+    }
 
     /** Null means the whole event; an empty array must never fall back to all. */
     protected function toolbarTargetIds(string $target): ?array
