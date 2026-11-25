@@ -260,6 +260,28 @@ class SmsDeliveryReceiptRefreshTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_scheduled_unavailable_receipts_are_audited_only_on_first_transition(): void
+    {
+        $log = $this->sentSms();
+        Http::fake(['*/deliver/test-shoot' => Http::response(['message' => 'Report unavailable'], 404)]);
+
+        $this->artisan('sms:sync-delivery-reports')->assertExitCode(1);
+        $this->assertSame('sent', $log->fresh()->status);
+        $this->assertSame('delivery_report_unavailable', $log->fresh()->provider_status);
+        $this->assertNotNull($log->fresh()->delivery_report_checked_at);
+
+        $this->travel(31)->minutes();
+        $this->artisan('sms:sync-delivery-reports')->assertExitCode(1);
+        $this->assertSame(0, \Illuminate\Support\Facades\DB::table('audit_logs')->where('action', 'sms.delivery_report_requested')->count());
+        $this->assertSame(1, \Illuminate\Support\Facades\DB::table('audit_logs')->where('action', 'sms.delivery_report_unavailable')->count());
+        Http::assertSentCount(2);
+
+        $this->artisan('sms:sync-delivery-reports', ['--shoot-id' => 'test-shoot'])->assertExitCode(1);
+        $this->assertSame(1, \Illuminate\Support\Facades\DB::table('audit_logs')->where('action', 'sms.delivery_report_requested')->count());
+        $this->assertSame(2, \Illuminate\Support\Facades\DB::table('audit_logs')->where('action', 'sms.delivery_report_unavailable')->count());
+        Http::assertSentCount(3);
+    }
+
     private function sentSms(): SmsLog
     {
         config([
