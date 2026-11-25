@@ -2772,7 +2772,7 @@ class InviteesRelationManager extends RelationManager
         }
 
         $lowerSearch = mb_strtolower($search);
-        $likeSearch = '%'.$this->escapeLikeValue($search).'%';
+        $likeSearch = '%'.$this->escapeLikeValue($lowerSearch).'%';
 
         $phoneDigits = preg_replace('/\D+/', '', $search) ?? '';
         $phoneCandidates = $this->phoneSearchCandidates($phoneDigits);
@@ -2791,13 +2791,13 @@ class InviteesRelationManager extends RelationManager
             $statusCandidates,
         ): void {
             $query
-                ->whereRaw('name ILIKE ?', [$likeSearch])
-                ->orWhereRaw("COALESCE(email, '') ILIKE ?", [$likeSearch])
-                ->orWhereRaw("COALESCE(category, '') ILIKE ?", [$likeSearch])
-                ->orWhereRaw("COALESCE(table_number, '') ILIKE ?", [$likeSearch])
-                ->orWhereRaw("COALESCE(short_code, '') ILIKE ?", [$likeSearch])
+                ->whereRaw("LOWER(name) LIKE ? ESCAPE '!'", [$likeSearch])
+                ->orWhereRaw("LOWER(COALESCE(email, '')) LIKE ? ESCAPE '!'", [$likeSearch])
+                ->orWhereRaw("LOWER(COALESCE(category, '')) LIKE ? ESCAPE '!'", [$likeSearch])
+                ->orWhereRaw("LOWER(COALESCE(table_number, '')) LIKE ? ESCAPE '!'", [$likeSearch])
+                ->orWhereRaw("LOWER(COALESCE(short_code, '')) LIKE ? ESCAPE '!'", [$likeSearch])
                 ->orWhereHas('cardType', function (Builder $cardTypeQuery) use ($likeSearch): void {
-                    $cardTypeQuery->whereRaw('name ILIKE ?', [$likeSearch]);
+                    $cardTypeQuery->whereRaw("LOWER(name) LIKE ? ESCAPE '!'", [$likeSearch]);
                 });
 
             foreach ($phoneCandidates as $phoneCandidate) {
@@ -2818,11 +2818,7 @@ class InviteesRelationManager extends RelationManager
 
     protected function escapeLikeValue(string $value): string
     {
-        return str_replace(
-            ['\\', '%', '_'],
-            ['\\\\', '\\%', '\\_'],
-            $value,
-        );
+        return str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $value);
     }
 
     protected function phoneSearchCandidates(string $digits): array
