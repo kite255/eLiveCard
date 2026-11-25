@@ -44,7 +44,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandName('eLive Card')
             ->brandLogo(asset('images/elive-card-logo.png'))
             ->darkModeBrandLogo(asset('images/elive-card-logo.png'))
-            ->brandLogoHeight('2.7rem')
+            ->brandLogoHeight('2.35rem')
             ->favicon(asset('favicon.ico'))
 
             /*
@@ -71,7 +71,7 @@ class AdminPanelProvider extends PanelProvider
             |--------------------------------------------------------------------------
             */
             ->maxContentWidth(MaxWidth::Full)
-            ->sidebarWidth('18rem')
+            ->sidebarWidth('15.625rem')
             ->collapsedSidebarWidth('5.25rem')
             ->sidebarCollapsibleOnDesktop()
 
@@ -85,7 +85,6 @@ class AdminPanelProvider extends PanelProvider
                 'ctrl+k',
             ])
             ->globalSearchDebounce('400ms')
-            ->globalSearchFieldKeyBindingSuffix()
 
             /*
             |--------------------------------------------------------------------------
