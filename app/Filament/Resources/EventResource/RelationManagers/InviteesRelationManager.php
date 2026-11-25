@@ -1638,7 +1638,7 @@ class InviteesRelationManager extends RelationManager
                                 && $user
                                 && ((method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
                                     || (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()))
-                                && filled($record->last_reply_message);
+                                && app(\App\Services\InviteeWhatsAppReplyService::class)->hasOpenReplyWindow($record);
                         })
                         ->modalHeading(fn (Invitee $record): string => 'Reply to '.$record->name)
                         ->modalDescription('Send a personal WhatsApp reply from the admin panel. Free-form replies require an inbound message within the last 24 hours. This does not resend an invitation.')
@@ -1679,6 +1679,33 @@ class InviteesRelationManager extends RelationManager
                                 ->success()
                                 ->send();
                         }),
+
+                    Tables\Actions\Action::make('view_expired_whatsapp_reply')
+                        ->label('View WhatsApp Reply')
+                        ->icon('heroicon-o-clock')
+                        ->color('gray')
+                        ->visible(function (Invitee $record): bool {
+                            $user = auth()->user();
+
+                            return $this->canSendMessagesForOwner()
+                                && $user
+                                && ((method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin())
+                                    || (method_exists($user, 'isEventAdmin') && $user->isEventAdmin()))
+                                && filled($record->last_reply_message)
+                                && ! app(\App\Services\InviteeWhatsAppReplyService::class)->hasOpenReplyWindow($record);
+                        })
+                        ->modalHeading(fn (Invitee $record): string => 'WhatsApp reply from '.$record->name)
+                        ->modalDescription('The 24-hour WhatsApp customer-service window has expired. A free-form message cannot be sent now. You may use an approved WhatsApp template to start a new conversation.')
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Close')
+                        ->form([
+                            Forms\Components\Placeholder::make('expired_incoming_whatsapp_reply')
+                                ->label('Invitee message')
+                                ->content(fn (Invitee $record): string => (string) $record->last_reply_message),
+                            Forms\Components\Placeholder::make('expired_incoming_whatsapp_time')
+                                ->label('Received')
+                                ->content(fn (Invitee $record): string => $record->last_reply_at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i') ?? 'Unknown'),
+                        ]),
 
                     Tables\Actions\Action::make('send_whatsapp_invitation')
                         ->label('Send WhatsApp Invitation')
