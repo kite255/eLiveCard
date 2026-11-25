@@ -70,4 +70,64 @@ class TanzaniaOnlySmsPolicyTest extends TestCase
         Queue::assertNotPushed(SendInvitationSmsJob::class);
         $this->assertSame('+254714294113', $international->fresh()->phone);
     }
+
+    public function test_international_guest_can_check_in_without_queuing_welcome_sms(): void
+    {
+        Queue::fake();
+        $invitee = $this->welcomeInvitee('+254700000001');
+
+        $result = app(\App\Services\CheckInService::class)->checkIn($invitee, 1);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame(1, (int) $invitee->fresh()->checked_in_count);
+        Queue::assertNotPushed(\App\Jobs\SendWelcomeSmsJob::class);
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'invitee.welcome_sms_skipped',
+            'subject_id' => $invitee->id,
+        ]);
+    }
+
+    public function test_queued_international_welcome_sms_exits_without_provider_submission(): void
+    {
+        $invitee = $this->welcomeInvitee('+260970000001');
+        $service = \Mockery::mock(SmsService::class)->makePartial();
+        $service->shouldNotReceive('sendCustomMessage');
+        (new \App\Jobs\SendWelcomeSmsJob($invitee->id))->handle($service);
+
+        $this->assertDatabaseHas('audit_logs', [
+            'action' => 'welcome_sms.country_unsupported',
+            'subject_id' => $invitee->id,
+        ]);
+        $this->assertDatabaseMissing('sms_logs', [
+            'invitee_id' => $invitee->id,
+            'sms_type' => 'welcome_sms',
+        ]);
+    }
+
+    private function welcomeInvitee(string $phone): Invitee
+    {
+        $event = Event::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'title' => 'Welcome SMS policy',
+            'event_type' => Event::TYPE_WEDDING,
+            'status' => Event::STATUS_ACTIVE,
+        ]);
+        $event->forceFill([
+            'welcome_sms_enabled' => true,
+            'welcome_sms_message' => 'Karibu #NAME#',
+        ])->save();
+        $type = CardType::query()->create([
+            'event_id' => $event->id,
+            'name' => 'Single',
+            'allowed_guests' => 1,
+        ]);
+
+        return Invitee::query()->create([
+            'event_id' => $event->id,
+            'card_type_id' => $type->id,
+            'name' => 'International Guest',
+            'phone' => $phone,
+            'card_status' => Invitee::CARD_STATUS_ACTIVE,
+        ]);
+    }
 }
