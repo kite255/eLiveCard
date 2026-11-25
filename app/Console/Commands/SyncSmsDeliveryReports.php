@@ -101,6 +101,7 @@ class SyncSmsDeliveryReports extends Command
             try {
                 $result = $smsService->refreshDeliveryReport(
                     (string) $smsLog->provider_message_id,
+                    auditRoutineLookup: $shootId !== '',
                 );
 
                 if ($result['success'] ?? false) {
