@@ -10,6 +10,7 @@ use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Services\WhatsAppInvitationQueueService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -93,6 +94,11 @@ class WhatsAppInvitationQueueServiceTest extends TestCase
 
         $this->assertSame('queued', $service->queue($invitee, $template)['status']);
         Queue::assertPushed(SendInvitationWhatsAppJob::class, 1);
+
+        // Simulate the first queue worker finishing (and releasing Laravel's
+        // ShouldBeUnique lock) before an operator retries its failed attempt.
+        $firstJob = Queue::pushed(SendInvitationWhatsAppJob::class)->first()['job'];
+        app(UniqueLock::class)->release($firstJob);
 
         $this->claimQuery($invitee, $template)->update(['status' => 'failed']);
         $reclaimed = $this->claimQuery($invitee, $template)
