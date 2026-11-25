@@ -415,6 +415,7 @@ class InviteesRelationManager extends RelationManager
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => $query->select('invitees.*')
                     ->selectRaw('('.app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression().') AS report_whatsapp_status')
+                    ->selectRaw('('.app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->timestampExpression().') AS report_whatsapp_status_at')
                     ->with(['cardType', 'latestGeneratedCard'])
             )
             ->columns([
@@ -621,13 +622,9 @@ class InviteesRelationManager extends RelationManager
                             default => ucfirst(str_replace('_', ' ', $record->report_whatsapp_status ?? 'not_sent')),
                         };
 
-                        $at = match ($whatsapp) {
-                            'Read' => $record->whatsapp_read_at,
-                            'Delivered' => $record->whatsapp_delivered_at,
-                            'Failed' => $record->whatsapp_failed_at,
-                            'Sent', 'Submitted' => $record->whatsapp_sent_at,
-                            default => null,
-                        };
+                        $at = $record->report_whatsapp_status_at
+                            ? \Illuminate\Support\Carbon::parse($record->report_whatsapp_status_at)->timezone('Africa/Dar_es_Salaam')
+                            : null;
 
                         $whatsappLabel = $whatsapp === 'Not Sent' && $record->invitation_phone_changed_at
                             ? 'Not Sent — Phone Updated'
@@ -688,22 +685,20 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('whatsapp_status')
                     ->label('WhatsApp Status')
+                    ->state(fn (Invitee $record): string => $record->report_whatsapp_status ?? 'unknown')
                     ->description(function (Invitee $record): ?string {
-                        $status = strtolower((string) $record->whatsapp_status);
-                        $at = match ($status) {
-                            'read' => $record->whatsapp_read_at,
-                            'delivered' => $record->whatsapp_delivered_at,
-                            'failed' => $record->whatsapp_failed_at,
-                            'sent', 'submitted' => $record->whatsapp_sent_at,
-                            default => null,
-                        };
+                        $at = $record->report_whatsapp_status_at
+                            ? \Illuminate\Support\Carbon::parse($record->report_whatsapp_status_at)->timezone('Africa/Dar_es_Salaam')
+                            : null;
                         return $at ? 'Status at '.$at->format('d M Y, H:i') : null;
                     })
                     ->badge()
                     ->formatStateUsing(fn (?string $state, Invitee $record): string => match ($state) {
                         'not_sent', null, '' => $record->invitation_phone_changed_at
                             ? 'Not Sent — Phone Updated' : 'Not Sent',
-                        'sending' => 'Sending',
+                        'sending', 'queued' => 'Pending',
+                        'unknown' => 'Unverified',
+                        'logged_only' => 'Logged Only',
                         'submitted' => 'Submitted',
                         'sent' => 'Sent',
                         'delivered' => 'Delivered',
@@ -717,7 +712,7 @@ class InviteesRelationManager extends RelationManager
                         'failed' => 'danger',
                         default => 'gray',
                     })
-                    ->sortable()
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('report_whatsapp_status', $direction))
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('whatsapp_delivered_at')
@@ -933,6 +928,8 @@ class InviteesRelationManager extends RelationManager
                         'delivered' => 'Delivered',
                         'read' => 'Read',
                         'failed' => 'Failed',
+                        'unknown' => 'Unverified',
+                        'logged_only' => 'Logged Only',
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         $value = $data['value'] ?? null;
