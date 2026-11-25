@@ -350,6 +350,18 @@ class CheckInService
             return;
         }
 
+        if (! app(SmsService::class)->isTanzanianMobileNumber($phone)) {
+            AuditLogService::record(
+                action: 'invitee.welcome_sms_skipped',
+                subject: $invitee,
+                eventId: $invitee->event_id,
+                description: 'Welcome SMS skipped: only Tanzania mobile numbers are supported.',
+                metadata: ['reason' => 'unsupported_sms_destination'],
+            );
+
+            return;
+        }
+
         $inviteeId = (int) $invitee->id;
         $eventId = (int) $invitee->event_id;
 
