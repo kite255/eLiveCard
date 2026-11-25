@@ -78,7 +78,7 @@ class PublicRsvpReportController extends Controller
                 'in:attending,not_attending,declined,pending,maybe',
             ],
             'sms_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,failed,logged_only,unknown'],
-            'whatsapp_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,read,failed,logged_only,unknown'],
+            'whatsapp_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,sent,delivered,read,failed,logged_only,unknown'],
             'overall_delivery' => ['nullable', 'string', 'in:delivered,not_sent,unconfirmed'],
             'per_page' => ['nullable', 'integer', 'in:10,25,50,100'],
         ]);
@@ -206,7 +206,8 @@ class PublicRsvpReportController extends Controller
 
             foreach ($latestWhatsApp as $log) {
                 $deliveryStatuses[$log->invitee_id]['whatsapp'] =
-                    $this->deliveryLabel($log->status);
+                    $log->status === 'sent' ? 'Sent' : $this->deliveryLabel($log->status);
+                $log->channel = 'whatsapp';
                 $deliveryTimes[$log->invitee_id]['whatsapp'] = $this->deliveryTime($log);
             }
         }
@@ -286,7 +287,7 @@ class PublicRsvpReportController extends Controller
                         'Read' => $invitee->whatsapp_read_at,
                         'Delivered' => $invitee->whatsapp_delivered_at,
                         'Failed' => $invitee->whatsapp_failed_at,
-                        'Submitted' => $invitee->whatsapp_sent_at,
+                        'Submitted', 'Sent' => $invitee->whatsapp_sent_at,
                         default => null,
                     };
                     $deliveryTimes[$invitee->id][$channel] = $at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i');
@@ -458,18 +459,7 @@ class PublicRsvpReportController extends Controller
         }
 
         if ($channel === 'whatsapp') {
-            $tracked = Schema::hasTable('whatsapp_template_sends')
-                ? "(SELECT wt.status FROM whatsapp_template_sends wt
-                    WHERE wt.event_id = invitees.event_id AND wt.invitee_id = invitees.id
-                    AND wt.phone_generation = invitees.invitation_phone_generation
-                    AND wt.message_template_id = (SELECT e.default_whatsapp_template_id FROM events e WHERE e.id = invitees.event_id)
-                    ORDER BY wt.id DESC LIMIT 1)" : 'NULL';
-            $raw = "CASE
-                WHEN invitees.whatsapp_status IN ('delivered','read') THEN invitees.whatsapp_status
-                WHEN {$tracked} IS NOT NULL THEN {$tracked}
-                WHEN {$latestMessage} IS NOT NULL THEN {$latestMessage}
-                WHEN invitees.whatsapp_status IN ('queued','sending','pending','submitted','sent','failed') THEN 'unknown'
-                ELSE 'not_sent' END";
+            return app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression();
         } else {
             $raw = "CASE
                 WHEN invitees.last_message_channel = 'sms'
@@ -498,12 +488,12 @@ class PublicRsvpReportController extends Controller
      */
     private function deliveryTime(object $log): ?string
     {
-        $label = $this->deliveryLabel($log->status ?? null);
+        $label = ($log->status ?? null) === 'sent' && ($log->channel ?? null) === 'whatsapp' ? 'Sent' : $this->deliveryLabel($log->status ?? null);
         $field = match ($label) {
             'Read' => 'read_at',
             'Delivered' => 'delivered_at',
             'Failed' => 'failed_at',
-            'Submitted' => 'sent_at',
+            'Submitted', 'Sent' => 'sent_at',
             default => null,
         };
 
