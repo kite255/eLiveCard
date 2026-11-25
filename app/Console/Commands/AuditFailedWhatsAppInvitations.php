@@ -70,6 +70,18 @@ class AuditFailedWhatsAppInvitations extends Command
             ->get(['id', 'invitee_id', 'status'])
             ->groupBy('invitee_id');
 
+        $otherSuccessfulPhoneIds = DB::table('message_logs')
+            ->where('event_id', $eventId)
+            ->where('channel', 'whatsapp')
+            ->where('type', MessageTemplate::TYPE_INVITATION)
+            ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
+            ->pluck('invitee_id')->filter()->unique()->values()->all();
+
+        $successfulPhones = DB::table('invitees')->where('event_id', $eventId)
+            ->whereIn('id', $otherSuccessfulPhoneIds)->pluck('phone')
+            ->map(fn ($phone) => WhatsAppPhone::normalize($phone))
+            ->filter()->flip();
+
         $counters = [
             'Failed claims' => $rows->count(),
             'Disabled-configuration failures' => 0,
@@ -80,6 +92,7 @@ class AuditFailedWhatsAppInvitations extends Command
             'Existing successful invitation log' => 0,
             'Other submitted or pending claim' => 0,
             'Other recorded WhatsApp sent state' => 0,
+            'Phone matches another successfully logged invitee' => 0,
             'Candidates before normalized-phone deduplication' => 0,
             'Normalized-phone collisions among candidates' => 0,
         ];
@@ -123,6 +136,11 @@ class AuditFailedWhatsAppInvitations extends Command
             if ($row->whatsapp_sent_at !== null
                 || in_array($row->whatsapp_status, ['submitted', 'accepted', 'sent', 'delivered', 'read'], true)) {
                 $counters['Other recorded WhatsApp sent state']++;
+                continue;
+            }
+
+            if (isset($successfulPhones[$phone])) {
+                $counters['Phone matches another successfully logged invitee']++;
                 continue;
             }
 
