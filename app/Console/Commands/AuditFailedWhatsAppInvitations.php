@@ -62,7 +62,8 @@ class AuditFailedWhatsAppInvitations extends Command
             ->where('type', MessageTemplate::TYPE_INVITATION)
             ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
             ->pluck('invitee_id')
-            ->flip();
+            ->filter(fn ($id) => is_int($id) || (is_string($id) && $id !== ''))
+            ->mapWithKeys(fn ($id) => [(string) $id => true]);
 
         $otherClaims = DB::table('whatsapp_template_sends')
             ->where('event_id', $eventId)
@@ -80,7 +81,8 @@ class AuditFailedWhatsAppInvitations extends Command
         $successfulPhones = DB::table('invitees')->where('event_id', $eventId)
             ->whereIn('id', $otherSuccessfulPhoneIds)->pluck('phone')
             ->map(fn ($phone) => WhatsAppPhone::normalize($phone))
-            ->filter()->flip();
+            ->filter(fn ($phone) => is_string($phone) && $phone !== '')
+            ->mapWithKeys(fn ($phone) => [$phone => true]);
 
         $counters = [
             'Failed claims' => $rows->count(),
