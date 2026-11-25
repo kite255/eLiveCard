@@ -9,6 +9,7 @@ use App\Models\SmsLog;
 use Illuminate\Support\Carbon;
 use App\Services\MessageTemplateRenderer;
 use App\Services\ReminderSmsService;
+use App\Services\SmsService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -19,13 +20,13 @@ class SendAutomaticThankYouSms extends Command
 
     protected $description = 'Send opt-in thank-you SMS once to eligible guests after an event is completed.';
 
-    public function handle(ReminderSmsService $sms, MessageTemplateRenderer $renderer): int
+    public function handle(ReminderSmsService $sms, MessageTemplateRenderer $renderer, SmsService $policy): int
     {
         Event::query()
             ->where('thank_you_mode', 'automatic')
             ->where('status', Event::STATUS_COMPLETED)
             ->whereDate('event_date', '<=', today())
-            ->chunkById(50, function ($events) use ($sms, $renderer): void {
+            ->chunkById(50, function ($events) use ($sms, $renderer, $policy): void {
                 foreach ($events as $event) {
                     // Default: 09:00 on the day after the event, in Tanzania time.
                     // Never send before the event has been completed.
@@ -76,8 +77,12 @@ class SendAutomaticThankYouSms extends Command
                         continue;
                     }
 
-                    $invitees->chunkById(100, function ($batch) use ($event, $template, $sms, $renderer): void {
+                    $invitees->chunkById(100, function ($batch) use ($event, $template, $sms, $renderer, $policy): void {
                         foreach ($batch as $invitee) {
+                            if (! $policy->isTanzanianMobileNumber($invitee->phone)) {
+                                continue;
+                            }
+
                             $claimed = DB::table('automatic_thank_you_sends')->insertOrIgnore([
                                 'event_id' => $event->id,
                                 'invitee_id' => $invitee->id,
