@@ -10,6 +10,14 @@ use Illuminate\Validation\ValidationException;
 
 class InviteeWhatsAppReplyService
 {
+    public function hasOpenReplyWindow(Invitee $invitee): bool
+    {
+        return filled($invitee->last_reply_message)
+            && $invitee->last_reply_at !== null
+            && ! $invitee->last_reply_at->isFuture()
+            && $invitee->last_reply_at->gt(now()->subHours(24));
+    }
+
     /**
      * Send a plain-text answer to a recent inbound WhatsApp message.
      *
@@ -29,12 +37,7 @@ class InviteeWhatsAppReplyService
 
         // A free-form WhatsApp reply is only allowed inside the 24-hour window
         // opened by the most recent inbound customer message.
-        if (
-            blank($invitee->last_reply_message)
-            || ! $invitee->last_reply_at
-            || $invitee->last_reply_at->isFuture()
-            || $invitee->last_reply_at->lte(now()->subHours(24))
-        ) {
+        if (! $this->hasOpenReplyWindow($invitee)) {
             throw ValidationException::withMessages([
                 'reply' => 'The WhatsApp 24-hour reply window has closed. Use an approved WhatsApp template instead.',
             ]);
