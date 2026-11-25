@@ -3685,43 +3685,21 @@ class InviteesRelationManager extends RelationManager
             ->requiresConfirmation()
             ->modalIcon('heroicon-o-paper-airplane')
             ->modalIconColor('warning')
-            ->modalHeading('Send SMS Invitation Again?')
-            ->modalDescription(fn (Invitee $record): string => 'Send another SMS invitation to '.$record->name.'? They may receive a duplicate message and an additional SMS charge may apply.')
-            ->modalSubmitActionLabel('Yes, Resend SMS')
-            ->modalCancelActionLabel('Keep Existing Invitation')
-            ->form([
-                Forms\Components\Textarea::make('resend_reason')
-                    ->label('Reason for resending')
-                    ->placeholder('E.g. The recipient requested another copy.')
-                    ->required()
-                    ->minLength(10)
-                    ->maxLength(500)
-                    ->rows(2),
-                Forms\Components\Checkbox::make('confirm_duplicate')
-                    ->label('I understand this may send another SMS and incur a charge.')
-                    ->accepted()
-                    ->required(),
-            ])
-            ->action(function (Invitee $record, array $data) use ($channel): void {
+            ->modalHeading('Resend SMS Invitation')
+            ->modalDescription(fn (Invitee $record): string => 'Resend SMS to '.$record->name.'? Another SMS charge may apply.')
+            ->modalSubmitActionLabel('Resend SMS')
+            ->modalCancelActionLabel('Cancel')
+            ->action(function (Invitee $record) use ($channel): void {
                 abort_unless($this->canSendMessagesForOwner()
                     && (int) $record->event_id === (int) $this->getOwnerRecord()->id, 403);
 
-                if (! (bool) ($data['confirm_duplicate'] ?? false)) {
-                    $this->brandedNotification()
-                        ->title('SMS resend not confirmed')
-                        ->warning()->send();
-                    return;
-                }
-
-                $reason = trim((string) ($data['resend_reason'] ?? ''));
-                if (mb_strlen($reason) < 10 || mb_strlen($reason) > 500) {
-                    $this->brandedNotification()
-                        ->title('SMS resend requires a reason')
-                        ->warning()->send();
-                    return;
-                }
-
-                $this->processInviteeInvitation($record, $channel, $reason);
+                // The explicit modal confirmation is the authorization.
+                // Keep a meaningful audit reason without extra form fields.
+                $this->processInviteeInvitation(
+                    $record,
+                    $channel,
+                    'Manual SMS resend confirmed by administrator.',
+                );
             });
     }
 
