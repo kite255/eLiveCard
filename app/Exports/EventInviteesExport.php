@@ -18,6 +18,7 @@ class EventInviteesExport implements FromCollection, WithHeadings, WithMapping, 
 
     public function __construct(
         protected int $eventId,
+        protected ?array $inviteeIds = null,
     ) {
         $event = Event::query()->find($this->eventId);
 
@@ -29,6 +30,7 @@ class EventInviteesExport implements FromCollection, WithHeadings, WithMapping, 
         return Invitee::query()
             ->with(['cardType'])
             ->where('event_id', $this->eventId)
+            ->when($this->inviteeIds !== null, fn ($query) => $query->whereIn('id', $this->inviteeIds))
             ->orderBy('name')
             ->get();
     }
