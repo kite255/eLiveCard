@@ -1005,29 +1005,28 @@ class Dashboard extends Page
                 return 0;
             }
 
-            $inviteeIds = $this->inviteeQuery()->pluck('id');
+            $hasCardStatus = Schema::hasColumn('generated_cards', 'status');
+            $hasCardEvent = Schema::hasColumn('generated_cards', 'event_id');
 
-            if ($inviteeIds->isEmpty()) {
-                return 0;
-            }
+            // Keep the entire computation in PostgreSQL; do not materialize all
+            // invitee and card IDs in PHP for dashboard alerts.
+            return $this->inviteeQuery()
+                ->whereNotExists(function ($query) use ($hasCardStatus, $hasCardEvent): void {
+                    $query->selectRaw('1')
+                        ->from('generated_cards')
+                        ->whereColumn('generated_cards.invitee_id', 'invitees.id');
 
-            $generatedInviteeIds = DB::table('generated_cards')
-                ->whereIn('invitee_id', $inviteeIds)
-                ->when(
-                    filled($this->selectedEventId)
-                    && Schema::hasColumn('generated_cards', 'event_id'),
-                    fn ($query) => $query->where('event_id', $this->selectedEventId),
-                )
-                ->when(
-                    Schema::hasColumn('generated_cards', 'status'),
-                    fn ($query) => $query->whereIn('status', ['generated', 'sent']),
-                )
-                ->distinct()
-                ->pluck('invitee_id');
+                    if (filled($this->selectedEventId) && $hasCardEvent) {
+                        $query->where('generated_cards.event_id', $this->selectedEventId);
+                    }
 
-            return $inviteeIds->diff($generatedInviteeIds)->count();
-        } catch (\Throwable $e) {
-            report($e);
+                    if ($hasCardStatus) {
+                        $query->whereIn('generated_cards.status', ['generated', 'sent']);
+                    }
+                })
+                ->count();
+        } catch (\Throwable $exception) {
+            report($exception);
 
             return 0;
         }
@@ -1180,112 +1179,9 @@ class Dashboard extends Page
 
     protected function getSmsBalance(): string
     {
-        return Cache::remember(
-            'elive.dashboard.sms_balance',
-            now()->addMinutes(5),
-            function (): string {
-                try {
-                    $url = config('services.sms_balance.url');
-                    $apiKey = config('services.sms_balance.api_key');
-                    $apiSecret = config('services.sms_balance.api_secret');
-                    $timeout = (int) config('services.sms_balance.timeout', 30);
-
-                    if (blank($url) || blank($apiKey) || blank($apiSecret)) {
-                        return 'Not configured';
-                    }
-
-                    $response = Http::timeout($timeout)
-                        ->retry(2, 300, throw: false)
-                        ->acceptJson()
-                        ->withHeaders([
-                            'api_key' => (string) $apiKey,
-                            'api_secret' => (string) $apiSecret,
-                        ])
-                        ->get($url);
-
-                    if (! $response->successful()) {
-                        Log::warning('SMS balance request failed', [
-                            'status' => $response->status(),
-                            'body' => str($response->body())
-                                ->limit(500)
-                                ->toString(),
-                        ]);
-
-                        return 'Unavailable';
-                    }
-
-                    $payload = $response->json();
-
-                    // eLive returns the balance as data.totalSms.
-                    // Read that exact field first so the response code (200)
-                    // is never mistaken for the SMS balance.
-                    $balance = data_get($payload, 'data.totalSms')
-                        ?? data_get($payload, 'data.total_sms')
-                        ?? $this->extractSmsBalance($payload);
-
-                    if ($balance === null) {
-                        Log::warning(
-                            'SMS balance value was not found in provider response',
-                            [
-                                'response' => $response->json(),
-                            ],
-                        );
-
-                        return 'Check provider';
-                    }
-
-                    return number_format((float) $balance, 0);
-                } catch (\Throwable $e) {
-                    report($e);
-
-                    return 'Unavailable';
-                }
-            },
-        );
+        // Dashboard rendering must not depend on the availability of the SMS provider.
+        return app(\App\Services\DashboardSmsBalanceService::class)->cached();
     }
-
-    protected function extractSmsBalance(mixed $data): int|float|string|null
-    {
-        if (is_numeric($data)) {
-            return $data;
-        }
-
-        if (! is_array($data)) {
-            return null;
-        }
-
-      foreach ([
-    'balance',
-    'sms_balance',
-    'totalSms',
-    'total_sms',
-    'credits',
-    'credit',
-    'remaining',
-    'remaining_balance',
-    'available_balance',
-] as $key) {
-            if (array_key_exists($key, $data) && is_numeric($data[$key])) {
-                return $data[$key];
-            }
-        }
-
-        foreach ($data as $key => $value) {
-            // Ignore HTTP/provider metadata such as code => 200.
-            if (in_array((string) $key, ['code', 'status', 'status_code'], true)) {
-                continue;
-            }
-
-            $balance = $this->extractSmsBalance($value);
-
-            if ($balance !== null) {
-                return $balance;
-            }
-        }
-
-        return null;
-    }
-
 
     protected function eventQuery(): Builder
     {
