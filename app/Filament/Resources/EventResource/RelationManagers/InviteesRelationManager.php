@@ -413,10 +413,9 @@ class InviteesRelationManager extends RelationManager
             ->emptyStateIcon('heroicon-o-users')
             ->defaultSort('created_at', 'desc')
             ->modifyQueryUsing(
-                fn (Builder $query): Builder => $query->with([
-                    'cardType',
-                    'latestGeneratedCard',
-                ])
+                fn (Builder $query): Builder => $query->select('invitees.*')
+                    ->selectRaw('('.app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression().') AS report_whatsapp_status')
+                    ->with(['cardType', 'latestGeneratedCard'])
             )
             ->columns([
                 Tables\Columns\TextColumn::make('name')
@@ -615,23 +614,11 @@ class InviteesRelationManager extends RelationManager
                     ->view('filament.tables.columns.invitation-delivery-status')
                     ->state(function (Invitee $record): array {
                         $sms = $this->displaySmsStatus($record);
-                        $trackedStatus = $this->displayWhatsAppStatus($record);
-
-                        $whatsapp = match ($record->whatsapp_status) {
-                            'delivered' => 'Delivered',
-                            'read' => 'Read',
-                            default => match ($trackedStatus) {
-                                'pending' => 'Pending',
-                                'failed' => 'Failed',
-                                'submitted' => 'Submitted',
-                                default => match ($record->whatsapp_status) {
-                                    'queued', 'sending' => 'Pending',
-                                    'submitted' => 'Submitted',
-                                    'sent' => 'Sent',
-                                    'failed' => 'Failed',
-                                    default => 'Not Sent',
-                                },
-                            },
+                        $whatsapp = match ($record->report_whatsapp_status) {
+                            'queued' => 'Pending',
+                            'unknown' => 'Unverified',
+                            'logged_only' => 'Logged Only',
+                            default => ucfirst(str_replace('_', ' ', $record->report_whatsapp_status ?? 'not_sent')),
                         };
 
                         $at = match ($whatsapp) {
@@ -953,25 +940,8 @@ class InviteesRelationManager extends RelationManager
                             return $query;
                         }
 
-                        $eventTemplateId = $this->getOwnerRecord()->default_whatsapp_template_id;
-                        $tracked = $eventTemplateId && Schema::hasTable('whatsapp_template_sends')
-                            ? DB::table('whatsapp_template_sends as tracked_wa')
-                                ->select('tracked_wa.status')
-                                ->whereColumn('tracked_wa.invitee_id', 'invitees.id')
-                                ->where('tracked_wa.message_template_id', $eventTemplateId)
-                                ->whereColumn('tracked_wa.phone_generation', 'invitees.invitation_phone_generation')
-                                ->limit(1)
-                            : null;
-
-                        $sql = "CASE WHEN invitees.whatsapp_status IN ('delivered','read') THEN invitees.whatsapp_status ";
-                        $bindings = [];
-                        if ($tracked) {
-                            $sql .= "WHEN (".$tracked->toSql().") IN ('pending','failed','submitted') THEN (".$tracked->toSql().") ";
-                            $bindings = array_merge($tracked->getBindings(), $tracked->getBindings());
-                        }
-                        $sql .= "WHEN invitees.whatsapp_status IN ('queued','sending') THEN 'pending' WHEN invitees.whatsapp_status IN ('sent','submitted','failed') THEN invitees.whatsapp_status ELSE 'not_sent' END";
-
-                        return $query->whereRaw('('.$sql.') = ?', [...$bindings, $value === 'sending' ? 'pending' : $value]);
+                        $sql = app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression();
+                        return $query->whereRaw('('.$sql.') = ?', [$value === 'sending' ? 'queued' : $value]);
                     }),
 
                 Tables\Filters\TernaryFilter::make('check_in_status')
