@@ -1331,13 +1331,18 @@ class PublicRsvpDeliveryReportTest extends TestCase
             $this->get($requestUrl)
                 ->assertOk()
                 ->assertViewHas('cardTypesUsed', 2)
-                ->assertViewHas('usedCardTypeNames', ['Double', 'Single'])
+                ->assertViewHas('cardTypeCounts', [
+                    ['name' => 'Double', 'count' => 1],
+                    ['name' => 'Single', 'count' => 2],
+                ])
                 ->assertSee('Card Types Used')
-                ->assertSee('Double, Single')
-                ->assertDontSee('Customized,')
-                ->assertDontSee('Family,')
-                ->assertSee('<strong>2</strong>', false)
-                ->assertDontSee('class="card-type-name"', false)
+                ->assertSee('class="card-types-grid"', false)
+                ->assertSee('class="card-type-grid-name">Double</span>', false)
+                ->assertSee('class="card-type-grid-name">Single</span>', false)
+                ->assertDontSee('class="card-type-grid-name">Customized</span>', false)
+                ->assertDontSee('class="card-type-grid-name">Family</span>', false)
+                ->assertSee('class="card-type-grid-count">1</strong>', false)
+                ->assertSee('class="card-type-grid-count">2</strong>', false)
                 ->assertDontSee('Outside Event');
         }
     }
@@ -1350,9 +1355,10 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
             ->assertViewHas('cardTypesUsed', 0)
-            ->assertViewHas('usedCardTypeNames', [])
+            ->assertViewHas('cardTypeCounts', [])
             ->assertSee('Card Types Used')
-            ->assertSee('<strong>0</strong>', false);
+            ->assertSee('class="card-types-summary-total">0</strong>', false)
+            ->assertSee('No card types in use yet.');
     }
 
     public function test_card_types_used_is_zero_without_configured_types(): void
@@ -1362,7 +1368,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
             ->assertViewHas('cardTypesUsed', 0)
-            ->assertViewHas('usedCardTypeNames', [])
+            ->assertViewHas('cardTypeCounts', [])
             ->assertSee('Card Types Used');
     }
 
