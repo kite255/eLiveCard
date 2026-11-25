@@ -116,6 +116,23 @@ class InviteesRelationManager extends RelationManager
             && static::userCanManageInvitees(auth()->user());
     }
 
+    /**
+     * Show optional table information only when the event has actual data.
+     * The query is event-scoped and does not depend on pagination or filters.
+     */
+    protected function eventHasInviteeColumnValue(string $column): bool
+    {
+        if (! in_array($column, ['table_number'], true)) {
+            return false;
+        }
+
+        return Invitee::query()
+            ->where('event_id', $this->getOwnerRecord()->getKey())
+            ->whereNotNull($column)
+            ->where($column, '<>', '')
+            ->exists();
+    }
+
     protected function canGenerateCardsForOwner(): bool
     {
         $user = auth()->user();
@@ -306,11 +323,11 @@ class InviteesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('name')
-            ->searchPlaceholder('Search name, phone, serial, short code, email, table, category, status, or card type')
+            ->searchPlaceholder('Search name, phone, serial number or card type')
             ->searchDebounce('500ms')
             ->striped()
             ->paginated([10, 25, 50])
-            ->defaultPaginationPageOption(10)
+            ->defaultPaginationPageOption(25)
             ->emptyStateHeading('No invitees yet')
             ->emptyStateDescription('Add invitees manually or import them from Excel for this event.')
             ->emptyStateIcon('heroicon-o-users')
@@ -401,6 +418,7 @@ class InviteesRelationManager extends RelationManager
                     ->label('Table')
                     ->placeholder('-')
                     ->alignCenter()
+                    ->hidden(fn (): bool => ! $this->eventHasInviteeColumnValue('table_number'))
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('serial_number')
@@ -410,7 +428,7 @@ class InviteesRelationManager extends RelationManager
                     ->copyMessage('Serial number copied')
                     ->copyMessageDuration(1500)
                     ->placeholder('-')
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\IconColumn::make('qr_ready')
                     ->label('QR')
@@ -444,6 +462,8 @@ class InviteesRelationManager extends RelationManager
                     })
                     ->sortable(),
 
+                // Keep the operational card lifecycle available through column settings;
+                // the main table prioritizes generation progress instead.
                 Tables\Columns\TextColumn::make('card_status')
                     ->label('Card Status')
                     ->badge()
@@ -464,10 +484,11 @@ class InviteesRelationManager extends RelationManager
                         Invitee::CARD_STATUS_USED => 'info',
                         default => 'gray',
                     })
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('latestGeneratedCard.status')
-                    ->label('Card Generation')
+                    ->label('Generated Card Status')
                     ->badge()
                     ->default('Not Generated')
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
@@ -746,7 +767,7 @@ class InviteesRelationManager extends RelationManager
                     ),
 
                 Tables\Filters\SelectFilter::make('generated_card_status')
-                    ->label('Generated Card')
+                    ->label('Generated Card Status')
                     ->options([
                         'not_generated' => 'Not Generated',
                         GeneratedCard::STATUS_PENDING => 'Pending',
@@ -1003,80 +1024,11 @@ class InviteesRelationManager extends RelationManager
                     ->button()
                     ->color('primary'),
 
-                Tables\Actions\Action::make('generate_missing_cards')
-                    ->label('Generate Cards')
-                    ->visible(fn (): bool => $this->canGenerateCardsForOwner())
-                    ->icon('heroicon-o-sparkles')
-                    ->color('warning')
-                    ->requiresConfirmation()
-                    ->modalHeading('Generate missing invitation cards')
-                    ->modalDescription('This will queue card generation only for invitees whose card is missing, failed, or not yet generated.')
-                    ->modalSubmitActionLabel('Generate Cards')
-                    ->action(function (): void {
-                        $event = $this->getOwnerRecord();
-
-                        $invitees = Invitee::query()
-                            ->where('event_id', $event->id)
-                            ->with(['latestGeneratedCard'])
-                            ->get();
-
-                        $queued = 0;
-                        $skippedGenerated = 0;
-                        $skippedGenerating = 0;
-                        $failed = 0;
-
-                        foreach ($invitees as $invitee) {
-                            try {
-                                if (! $invitee instanceof Invitee) {
-                                    continue;
-                                }
-
-                                if ($this->isInviteeCardGenerating($invitee)) {
-                                    $skippedGenerating++;
-
-                                    continue;
-                                }
-
-                                if ($this->inviteeHasUsableGeneratedCard($invitee)) {
-                                    $skippedGenerated++;
-
-                                    continue;
-                                }
-
-                                $this->prepareGeneratedCardForQueue($invitee);
-                                GenerateInviteeCardJob::dispatch($invitee->id);
-
-                                $queued++;
-                            } catch (Throwable $e) {
-                                $failed++;
-                            }
-                        }
-
-                        AuditLogService::system(
-                            action: 'cards_generate_missing',
-                            description: 'Missing invitation card generation was processed.',
-                            eventId: $event->id,
-                            metadata: [
-                                'queued' => $queued,
-                                'already_generated' => $skippedGenerated,
-                                'already_generating' => $skippedGenerating,
-                                'failed' => $failed,
-                            ],
-                        );
-
-                        $this->brandedNotification()
-                            ->title('eLive Card • ' . ($queued > 0 ? 'Card generation started' : 'No missing cards'))
-                            ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
-                            ->color($failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info'))
-                            ->persistent()
-                            ->send();
-                    }),
-
                 Tables\Actions\Action::make('export_invitees')
                     ->label('Export Invitees')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
+                    ->color('gray')
                     ->action(function () {
                         $event = $this->getOwnerRecord();
 
@@ -1352,6 +1304,75 @@ class InviteesRelationManager extends RelationManager
                                 messageTemplateId: $template->id,
                             );
                         }),
+
+                Tables\Actions\Action::make('generate_missing_cards')
+                    ->label('Generate Cards')
+                    ->visible(fn (): bool => $this->canGenerateCardsForOwner())
+                    ->icon('heroicon-o-sparkles')
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading('Generate missing invitation cards')
+                    ->modalDescription('This will queue card generation only for invitees whose card is missing, failed, or not yet generated.')
+                    ->modalSubmitActionLabel('Generate Cards')
+                    ->action(function (): void {
+                        $event = $this->getOwnerRecord();
+
+                        $invitees = Invitee::query()
+                            ->where('event_id', $event->id)
+                            ->with(['latestGeneratedCard'])
+                            ->get();
+
+                        $queued = 0;
+                        $skippedGenerated = 0;
+                        $skippedGenerating = 0;
+                        $failed = 0;
+
+                        foreach ($invitees as $invitee) {
+                            try {
+                                if (! $invitee instanceof Invitee) {
+                                    continue;
+                                }
+
+                                if ($this->isInviteeCardGenerating($invitee)) {
+                                    $skippedGenerating++;
+
+                                    continue;
+                                }
+
+                                if ($this->inviteeHasUsableGeneratedCard($invitee)) {
+                                    $skippedGenerated++;
+
+                                    continue;
+                                }
+
+                                $this->prepareGeneratedCardForQueue($invitee);
+                                GenerateInviteeCardJob::dispatch($invitee->id);
+
+                                $queued++;
+                            } catch (Throwable $e) {
+                                $failed++;
+                            }
+                        }
+
+                        AuditLogService::system(
+                            action: 'cards_generate_missing',
+                            description: 'Missing invitation card generation was processed.',
+                            eventId: $event->id,
+                            metadata: [
+                                'queued' => $queued,
+                                'already_generated' => $skippedGenerated,
+                                'already_generating' => $skippedGenerating,
+                                'failed' => $failed,
+                            ],
+                        );
+
+                        $this->brandedNotification()
+                            ->title('eLive Card • ' . ($queued > 0 ? 'Card generation started' : 'No missing cards'))
+                            ->body("Queued: {$queued}. Already generated/sent: {$skippedGenerated}. Already generating: {$skippedGenerating}. Failed: {$failed}.")
+                            ->color($failed > 0 ? 'warning' : ($queued > 0 ? 'success' : 'info'))
+                            ->persistent()
+                            ->send();
+                    }),
 
                     Tables\Actions\Action::make('export_rsvp')
                     ->label('Export RSVP')
