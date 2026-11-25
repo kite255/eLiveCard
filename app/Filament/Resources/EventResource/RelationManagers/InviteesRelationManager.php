@@ -323,7 +323,7 @@ class InviteesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('name')
-            ->searchPlaceholder('Search name, phone, serial number or card type')
+            ->searchPlaceholder('Name, phone, serial or card type')
             ->searchDebounce('500ms')
             ->striped()
             ->paginated([10, 25, 50])
@@ -375,7 +375,7 @@ class InviteesRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('guest_summary')
-                    ->label('Guests')
+                    ->label('Confirmed Guests')
                     ->state(function (Invitee $record): string {
                         $allowed = max(1, (int) $record->allowed_guests);
                         $confirmed = min(
@@ -393,7 +393,7 @@ class InviteesRelationManager extends RelationManager
                         );
                         $remaining = max(0, $allowed - $confirmed);
 
-                        return "{$remaining} remaining";
+                        return "{$remaining} unconfirmed";
                     })
                     ->badge()
                     ->color(function (Invitee $record): string {
@@ -465,7 +465,7 @@ class InviteesRelationManager extends RelationManager
                 // Keep the operational card lifecycle available through column settings;
                 // the main table prioritizes generation progress instead.
                 Tables\Columns\TextColumn::make('card_status')
-                    ->label('Card Status')
+                    ->label('Card Lifecycle Status')
                     ->badge()
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
                         Invitee::CARD_STATUS_PENDING => 'Pending',
@@ -664,7 +664,7 @@ class InviteesRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('last_reply_message')
-                    ->label('Receiver Comment')
+                    ->label('Invitee Reply')
                     ->limit(55)
                     ->wrap()
                     ->placeholder('-')
