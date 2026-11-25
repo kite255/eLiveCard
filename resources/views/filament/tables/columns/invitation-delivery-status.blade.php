@@ -1,16 +1,20 @@
 @php
     $channels = $getState() ?? [];
-    $colors = [
-        'success' => ['#166534', '#dcfce7'],
-        'info' => ['#1d4ed8', '#dbeafe'],
-        'warning' => ['#92400e', '#fef3c7'],
-        'danger' => ['#b91c1c', '#fee2e2'],
-        'gray' => ['#475569', '#f1f5f9'],
-    ];
 @endphp
 <div style="display:flex;flex-direction:column;gap:5px;padding:8px 12px;">
     @foreach ($channels as $channel)
-        @php([$foreground, $background] = $colors[$channel['color']] ?? $colors['gray'])
+        @php
+            $status = strtolower(trim($channel['label']));
+            [$indicator, $foreground] = match (true) {
+                $status === 'delivered' => ['double-check', '#15803D'],
+                $status === 'read' => ['double-check', '#2563EB'],
+                $status === 'sent' => ['check', '#64748B'],
+                $status === 'failed' => ['failed', '#DC2626'],
+                str_starts_with($status, 'not sent') => ['not-sent', '#64748B'],
+                in_array($status, ['pending', 'queued', 'sending', 'submitted', 'buffered'], true) => ['clock', '#B45309'],
+                default => ['unknown', '#64748B'],
+            };
+        @endphp
         <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;">
             <span style="display:inline-flex;align-items:center;gap:5px;width:20px;flex-shrink:0;justify-content:center;" role="img" aria-label="{{ $channel['name'] }}" title="{{ $channel['name'] }}">
                 @if ($channel['name'] === 'SMS')
@@ -25,7 +29,34 @@
                     </svg>
                 @endif
             </span>
-            <span style="display:inline-block;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:600;color:{{ $foreground }};background:{{ $background }};">{{ $channel['label'] }}</span>
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:{{ $foreground }};">
+                <svg data-status-icon="{{ $indicator }}" aria-hidden="true" viewBox="0 0 24 24" style="display:inline-block;width:14px;height:14px;flex-shrink:0;{{ $indicator === 'clock' ? 'color:#FD9618;' : '' }}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    @switch($indicator)
+                        @case('double-check')
+                            <path d="m2 12 5 5L18 6M10 17 21 6"/>
+                            @break
+                        @case('check')
+                            <path d="m5 12 4 4L19 6"/>
+                            @break
+                        @case('clock')
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="M12 7v5l3 2"/>
+                            @break
+                        @case('failed')
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="m9 9 6 6m0-6-6 6"/>
+                            @break
+                        @case('not-sent')
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="M8 12h8"/>
+                            @break
+                        @default
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4m.1 3h.01"/>
+                    @endswitch
+                </svg>
+                {{ $channel['label'] }}
+            </span>
             @if ($channel['time'])
                 <span style="font-size:11px;opacity:.75;">{{ $channel['time'] }}</span>
             @endif
