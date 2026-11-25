@@ -813,7 +813,7 @@ class InviteesRelationManager extends RelationManager
                             ->orWhere('checked_in_count', 0);
                     })),
             ])
-            ->filtersFormColumns(4)
+            ->filtersFormColumns(3)
             ->headerActions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('add_manual_invitee')
@@ -1028,7 +1028,7 @@ class InviteesRelationManager extends RelationManager
                     ->label('Export Invitees')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->icon('heroicon-o-arrow-down-tray')
-                    ->color('info')
+                    ->color('gray')
                     ->action(function () {
                         $event = $this->getOwnerRecord();
 
