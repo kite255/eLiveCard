@@ -771,7 +771,7 @@ class InviteesRelationManager extends RelationManager
                     ->preload(),
 
                 Tables\Filters\TernaryFilter::make('has_phone')
-                    ->label('Valid Phone')
+                    ->label('Phone Present')
                     ->queries(
                         true: fn (Builder $query): Builder => $query
                             ->whereNotNull('phone')
@@ -806,28 +806,123 @@ class InviteesRelationManager extends RelationManager
                         return $query->whereHas('latestGeneratedCard', fn ($query) => $query->where('status', $value));
                     }),
 
+                Tables\Filters\SelectFilter::make('sms_invitation_delivery')
+                    ->label('SMS Delivery')
+                    ->options([
+                        'delivered' => 'Delivered',
+                        'failed' => 'Failed',
+                        'submitted' => 'Submitted',
+                        'pending' => 'Pending / Queued / Processing',
+                        'logged' => 'Logged Only',
+                        'unverified' => 'Unverified / Not Sent',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if (blank($value) || ! Schema::hasTable('sms_logs')) {
+                            return $query;
+                        }
+
+                        $latest = DB::table('sms_logs as invitation_sms')
+                            ->select('invitation_sms.status')
+                            ->whereColumn('invitation_sms.event_id', 'invitees.event_id')
+                            ->whereColumn('invitation_sms.invitee_id', 'invitees.id')
+                            ->whereIn('invitation_sms.sms_type', [\App\Models\SmsLog::TYPE_INVITATION, \App\Models\SmsLog::TYPE_INVITATION_CARD])
+                            ->where(function ($logs): void {
+                                $logs->whereNull('invitees.invitation_phone_changed_at')
+                                    ->orWhereColumn('invitation_sms.id', '>', 'invitees.invitation_sms_reset_log_id');
+                            })
+                            ->orderByDesc('invitation_sms.id')
+                            ->limit(1);
+
+                        $queued = static fn ($q) => $q->where('invitees.last_message_channel', 'sms')
+                            ->whereIn('invitees.last_message_status', ['queued', 'pending', 'sending', 'processing'])
+                            ->where('invitees.sms_status', Invitee::SMS_STATUS_PENDING);
+
+                        $statuses = match ($value) {
+                            'delivered' => ['delivered'],
+                            'failed' => ['failed', 'rejected', 'undelivered', 'expired'],
+                            'submitted' => ['sent', 'submitted', 'accepted'],
+                            'pending' => ['queued', 'pending', 'sending', 'processing'],
+                            'logged' => ['logged'],
+                            default => [],
+                        };
+
+                        return $query->where(function (Builder $matches) use ($value, $latest, $queued, $statuses): void {
+                            if ($value === 'pending') {
+                                $matches->where($queued)->orWhereIn($latest, $statuses);
+                                return;
+                            }
+
+                            // A newer queued invitation takes precedence over its old receipt.
+                            $matches->whereNot(function ($q) use ($queued): void {
+                                $q->whereRaw("COALESCE(invitees.last_message_channel, '') = ?", ['sms'])
+                                    ->whereIn(DB::raw("COALESCE(invitees.last_message_status, '')"), ['queued', 'pending', 'sending', 'processing'])
+                                    ->whereRaw("COALESCE(invitees.sms_status, '') = ?", [Invitee::SMS_STATUS_PENDING]);
+                            });
+
+                            if ($value === 'unverified') {
+                                $matches->whereNull($latest);
+                            } elseif ($statuses !== []) {
+                                $matches->whereIn($latest, $statuses);
+                            }
+                        });
+                    }),
+
                 Tables\Filters\SelectFilter::make('whatsapp_status')
-                    ->label('WhatsApp Status')
+                    ->label('WhatsApp Delivery')
                     ->options([
                         'not_sent' => 'Not Sent',
-                        'sending' => 'Sending',
+                        'sending' => 'Pending',
                         'submitted' => 'Submitted',
                         'sent' => 'Sent',
                         'delivered' => 'Delivered',
                         'read' => 'Read',
                         'failed' => 'Failed',
-                    ]),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if (blank($value)) {
+                            return $query;
+                        }
 
-                Tables\Filters\Filter::make('checked_in')
-                    ->label('Checked In')
-                    ->query(fn ($query) => $query->where('checked_in_count', '>', 0)),
+                        $eventTemplateId = $this->getOwnerRecord()->default_whatsapp_template_id;
+                        $tracked = $eventTemplateId && Schema::hasTable('whatsapp_template_sends')
+                            ? DB::table('whatsapp_template_sends as tracked_wa')
+                                ->select('tracked_wa.status')
+                                ->whereColumn('tracked_wa.invitee_id', 'invitees.id')
+                                ->where('tracked_wa.message_template_id', $eventTemplateId)
+                                ->whereColumn('tracked_wa.phone_generation', 'invitees.invitation_phone_generation')
+                                ->limit(1)
+                            : null;
 
-                Tables\Filters\Filter::make('not_checked_in')
-                    ->label('Not Checked In')
-                    ->query(fn ($query) => $query->where(function ($query) {
-                        $query->whereNull('checked_in_count')
-                            ->orWhere('checked_in_count', 0);
-                    })),
+                        $sql = "CASE WHEN invitees.whatsapp_status IN ('delivered','read') THEN invitees.whatsapp_status ";
+                        $bindings = [];
+                        if ($tracked) {
+                            $sql .= "WHEN (".$tracked->toSql().") IN ('pending','failed','submitted') THEN (".$tracked->toSql().") ";
+                            $bindings = array_merge($tracked->getBindings(), $tracked->getBindings());
+                        }
+                        $sql .= "WHEN invitees.whatsapp_status IN ('queued','sending') THEN 'pending' WHEN invitees.whatsapp_status IN ('sent','submitted','failed') THEN invitees.whatsapp_status ELSE 'not_sent' END";
+
+                        return $query->whereRaw('('.$sql.') = ?', [...$bindings, $value === 'sending' ? 'pending' : $value]);
+                    }),
+
+                Tables\Filters\TernaryFilter::make('check_in_status')
+                    ->label('Check-in')
+                    ->trueLabel('Checked In')
+                    ->falseLabel('Not Checked In')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->where('checked_in_count', '>', 0),
+                        false: fn (Builder $query): Builder => $query->where(fn (Builder $q) => $q->whereNull('checked_in_count')->orWhere('checked_in_count', 0)),
+                    ),
+
+                Tables\Filters\TernaryFilter::make('invitee_reply')
+                    ->label('Reply')
+                    ->trueLabel('Has Reply')
+                    ->falseLabel('No Reply')
+                    ->queries(
+                        true: fn (Builder $query): Builder => $query->whereNotNull('last_reply_message')->where('last_reply_message', '!=', ''),
+                        false: fn (Builder $query): Builder => $query->where(fn (Builder $q) => $q->whereNull('last_reply_message')->orWhere('last_reply_message', '')),
+                    ),
             ])
             ->filtersFormColumns(3)
             ->headerActions([
