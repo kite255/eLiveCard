@@ -1231,51 +1231,16 @@ class InviteesRelationManager extends RelationManager
                     ->icon('heroicon-o-envelope')
                     ->color('primary')
                     ->modalHeading('Send SMS Invitations')
-                    ->modalDescription('Send the active SMS invitation template. WhatsApp fallback is manual; submitted SMS invitations are excluded to prevent duplicate messages.')
-                    ->modalSubmitActionLabel('Queue Eligible SMS Invitations')
-                    ->form([
-                        ...$this->toolbarTargetFields(),
-                        Forms\Components\Select::make('recipient_scope')
-                            ->label('Recipients')
-                            ->options(\App\Services\SmsInvitationRecipientsService::scopes())
-                            ->default(\App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT)
-                            ->live()
-                            ->required(),
-                        Forms\Components\Placeholder::make('recipient_preview')
-                            ->label('Recipient Review')
-                            ->content(function (Forms\Get $get): string {
-                                $scope = (string) ($get('recipient_scope') ?: \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT);
-                                $ids = $this->toolbarTargetIds((string) ($get('target_scope') ?: 'filtered'));
-                                $counts = app(\App\Services\SmsInvitationRecipientsService::class)
-                                    ->counts($this->getOwnerRecord(), $scope, $ids);
-
-                                $shared = app(\App\Services\SharedInviteePhoneService::class)
-                                    ->summary($this->getOwnerRecord());
-
-                                return "Eligible to queue: {$counts['eligible']}. Excluded: {$counts['excluded']}. "
-                                    ."Shared contacts: {$shared['shared_numbers']} phone numbers used by {$shared['shared_invitees']} invitees. "
-                                    .($shared['examples'] !== '' ? "Examples: {$shared['examples']}. " : '')
-                                    .'Choose how to handle shared numbers below. Counts are estimates; eligibility is checked again when submitting. '
-                                    .'Queued means awaiting processing, not delivered.';
-                            }),
-                        Forms\Components\Select::make('shared_phone_policy')
-                            ->label('Shared Phone Numbers')
-                            ->options([
-                                'separate' => 'Send separately (one invitation per eligible invitee)',
-                                'skip' => 'Skip shared numbers for manual review',
-                            ])
-                            ->default('skip')
-                            ->required()
-                            ->helperText('Separate invitations contain different private links and may incur multiple SMS charges. Skipping shared numbers preserves all invitees and their cards.'),
-                    ])
+                    ->modalSubmitActionLabel('Confirm & Send')
+                    ->modalDescription(fn (): string => 'Send invitations to '.$this->smsUnsentCount($this->toolbarTargetIds('filtered')).' eligible unsent invitees? Shared phone numbers are excluded for manual review.')
                     ->requiresConfirmation()
-                    ->action(fn (array $data) => $this->sendSmsInvitationsFromToolbar(
-                        (string) ($data['recipient_scope'] ?? ''),
-                        (string) ($data['shared_phone_policy'] ?? 'skip'),
-                        $this->toolbarTargetIds((string) ($data['target_scope'] ?? '')),
+                    ->action(fn () => $this->sendSmsInvitationsFromToolbar(
+                        \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT,
+                        'skip',
+                        $this->toolbarTargetIds('filtered'),
                     )),
 
-                    Tables\Actions\Action::make('send_whatsapp')
+                Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->label('Send WhatsApp')
                     ->tooltip('Send WhatsApp Invitations')
@@ -3101,6 +3066,37 @@ class InviteesRelationManager extends RelationManager
                         });
                 });
             });
+    }
+
+    /** Preview the same default SMS recipients the simple send action queues. */
+    protected function smsUnsentCount(?array $ids): int
+    {
+        $event = $this->getOwnerRecord();
+        $sender = app(\App\Services\InviteeInvitationService::class);
+        if (! $sender->template($event, MessageTemplate::CHANNEL_SMS)) {
+            return 0;
+        }
+
+        $recipients = app(\App\Services\SmsInvitationRecipientsService::class);
+        $sharedService = app(\App\Services\SharedInviteePhoneService::class);
+        $sharedPhones = array_fill_keys(array_keys($sharedService->groups($event)), true);
+        $count = 0;
+
+        $recipients->candidateQuery($event)
+            ->when($ids !== null, fn (Builder $query) => $query->whereKey($ids))
+            ->chunkById(200, function ($invitees) use ($recipients, $sharedService, $sharedPhones, &$count): void {
+                foreach ($invitees as $invitee) {
+                    $normalized = $sharedService->normalize($invitee->phone);
+                    if ($normalized !== null && isset($sharedPhones[$normalized])) {
+                        continue;
+                    }
+                    if ($recipients->eligible($invitee, \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT)) {
+                        $count++;
+                    }
+                }
+            });
+
+        return $count;
     }
 
     protected function whatsappUnsentCount(?array $ids): int
