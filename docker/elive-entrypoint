@@ -30,4 +30,16 @@ if [ -d public/storage ] && [ ! -L public/storage ]; then
     echo "WARNING: public/storage is a directory; storage symlink was not changed." >&2
 fi
 
+# Cache Laravel/Filament metadata after Coolify injects runtime environment variables.
+# Never generate config cache at image-build time: app and queue services may
+# have different secrets/configuration. Rebuild on every production web start.
+if [ "${APP_ENV:-}" = "production" ]; then
+    echo "Preparing eLive Card production caches using this container's environment..."
+    php artisan config:cache
+    php artisan route:cache
+    php artisan view:cache
+    php artisan filament:cache
+    php artisan icons:cache
+fi
+
 exec apache2-foreground
