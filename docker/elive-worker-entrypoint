@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+# Use the image's application directory in the web and worker services.
+if [ -f /var/www/html/artisan ]; then
+    cd /var/www/html
+elif [ -f /app/artisan ]; then
+    cd /app
+else
+    echo "ERROR: Laravel artisan not found in /var/www/html or /app" >&2
+    exit 1
+fi
+
+# Read the worker's own runtime environment, not config cached in the web image.
+# This is essential when Coolify runs workers as independent services.
+if [ "${APP_ENV:-}" = "production" ]; then
+    php artisan config:cache
+fi
+
+if [ "${REQUIRE_WHATSAPP_READY:-false}" = "true" ]; then
+    # Fail before consuming jobs when this service is configured as a WhatsApp sender.
+    # Never auto-enable WhatsApp or retry previously failed invitations.
+    php artisan whatsapp:check-config
+fi
+
+if [ "$#" -eq 0 ]; then
+    set -- php artisan queue:work database --queue=communications,default --sleep=1 --tries=3 --timeout=120 --max-time=3600
+fi
+
+exec "$@"
