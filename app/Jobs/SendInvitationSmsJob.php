@@ -157,6 +157,25 @@ class SendInvitationSmsJob implements ShouldQueue
             return;
         }
 
+        // Safety net for invitations queued before recipient-country validation.
+        // Do not retry or submit international numbers to the Tanzania-only SMS gateway.
+        if (! $smsService->isTanzanianMobileNumber($invitee->phone)) {
+            AuditLogService::record(
+                action: 'invitation_sms.country_unsupported',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Invitation SMS skipped: international contacts must use WhatsApp.',
+                metadata: ['invitee_id' => $invitee->id],
+            );
+
+            Log::info('International invitation SMS skipped; WhatsApp remains available.', [
+                'event_id' => $event->id,
+                'invitee_id' => $invitee->id,
+            ]);
+
+            return;
+        }
+
         if (! $this->forceResend && $this->alreadySuccessfullySent($invitee)) {
             AuditLogService::record(
                 action: 'invitation_sms.duplicate_prevented',
