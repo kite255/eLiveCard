@@ -910,7 +910,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('Submitted SMS Guest')
             ->assertDontSee('Uncontacted Guest')
             ->assertDontSee('Private Other Event Guest')
-            ->assertDontSee('name="sms_delivery"', false)
+            ->assertSee('name="sms_delivery"', false)
             ->assertSee('name="whatsapp_delivery"', false)
             ->assertSee('aria-label="Phone number"', false);
 
@@ -1205,7 +1205,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Enabled Phone Guest')
             ->assertSee('255700009878')
             ->assertSee('class="subtle invitee-phone"', false)
-            ->assertDontSee('name="sms_delivery"', false)
+            ->assertSee('name="sms_delivery"', false)
             ->assertSee('name="whatsapp_delivery"', false);
     }
 
@@ -1393,5 +1393,45 @@ class PublicRsvpDeliveryReportTest extends TestCase
             'allowed_people' => 1,
             'is_active' => true,
         ]);
+    }
+
+    public function test_overall_not_sent_excludes_sms_delivered_and_current_whatsapp_tracking(): void
+    {
+        $event = $this->reportEvent('Overall delivery');
+        $type = $this->reportCardType($event);
+        $make = fn (string $name) => Invitee::query()->create([
+            'event_id' => $event->id, 'card_type_id' => $type->id,
+            'name' => $name, 'phone' => '255700000999',
+        ]);
+        $sms = $make('SMS only recipient');
+        $wa = $make('Tracked WhatsApp recipient');
+        $none = $make('Neither channel recipient');
+        SmsLog::query()->create([
+            'event_id' => $event->id, 'invitee_id' => $sms->id,
+            'phone' => $sms->phone, 'sms_type' => 'invitation_card',
+            'message' => 'Invitation', 'status' => 'delivered',
+        ]);
+        $template = \App\Models\MessageTemplate::query()->create([
+            'event_id' => $event->id, 'channel' => 'whatsapp',
+            'type' => 'invitation', 'name' => 'Invitation',
+            'content' => 'Invitation', 'whatsapp_template_name' => 'event_invitation',
+            'whatsapp_language_code' => 'sw', 'status' => 'active',
+        ]);
+        $event->forceFill(['default_whatsapp_template_id' => $template->id])->save();
+        \Illuminate\Support\Facades\DB::table('whatsapp_template_sends')->insert([
+            'event_id' => $event->id, 'invitee_id' => $wa->id,
+            'message_template_id' => $template->id, 'phone_generation' => (int) $wa->invitation_phone_generation,
+            'status' => 'submitted', 'attempts' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $url = $event->generateRsvpShareLink();
+        $this->get($url.'?overall_delivery=not_sent')->assertOk()
+            ->assertSee($none->name)->assertDontSee($sms->name)->assertDontSee($wa->name);
+        $this->get($url.'?whatsapp_delivery=not_sent')->assertOk()
+            ->assertSee($sms->name)->assertSee($none->name)->assertDontSee($wa->name);
+        $this->get($url.'?overall_delivery=delivered')->assertOk()
+            ->assertSee($sms->name)->assertDontSee($none->name)->assertDontSee($wa->name);
+        $this->get($url.'?whatsapp_delivery=submitted')->assertOk()
+            ->assertSee($wa->name)
+            ->assertViewHas('deliveryStatuses', fn (array $statuses) => $statuses[$wa->id]['whatsapp'] === 'Submitted');
     }
 }
