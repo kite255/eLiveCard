@@ -1265,16 +1265,8 @@ class InviteesRelationManager extends RelationManager
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
                         ->modalHeading('Send WhatsApp Invitations')
-                        ->modalSubmitActionLabel('Queue WhatsApp Invitations')
-                        ->modalDescription('Send the event default WhatsApp invitation template only to invitees who have not received it.')
-                        ->form([
-                            ...$this->toolbarTargetFields(),
-                            Forms\Components\Placeholder::make('whatsapp_send_review')
-                                ->label('WhatsApp invitation review')
-                                ->content(fn (Forms\Get $get): string => $this->whatsappSendReview(
-                                    (string) ($get('target_scope') ?: 'filtered')
-                                )),
-                        ])
+                        ->modalSubmitActionLabel('Confirm & Send')
+                        ->modalDescription(fn (): string => 'Send invitations to '.$this->whatsappUnsentCount($this->toolbarTargetIds('filtered')).' unsent invitees?')
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
@@ -1296,7 +1288,7 @@ class InviteesRelationManager extends RelationManager
                                 recipientScope: 'not_sent',
                                 actionTitle: 'WhatsApp invitations processed',
                                 messageTemplateId: $selectedTemplate->id,
-                                targetIds: $this->toolbarTargetIds((string) ($data['target_scope'] ?? '')),
+                                targetIds: $this->toolbarTargetIds('filtered'),
                             );
                         }),
 
@@ -2784,7 +2776,8 @@ class InviteesRelationManager extends RelationManager
                         ->color('success')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
                         ->modalHeading('Send WhatsApp invitations to selected invitees')
-                        ->modalDescription('Uses the event default WhatsApp invitation template. Existing claims and submitted invitations are skipped.')
+                        ->modalSubmitActionLabel('Confirm & Send')
+                        ->modalDescription(fn (): string => 'Send invitations to '.$this->whatsappUnsentCount($this->getSelectedTableRecords()->modelKeys()).' unsent invitees?')
                         ->requiresConfirmation()
                         ->deselectRecordsAfterCompletion()
                         ->action(fn (Collection $records) => $this->processSelectedInvitations($records, 'whatsapp')),
@@ -3066,43 +3059,44 @@ class InviteesRelationManager extends RelationManager
         return $query->reorder()->pluck('invitees.id')->unique()->values()->all();
     }
 
-    /**
-     * Preview historical claims before the admin queues WhatsApp invitations.
-     * These numbers are not delivery confirmations or a promise that all
-     * untracked recipients are eligible for sending.
-     */
-    protected function whatsappSendReview(string $target): string
+    protected function whatsappUnsentQuery(int $templateId, ?array $ids): Builder
     {
-        $event = $this->getOwnerRecord();
-        $templateId = (int) ($event->fresh()->default_whatsapp_template_id ?? 0);
-        if ($templateId < 1 || ! Schema::hasTable('whatsapp_template_sends')) {
-            return 'Select an active default WhatsApp invitation template before sending.';
+        return Invitee::query()->where('event_id', $this->getOwnerRecord()->getKey())
+            ->where('card_status', Invitee::CARD_STATUS_ACTIVE)
+            ->whereNotNull('phone')->where('phone', '!=', '')
+            ->whereNotNull('short_code')->where('short_code', '!=', '')
+            ->when($ids !== null, fn (Builder $q) => $q->whereKey($ids))
+            ->whereNotExists(function ($sub) use ($templateId): void {
+                $sub->selectRaw('1')->from('whatsapp_template_sends as wts')
+                    ->whereColumn('wts.invitee_id', 'invitees.id')
+                    ->where('wts.message_template_id', $templateId);
+            })->where(function (Builder $legacy): void {
+                $legacy->whereExists(function ($sub): void {
+                    $sub->selectRaw('1')->from('whatsapp_template_sends as previous')
+                        ->whereColumn('previous.invitee_id', 'invitees.id')
+                        ->whereColumn('previous.phone_generation', 'invitees.invitation_phone_generation');
+                })->orWhere(function (Builder $neverSent): void {
+                    $neverSent->whereNull('whatsapp_sent_at')
+                        ->where(function (Builder $status): void {
+                            $status->whereNull('whatsapp_status')
+                                ->orWhere('whatsapp_status', '')
+                                ->orWhere('whatsapp_status', 'not_sent');
+                        });
+                });
+            });
+    }
+
+    protected function whatsappUnsentCount(?array $ids): int
+    {
+        $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
+        $template = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
+        if (! $template || $template->type !== MessageTemplate::TYPE_INVITATION
+            || ! Schema::hasTable('whatsapp_template_sends')) {
+            return 0;
         }
 
-        $ids = $this->toolbarTargetIds($target);
-        $invitees = Invitee::query()
-            ->where('event_id', $event->getKey())
-            ->when($ids !== null, fn (Builder $q) => $q->whereKey($ids));
-        $total = (clone $invitees)->count();
-
-        $tracking = DB::table('whatsapp_template_sends as wt')
-            ->join('invitees as i', function ($join): void {
-                $join->on('i.id', '=', 'wt.invitee_id')
-                    ->on('i.event_id', '=', 'wt.event_id');
-            })
-            ->where('wt.event_id', $event->getKey())
-            ->where('wt.message_template_id', $templateId)
-            ->whereColumn('wt.phone_generation', 'i.invitation_phone_generation')
-            ->when($ids !== null, fn ($q) => $q->whereIn('i.id', $ids))
-            ->selectRaw('wt.status, COUNT(*) AS total')
-            ->groupBy('wt.status')
-            ->pluck('total', 'status');
-
-        $pending = (int) ($tracking['pending'] ?? 0);
-        $submitted = (int) ($tracking['submitted'] ?? 0);
-        $failed = (int) ($tracking['failed'] ?? 0);
-
-        return "Selected scope: {$total}. Already tracked for this template — Pending: {$pending}, Submitted: {$submitted}, Failed: {$failed}. Only eligible, unclaimed invitations will be queued. Queued does not mean delivered; never resend pending claims without reviewing delivery evidence.";
+        return $this->whatsappUnsentQuery($templateId, $ids)->pluck('phone')
+            ->filter(fn ($phone): bool => filled(WhatsAppPhone::normalize($phone)))->count();
     }
 
     protected function toolbarTargetFields(): array
@@ -3170,6 +3164,9 @@ class InviteesRelationManager extends RelationManager
                 return;
             }
 
+            if ($recipientScope === 'not_sent') {
+                $query = $this->whatsappUnsentQuery($messageTemplateId, $targetIds);
+            } else {
             $query->where(function (Builder $eligible) use ($messageTemplateId, $recipientScope): void {
                 if ($recipientScope === 'retry_failed') {
                     $eligible->whereExists(function ($sub) use ($messageTemplateId): void {
@@ -3204,6 +3201,7 @@ class InviteesRelationManager extends RelationManager
                     });
                 }
             });
+            }
         } else {
             match ($recipientScope) {
                 'not_sent' => $query->where(function ($q): void {
