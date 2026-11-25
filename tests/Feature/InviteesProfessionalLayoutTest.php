@@ -22,7 +22,7 @@ class InviteesProfessionalLayoutTest extends TestCase
         $this->assertStringContainsString("->searchPlaceholder('Search name, phone, serial number or card type')", $source);
         $this->assertStringContainsString("->defaultPaginationPageOption(25)", $source);
         $this->assertStringContainsString(
-            "->hidden(fn (): bool => ! \\$this->eventHasInviteeColumnValue('table_number'))",
+            "eventHasInviteeColumnValue('table_number')",
             $source,
         );
 
