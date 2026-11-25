@@ -171,6 +171,8 @@ class Dashboard extends Page
             'sending',
         ]);
 
+        $invitationDelivery = $this->invitationDeliveryCounts();
+
         // Feature 4: guest attendance and live check-in.
         $totalAllowedGuests = $this->sumAllowedGuests();
         $checkedInGuests = $this->sumCheckedInGuests();
@@ -224,6 +226,7 @@ class Dashboard extends Page
             'guestCheckInPercent' => $guestCheckInPercent,
             'recentCheckIns' => $this->getRecentCheckIns(),
 
+            'invitationDelivery' => $invitationDelivery,
             'whatsAppTotal' => $whatsAppTotal,
             'whatsAppSent' => $whatsAppSent,
             'whatsAppDelivered' => $whatsAppDelivered,
@@ -236,7 +239,7 @@ class Dashboard extends Page
             'pendingPhotos' => $this->countPendingPhotos(),
             'pendingWishes' => $this->countPendingWishes(),
 
-            'smsBalance' => $this->getSmsBalance(),
+            'smsBalance' => $isSuperAdmin ? $this->getSmsBalance() : 'Restricted',
 
             'smsTotal' => $this->countSms(),
             // These groups are mutually exclusive to avoid double counting.
@@ -486,16 +489,22 @@ class Dashboard extends Page
         return null;
     }
 
+    /** Selected event is always intersected with the authenticated user's scope. */
+    protected function dashboardEventIds(): array
+    {
+        $ids = $this->accessibleEventIds();
+
+        return $this->selectedEventId === null
+            ? $ids
+            : array_values(array_intersect($ids, [$this->selectedEventId]));
+    }
+
     protected function inviteeQuery(): Builder
     {
         $query = Invitee::query();
 
         if (Schema::hasColumn('invitees', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
@@ -506,11 +515,7 @@ class Dashboard extends Page
         $query = SmsLog::query();
 
         if (Schema::hasColumn('sms_logs', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
@@ -521,11 +526,7 @@ class Dashboard extends Page
         $query = CheckIn::query();
 
         if (Schema::hasColumn('check_ins', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
@@ -655,7 +656,7 @@ class Dashboard extends Page
                     $query
                         ->whereNull('rsvp_status')
                         ->orWhere('rsvp_status', '')
-                        ->orWhere('rsvp_status', 'pending');
+                        ->orWhereIn('rsvp_status', ['pending', 'maybe']);
                 })
                 ->count();
         } catch (\Throwable $e) {
@@ -921,14 +922,46 @@ class Dashboard extends Page
         }
 
         if (Schema::hasColumn('message_logs', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
+    }
+
+    protected function invitationDeliveryCounts(): array
+    {
+        $result = ['whatsapp' => [], 'sms' => []];
+        $whatsapp = app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression();
+        // Latest invitation SMS only; never count a reminder as an invitation.
+        $smsLog = "(SELECT sl.status FROM sms_logs sl
+            WHERE sl.event_id = invitees.event_id AND sl.invitee_id = invitees.id
+            AND sl.sms_type IN ('invitation','invitation_card')
+            AND (invitees.invitation_phone_changed_at IS NULL OR sl.id > COALESCE(invitees.invitation_sms_reset_log_id, 0))
+            ORDER BY sl.id DESC LIMIT 1)";
+        $smsMessage = "(SELECT ml.status FROM message_logs ml
+            WHERE ml.event_id = invitees.event_id AND ml.invitee_id = invitees.id
+            AND ml.channel = 'sms' AND ml.type = 'invitation'
+            AND (invitees.invitation_phone_changed_at IS NULL OR ml.id > COALESCE(invitees.invitation_message_reset_log_id, 0))
+            ORDER BY ml.id DESC LIMIT 1)";
+        $raw = "LOWER(TRIM(COALESCE({$smsLog}, {$smsMessage}, CASE WHEN invitees.sms_status IN ('sent','delivered','failed') THEN 'unknown' ELSE 'not_sent' END)))";
+        $sms = "CASE {$raw}
+            WHEN 'delivered' THEN 'delivered' WHEN 'read' THEN 'delivered'
+            WHEN 'sent' THEN 'submitted' WHEN 'submitted' THEN 'submitted'
+            WHEN 'accepted' THEN 'submitted' WHEN 'success' THEN 'submitted'
+            WHEN 'pending' THEN 'queued' WHEN 'queued' THEN 'queued'
+            WHEN 'sending' THEN 'queued' WHEN 'processing' THEN 'queued'
+            WHEN 'failed' THEN 'failed' WHEN 'undelivered' THEN 'failed'
+            WHEN 'rejected' THEN 'failed' WHEN 'expired' THEN 'failed'
+            WHEN 'not_sent' THEN 'not_sent' WHEN 'logged' THEN 'logged_only'
+            ELSE 'unknown' END";
+        foreach (['whatsapp' => $whatsapp, 'sms' => $sms] as $channel => $expression) {
+            $resolved = $this->inviteeQuery()->selectRaw("({$expression}) AS delivery_status");
+            $result[$channel] = DB::query()->fromSub($resolved, 'resolved_invitees')
+                ->select('delivery_status')->selectRaw('COUNT(*) AS total')
+                ->groupBy('delivery_status')->pluck('total', 'delivery_status')->map(fn ($count) => (int) $count)->all();
+        }
+
+        return $result;
     }
 
     protected function countWhatsAppMessages(): int
@@ -1138,12 +1171,10 @@ class Dashboard extends Page
 
             $query = DB::table('invitee_uploads');
 
-            if (
-                filled($this->selectedEventId)
-                && Schema::hasColumn('invitee_uploads', 'event_id')
-            ) {
-                $query->where('event_id', $this->selectedEventId);
+            if (! Schema::hasColumn('invitee_uploads', 'event_id')) {
+                return 0;
             }
+            $query->whereIn('event_id', $this->dashboardEventIds());
 
             if (Schema::hasColumn('invitee_uploads', 'status')) {
                 $query->where('status', 'pending');
@@ -1167,12 +1198,10 @@ class Dashboard extends Page
             if (Schema::hasTable('invitee_wishes')) {
                 $query = DB::table('invitee_wishes');
 
-                if (
-                    filled($this->selectedEventId)
-                    && Schema::hasColumn('invitee_wishes', 'event_id')
-                ) {
-                    $query->where('event_id', $this->selectedEventId);
+                if (! Schema::hasColumn('invitee_wishes', 'event_id')) {
+                    return 0;
                 }
+                $query->whereIn('event_id', $this->dashboardEventIds());
 
                 if (Schema::hasColumn('invitee_wishes', 'status')) {
                     $query->where('status', 'pending');
@@ -1188,12 +1217,10 @@ class Dashboard extends Page
                 $query = DB::table('invitee_uploads')
                     ->whereIn('type', ['wish', 'message']);
 
-                if (
-                    filled($this->selectedEventId)
-                    && Schema::hasColumn('invitee_uploads', 'event_id')
-                ) {
-                    $query->where('event_id', $this->selectedEventId);
+                if (! Schema::hasColumn('invitee_uploads', 'event_id')) {
+                    return 0;
                 }
+                $query->whereIn('event_id', $this->dashboardEventIds());
 
                 if (Schema::hasColumn('invitee_uploads', 'status')) {
                     $query->where('status', 'pending');
