@@ -109,7 +109,8 @@ class InviteeToolbarTargetingTest extends TestCase
             ->assertHasNoTableActionErrors();
 
         Queue::assertPushed(SendInvitationSmsJob::class, 1);
-        $this->assertSame('queued', $a->fresh()->invitation_sms_status);
+        $this->assertSame(Invitee::SMS_STATUS_PENDING, $a->fresh()->invitation_sms_status);
+        $this->assertSame('queued', $a->fresh()->last_message_status);
     }
 
     public function test_empty_selected_sms_toolbar_does_not_send_to_all(): void
