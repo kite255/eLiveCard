@@ -87,6 +87,7 @@ class SmsInvitationRecipientsService
         if (! array_key_exists($scope, self::scopes())
             || $invitee->card_status !== Invitee::CARD_STATUS_ACTIVE
             || blank($invitee->phone) || blank($invitee->short_code)
+            || ! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)
             || $this->exclusionReason($invitee) !== null) {
             return false;
         }
