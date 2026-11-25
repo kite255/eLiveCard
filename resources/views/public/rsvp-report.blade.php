@@ -175,51 +175,31 @@
 
         .card-types-summary {
             grid-column: 1 / -1;
-            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px;
             background: var(--white);
             border: 1px solid var(--border);
-            border-radius: 14px;
+            border-radius: 12px;
         }
         .card-types-summary h2 {
-            margin: 0 0 10px;
-            color: var(--elive-blue);
-            font-size: 14px;
-            font-weight: 800;
-        }
-        .card-types-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        .card-type-item {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 7px 10px;
-            border: 1px solid var(--border);
-            border-radius: 9px;
-            background: #F8FAFC;
-            font-size: 12px;
-            min-width: 0;
-        }
-        .card-type-name {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
             font-weight: 700;
-            overflow-wrap: anywhere;
         }
-        .card-type-count {
+        .card-types-summary strong {
             color: var(--elive-blue);
-            font-size: 15px;
+            font-size: 22px;
+            line-height: 1;
             font-variant-numeric: tabular-nums;
         }
-        .card-type-unit,
-        .card-type-empty { color: var(--muted); font-size: 11px; }
         @media (max-width: 760px) {
-            .card-types-summary { padding: 11px 12px; border-radius: 12px; }
-            .card-types-summary h2 { font-size: 12px; margin-bottom: 8px; }
-            .card-types-list { gap: 6px; }
-            .card-type-item { padding: 6px 8px; gap: 5px; font-size: 11px; }
-            .card-type-count { font-size: 14px; }
-            .card-type-unit { font-size: 10px; }
+            .card-types-summary { padding: 10px 12px; }
+            .card-types-summary h2 { font-size: 12px; }
+            .card-types-summary strong { font-size: 20px; }
         }
 
         .panel {
@@ -1218,19 +1198,9 @@
                 <span>Response Rate</span>
             </div>
 
-            <div class="card-types-summary" aria-label="Card types assigned to invitees">
-                <h2>Card Types Summary</h2>
-                <div class="card-types-list">
-                    @forelse ($cardTypeSummary as $cardType)
-                        <div class="card-type-item">
-                            <span class="card-type-name">{{ $cardType['name'] }}</span>
-                            <strong class="card-type-count">{{ number_format($cardType['count']) }}</strong>
-                            <span class="card-type-unit">{{ $cardType['count'] === 1 ? 'invitee' : 'invitees' }}</span>
-                        </div>
-                    @empty
-                        <span class="card-type-empty">No card types in use yet.</span>
-                    @endforelse
-                </div>
+            <div class="card-types-summary" aria-label="Number of card types used">
+                <h2>Card Types Used</h2>
+                <strong>{{ $cardTypesUsed }}</strong>
             </div>
         </section>
 
