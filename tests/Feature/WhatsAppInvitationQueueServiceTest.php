@@ -68,6 +68,8 @@ class WhatsAppInvitationQueueServiceTest extends TestCase
     public function test_new_claim_queues_one_job_and_duplicate_click_skips_without_requeueing(): void
     {
         Queue::fake();
+        // Exercise the transport-independent queue path when using a fake queue.
+        config()->set('queue.default', 'sync');
         [$invitee, $template] = $this->fixture();
         $service = app(WhatsAppInvitationQueueService::class);
 
@@ -89,6 +91,8 @@ class WhatsAppInvitationQueueServiceTest extends TestCase
     public function test_failed_only_retry_reuses_existing_claim_and_queues_once(): void
     {
         Queue::fake();
+        // Exercise the transport-independent queue path when using a fake queue.
+        config()->set('queue.default', 'sync');
         [$invitee, $template] = $this->fixture();
         $service = app(WhatsAppInvitationQueueService::class);
 
@@ -120,6 +124,8 @@ class WhatsAppInvitationQueueServiceTest extends TestCase
     public function test_claim_is_not_reused_without_explicit_failed_retry(): void
     {
         Queue::fake();
+        // Exercise the transport-independent queue path when using a fake queue.
+        config()->set('queue.default', 'sync');
         [$invitee, $template] = $this->fixture();
         $service = app(WhatsAppInvitationQueueService::class);
 
