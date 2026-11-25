@@ -66,7 +66,8 @@ RUN mkdir -p \
     && chmod -R 775 storage bootstrap/cache
 
 COPY docker/elive-entrypoint /usr/local/bin/elive-entrypoint
-RUN chmod +x /usr/local/bin/elive-entrypoint
+COPY docker/elive-worker-entrypoint /usr/local/bin/elive-worker-entrypoint
+RUN chmod +x /usr/local/bin/elive-entrypoint /usr/local/bin/elive-worker-entrypoint
 
 EXPOSE 80
 

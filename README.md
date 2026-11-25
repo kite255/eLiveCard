@@ -29,6 +29,45 @@ php artisan queue:work database --queue=communications,default --sleep=3 --tries
 Both services must deploy the same application commit, share the same database, and use shared public storage (or the same object-storage disk). The communications worker also listens to `default` so existing legacy jobs continue to run.
 
 
+## Deploying production web and worker services
+
+The Docker web entrypoint now rebuilds Laravel configuration, routes, views,
+Filament components and icon manifests **at container startup** in production.
+This avoids losing optimization after Coolify replaces a container and avoids
+baking stale environment secrets into the Docker image. Do not override the
+image command in the web service unless the replacement also runs the entrypoint.
+
+The optional packaged worker launcher uses **its own** Coolify environment
+and refreshes its config cache before starting a queue worker:
+
+```bash
+/usr/local/bin/elive-worker-entrypoint
+```
+
+Coolify worker command above is available in Docker images built from this
+repository. It defaults to the communications/default queues. If your worker
+runs a **different image** or checkout at `/app`, install the same repository
+version and launcher in that service first; updating the web image alone
+does not update a separately deployed worker.
+
+For a dedicated WhatsApp-sending worker, set `REQUIRE_WHATSAPP_READY=true`
+to make the launcher refuse to process jobs if WhatsApp configuration is
+disabled or incomplete. For shared SMS/WhatsApp workers, enable this guard
+only when the service is intentionally required to send WhatsApp; it will
+otherwise block SMS jobs as well when WhatsApp is disabled. Use an explicit
+opt-in rather than silently turning WhatsApp on.
+
+**After deployment, verify BOTH containers**:
+
+```bash
+php artisan whatsapp:check-config
+php artisan about
+```
+
+Confirm the new command exists and the worker reports WhatsApp enabled. If
+it does not, inspect the service's deployed image/commit and Coolify variables.
+Existing failed WhatsApp claims stay failed and must not be bulk retried.
+
 ## WhatsApp readiness in Coolify
 
 WhatsApp sending is deliberately **off** by default. Never change the application
