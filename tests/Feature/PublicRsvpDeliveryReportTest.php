@@ -910,7 +910,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertDontSee('Submitted SMS Guest')
             ->assertDontSee('Uncontacted Guest')
             ->assertDontSee('Private Other Event Guest')
-            ->assertDontSee('name="sms_delivery"', false)
+            ->assertSee('name="sms_delivery"', false)
             ->assertSee('name="whatsapp_delivery"', false)
             ->assertSee('aria-label="Phone number"', false);
 
@@ -1205,7 +1205,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertSee('Enabled Phone Guest')
             ->assertSee('255700009878')
             ->assertSee('class="subtle invitee-phone"', false)
-            ->assertDontSee('name="sms_delivery"', false)
+            ->assertSee('name="sms_delivery"', false)
             ->assertSee('name="whatsapp_delivery"', false);
     }
 
