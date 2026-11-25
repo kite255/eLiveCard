@@ -97,7 +97,7 @@ class WhatsAppInvitationQueueServiceTest extends TestCase
 
         // Simulate the first queue worker finishing (and releasing Laravel's
         // ShouldBeUnique lock) before an operator retries its failed attempt.
-        $firstJob = Queue::pushed(SendInvitationWhatsAppJob::class)->first()['job'];
+        $firstJob = Queue::pushed(SendInvitationWhatsAppJob::class)->first();
         app(UniqueLock::class)->release($firstJob);
 
         $this->claimQuery($invitee, $template)->update(['status' => 'failed']);
