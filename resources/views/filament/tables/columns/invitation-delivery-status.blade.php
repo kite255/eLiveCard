@@ -42,7 +42,7 @@
                 <svg data-status-icon="{{ $indicator }}" aria-hidden="true" viewBox="0 0 24 24" style="display:inline-block;width:14px;height:14px;flex-shrink:0;{{ $indicator === 'clock' ? 'color:#FD9618;' : '' }}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     @switch($indicator)
                         @case('double-check')
-                            <path d="m2 12 5 5L18 6M10 17 21 6"/>
+                            <path d="m2 12 5 5L17 7M12 17 22 7" stroke-width="1.8"/>
                             @break
                         @case('check')
                             <path d="m5 12 4 4L19 6"/>
