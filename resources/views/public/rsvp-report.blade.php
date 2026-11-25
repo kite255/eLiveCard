@@ -173,67 +173,96 @@
             font-weight: 800;
         }
 
+        /* Consistent, understated card-type summary alongside the RSVP KPIs. */
         .card-types-summary {
             grid-column: 1 / -1;
-            padding: 12px 16px;
+            min-width: 0;
+            padding: 16px 18px;
             background: var(--white);
             border: 1px solid var(--border);
-            border-radius: 12px;
+            border-radius: 16px;
         }
         .card-types-summary-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 10px;
+            gap: 12px;
+            margin-bottom: 12px;
         }
         .card-types-summary h2 {
             margin: 0;
-            color: var(--muted);
-            font-size: 13px;
-            font-weight: 700;
+            color: var(--elive-blue);
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: -0.01em;
         }
         .card-types-summary-total {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            min-width: 32px;
+            min-height: 27px;
+            padding: 3px 9px;
+            border: 1px solid #DCE8F8;
+            border-radius: 8px;
+            background: #EFF6FF;
             color: var(--elive-blue);
-            font-size: 17px;
-            line-height: 1;
+            font-size: 13px;
+            font-weight: 800;
             font-variant-numeric: tabular-nums;
         }
         .card-types-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+            gap: 10px;
         }
         .card-type-grid-item {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            gap: 8px;
-            padding: 9px 11px;
-            border: 1px solid var(--border);
-            border-radius: 9px;
-            background: #F8FAFC;
+            justify-content: space-between;
+            gap: 10px;
             min-width: 0;
+            padding: 12px 14px;
+            border: 1px solid #E2E8F0;
+            border-radius: 11px;
+            background: #F8FAFC;
         }
         .card-type-grid-name {
+            min-width: 0;
             color: var(--text);
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 13px;
+            font-weight: 650;
+            line-height: 1.35;
             overflow-wrap: anywhere;
         }
         .card-type-grid-count {
+            flex: 0 0 auto;
             color: var(--elive-blue);
-            font-size: 16px;
+            font-size: 22px;
             font-weight: 800;
+            line-height: 1;
+            letter-spacing: -0.02em;
             font-variant-numeric: tabular-nums;
         }
+        .card-type-empty {
+            color: var(--muted);
+            font-size: 12px;
+        }
         @media (max-width: 760px) {
-            .card-types-summary { padding: 10px 12px; }
-            .card-types-summary-header { margin-bottom: 8px; }
-            .card-types-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-            .card-type-grid-item { padding: 8px; }
-            .card-type-grid-name { font-size: 11px; }
-            .card-type-grid-count { font-size: 14px; }
+            .card-types-summary { padding: 12px; border-radius: 12px; }
+            .card-types-summary-header { margin-bottom: 10px; }
+            .card-types-summary h2 { font-size: 13px; }
+            .card-types-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+            }
+            .card-type-grid-item { padding: 10px; gap: 6px; }
+            .card-type-grid-name { font-size: 12px; }
+            .card-type-grid-count { font-size: 18px; }
+        }
+        @media (max-width: 330px) {
+            .card-types-grid { grid-template-columns: 1fr; }
         }
 
         .panel {
@@ -1235,7 +1264,7 @@
             <div class="card-types-summary" aria-label="Card types used">
                 <div class="card-types-summary-header">
                     <h2>Card Types Used</h2>
-                    <strong class="card-types-summary-total">{{ $cardTypesUsed }}</strong>
+                    <span class="card-types-summary-total" aria-label="{{ $cardTypesUsed }} card types">{{ $cardTypesUsed }}</span>
                 </div>
                 <div class="card-types-grid">
                     @forelse ($cardTypeCounts as $cardType)

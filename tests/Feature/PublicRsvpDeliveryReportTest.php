@@ -1337,6 +1337,9 @@ class PublicRsvpDeliveryReportTest extends TestCase
                 ])
                 ->assertSee('Card Types Used')
                 ->assertSee('class="card-types-grid"', false)
+                ->assertSee('class="card-types-summary-total" aria-label="2 card types">2</span>', false)
+                ->assertSee('grid-template-columns: repeat(2, minmax(0, 1fr));', false)
+                ->assertSee('@media (max-width: 330px)', false)
                 ->assertSee('class="card-type-grid-name">Double</span>', false)
                 ->assertSee('class="card-type-grid-name">Single</span>', false)
                 ->assertDontSee('class="card-type-grid-name">Customized</span>', false)
@@ -1357,7 +1360,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertViewHas('cardTypesUsed', 0)
             ->assertViewHas('cardTypeCounts', [])
             ->assertSee('Card Types Used')
-            ->assertSee('class="card-types-summary-total">0</strong>', false)
+            ->assertSee('class="card-types-summary-total" aria-label="0 card types">0</span>', false)
             ->assertSee('No card types in use yet.');
     }
 
