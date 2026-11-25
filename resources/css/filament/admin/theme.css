@@ -1044,3 +1044,55 @@
         table-layout: auto;
     }
 }
+
+
+/* Invitee pagination: compact controls, visible focus and branded active page. */
+.fi-ta:has(.elive-delivery-status) .fi-pagination {
+    gap: 0.5rem 1rem;
+    flex-wrap: wrap;
+    padding-block: 0.625rem;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination-overview {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination .fi-input-wrp {
+    border: 1px solid var(--elive-border);
+    border-radius: 0.5rem;
+    box-shadow: none;
+    outline: none;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination .fi-input-wrp:focus-within {
+    outline: 2px solid var(--elive-blue);
+    outline-offset: 2px;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination-items {
+    gap: 0.125rem;
+    border: 0;
+    box-shadow: none;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination-item {
+    border: 0;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination-item-btn {
+    min-width: 1.875rem;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination-item.fi-active .fi-pagination-item-btn,
+.fi-ta:has(.elive-delivery-status) .fi-pagination-item-btn[aria-current="page"] {
+    background: var(--elive-blue);
+    color: #fff;
+}
+.fi-ta:has(.elive-delivery-status) .fi-pagination-item-btn:focus-visible {
+    outline: 2px solid var(--elive-blue);
+    outline-offset: 2px;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-filters {
+    gap: 0.75rem;
+}
+@media (max-width: 640px) {
+    .fi-ta:has(.elive-delivery-status) .fi-pagination {
+        justify-content: center;
+    }
+}
