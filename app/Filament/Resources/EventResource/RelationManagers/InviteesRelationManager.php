@@ -924,7 +924,14 @@ class InviteesRelationManager extends RelationManager
                         false: fn (Builder $query): Builder => $query->where(fn (Builder $q) => $q->whereNull('last_reply_message')->orWhere('last_reply_message', '')),
                     ),
             ])
+            ->filtersLayout(Tables\Enums\FiltersLayout::AboveContentCollapsible)
             ->filtersFormColumns(3)
+            ->deferFilters()
+            ->filtersTriggerAction(fn (Tables\Actions\Action $action): Tables\Actions\Action => $action
+                ->button()
+                ->label('Filters')
+                ->icon('heroicon-o-funnel')
+                ->color('primary'))
             ->headerActions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\Action::make('add_manual_invitee')
