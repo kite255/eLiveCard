@@ -66,10 +66,24 @@ class AuditFailedWhatsAppInvitationsTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        // Some successful channel logs belong to an event but not an invitee.
+        // They must not crash the failed-invitation audit when indexed.
+        DB::table('message_logs')->insert([
+            'event_id' => $event->id,
+            'invitee_id' => null,
+            'channel' => 'whatsapp',
+            'type' => MessageTemplate::TYPE_INVITATION,
+            'phone' => '255700111222',
+            'message' => 'Previously submitted invitation',
+            'status' => 'sent',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $args = ['--event' => $event->id, '--template' => $template->id];
         $this->artisan('whatsapp:audit-failed-invitations', $args)->assertExitCode(0);
         $this->assertSame(1, DB::table('whatsapp_template_sends')->where('status', 'failed')->count());
         $this->assertSame(0, DB::table('jobs')->count());
-        $this->assertSame(0, DB::table('message_logs')->count());
+        $this->assertSame(1, DB::table('message_logs')->count());
     }
 }
