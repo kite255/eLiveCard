@@ -184,6 +184,16 @@
             border: 1px solid var(--border);
             border-radius: 12px;
         }
+        .card-types-summary-details {
+            min-width: 0;
+        }
+        .card-types-used-names {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
         .card-types-summary h2 {
             margin: 0;
             color: var(--muted);
@@ -1198,8 +1208,13 @@
                 <span>Response Rate</span>
             </div>
 
-            <div class="card-types-summary" aria-label="Number of card types used">
-                <h2>Card Types Used</h2>
+            <div class="card-types-summary" aria-label="Card types used">
+                <div class="card-types-summary-details">
+                    <h2>Card Types Used</h2>
+                    @if (count($usedCardTypeNames) > 0)
+                        <p class="card-types-used-names">{{ implode(', ', $usedCardTypeNames) }}</p>
+                    @endif
+                </div>
                 <strong>{{ $cardTypesUsed }}</strong>
             </div>
         </section>
