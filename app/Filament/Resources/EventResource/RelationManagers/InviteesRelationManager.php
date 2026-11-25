@@ -323,7 +323,7 @@ class InviteesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('name')
-            ->searchPlaceholder('Name, phone, serial or card type')
+            ->searchPlaceholder('Search name, phone, serial number or card type')
             ->searchDebounce('500ms')
             ->striped()
             ->paginated([10, 25, 50])
