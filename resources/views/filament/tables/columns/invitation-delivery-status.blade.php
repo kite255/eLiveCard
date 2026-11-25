@@ -67,7 +67,7 @@
                 {{ $channel['label'] }}
             </span>
             @if ($channel['time'])
-                <span class="elive-delivery-time" style="font-size:10px;line-height:1.3;opacity:.75;white-space:nowrap;" title="{{ $channel['time'] }}">{{ preg_replace('/\\b\\d{4},/', ',', str_replace(' ,', ',', $channel['time'])) }}</span>
+                <span class="elive-delivery-time" style="font-size:10px;line-height:1.3;opacity:.75;white-space:nowrap;" title="{{ $channel['time'] }}">{{ preg_replace('/\s+\d{4}(?=,)/', '', $channel['time']) }}</span>
             @endif
         </div>
     @endforeach
