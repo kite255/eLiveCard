@@ -29,7 +29,7 @@ class SharedPhoneReportViewStructureTest extends TestCase
         $this->assertNotFalse($reports);
         $this->assertLessThan($retry, $more);
         $this->assertLessThan($reports, $retry);
-        $this->assertStringContainsString("->label('More Actions')", $file);
+        $this->assertStringContainsString("->label('More')", $file);
 
     }
 }

@@ -375,7 +375,7 @@ class InviteesRelationManager extends RelationManager
                     ->sortable(),
 
                 Tables\Columns\TextColumn::make('guest_summary')
-                    ->label('Confirmed Guests')
+                    ->label('Guests')
                     ->state(function (Invitee $record): string {
                         $allowed = max(1, (int) $record->allowed_guests);
                         $confirmed = min(
@@ -488,7 +488,7 @@ class InviteesRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('latestGeneratedCard.status')
-                    ->label('Generated Card Status')
+                    ->label('Generated Card')
                     ->badge()
                     ->default('Not Generated')
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
@@ -518,7 +518,7 @@ class InviteesRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('checked_in_count')
-                    ->label('Checked In')
+                    ->label('Check-in')
                     ->alignCenter()
                     ->badge()
                     ->description(fn (Invitee $record): ?string =>
@@ -680,7 +680,7 @@ class InviteesRelationManager extends RelationManager
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('last_reply_message')
-                    ->label('Invitee Reply')
+                    ->label('Reply')
                     ->limit(55)
                     ->wrap()
                     ->placeholder('-')
@@ -1041,7 +1041,8 @@ class InviteesRelationManager extends RelationManager
                     ->color('primary'),
 
                 Tables\Actions\Action::make('export_invitees')
-                    ->label('Export Invitees')
+                    ->label('Export')
+                    ->tooltip('Export Invitees')
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('gray')
@@ -1068,7 +1069,8 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Actions\Action::make('send_message')
                     ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                    ->label('Send SMS Invitations')
+                    ->label('Send SMS')
+                    ->tooltip('Send SMS Invitations')
                     ->icon('heroicon-o-envelope')
                     ->color('primary')
                     ->modalHeading('Send SMS Invitations')
@@ -1115,7 +1117,8 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
-                        ->label('Send WhatsApp Invitations')
+                        ->label('Send WhatsApp')
+                    ->tooltip('Send WhatsApp Invitations')
                         ->icon('heroicon-o-chat-bubble-left-right')
                         ->color('success')
                         ->modalHeading('Send WhatsApp Invitations')
@@ -1147,7 +1150,8 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('send_reminder')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && ! (bool) $this->getOwnerRecord()->auto_sms_reminders_enabled)
-                        ->label('Send Reminder')
+                        ->label('Reminder')
+                    ->tooltip('Send Reminder')
                         ->icon('heroicon-o-bell')
                         ->color('primary')
                         ->modalHeading('Send Reminder')
@@ -1186,7 +1190,8 @@ class InviteesRelationManager extends RelationManager
 
                     Tables\Actions\Action::make('thank_you_message')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner() && $this->getOwnerRecord()->thank_you_mode !== 'automatic')
-                        ->label('Send Thank You')
+                        ->label('Thank You')
+                    ->tooltip('Send Thank You')
                         ->icon('heroicon-o-heart')
                         ->color('primary')
                         ->modalHeading('Send Thank You Message')
@@ -1454,7 +1459,8 @@ class InviteesRelationManager extends RelationManager
                         }),
 
                 ])
-                    ->label('More Actions')
+                    ->label('More')
+                    ->tooltip('More Actions')
                     ->visible(fn (): bool => $this->canViewReportsForOwner() || $this->canManageInviteesForOwner())
                     ->icon('heroicon-o-ellipsis-horizontal')
                     ->button()

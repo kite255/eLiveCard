@@ -999,3 +999,48 @@
     background-color: #111827;
     border-color: #273244;
 }
+
+
+/* Invitee management: keep toolbar and default columns within the workspace. */
+.fi-ta:has(.elive-delivery-status) .fi-ta-header-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    gap: 0.375rem;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-header-actions .fi-btn {
+    font-size: 0.75rem;
+    padding-inline: 0.5rem;
+    min-width: 0;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-header-actions > * {
+    max-width: 100%;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-content table {
+    width: 100%;
+    min-width: 0;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-header-cell,
+.fi-ta:has(.elive-delivery-status) .fi-ta-cell {
+    padding-inline: 0.375rem;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-header-cell {
+    white-space: normal;
+    font-size: 0.65rem;
+    letter-spacing: 0;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-text {
+    padding-inline: 0.375rem;
+    padding-block: 0.375rem;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-text-item,
+.fi-ta:has(.elive-delivery-status) .fi-ta-text-item-label {
+    font-size: 0.75rem;
+}
+.fi-ta:has(.elive-delivery-status) .fi-ta-actions {
+    gap: 0.25rem;
+}
+@media (min-width: 641px) {
+    .fi-ta:has(.elive-delivery-status) .fi-ta-content table {
+        table-layout: auto;
+    }
+}

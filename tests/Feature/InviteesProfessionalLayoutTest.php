@@ -17,7 +17,7 @@ class InviteesProfessionalLayoutTest extends TestCase
     {
         $source = $this->source();
 
-        $this->assertStringContainsString("->label('Generated Card Status')", $source);
+        $this->assertStringContainsString("->label('Generated Card')", $source);
         $this->assertStringContainsString("->label('Serial Number')", $source);
         $this->assertStringContainsString("->searchPlaceholder('Search name, phone, serial number or card type')", $source);
         $this->assertStringContainsString("->defaultPaginationPageOption(25)", $source);
@@ -79,6 +79,6 @@ class InviteesProfessionalLayoutTest extends TestCase
         $this->assertNotFalse($generatePosition);
         $this->assertNotFalse($moreActionsPosition);
         $this->assertGreaterThan($moreActionsPosition, $generatePosition);
-        $this->assertStringContainsString("->label('More Actions')", $toolbar);
+        $this->assertStringContainsString("->label('More')", $toolbar);
     }
 }
