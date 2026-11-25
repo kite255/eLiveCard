@@ -3689,11 +3689,40 @@ class InviteesRelationManager extends RelationManager
             ->modalDescription(fn (Invitee $record): string => 'Send another SMS invitation to '.$record->name.'? They may receive a duplicate message and an additional SMS charge may apply.')
             ->modalSubmitActionLabel('Yes, Resend SMS')
             ->modalCancelActionLabel('Keep Existing Invitation')
-            ->action(fn (Invitee $record) => $this->processInviteeInvitation(
-                $record,
-                $channel,
-                'Manual SMS invitation resend from invitee actions.',
-            ));
+            ->form([
+                Forms\Components\Textarea::make('resend_reason')
+                    ->label('Reason for resending')
+                    ->placeholder('E.g. The recipient requested another copy.')
+                    ->required()
+                    ->minLength(10)
+                    ->maxLength(500)
+                    ->rows(2),
+                Forms\Components\Checkbox::make('confirm_duplicate')
+                    ->label('I understand this may send another SMS and incur a charge.')
+                    ->accepted()
+                    ->required(),
+            ])
+            ->action(function (Invitee $record, array $data) use ($channel): void {
+                abort_unless($this->canSendMessagesForOwner()
+                    && (int) $record->event_id === (int) $this->getOwnerRecord()->id, 403);
+
+                if (! (bool) ($data['confirm_duplicate'] ?? false)) {
+                    $this->brandedNotification()
+                        ->title('SMS resend not confirmed')
+                        ->warning()->send();
+                    return;
+                }
+
+                $reason = trim((string) ($data['resend_reason'] ?? ''));
+                if (mb_strlen($reason) < 10 || mb_strlen($reason) > 500) {
+                    $this->brandedNotification()
+                        ->title('SMS resend requires a reason')
+                        ->warning()->send();
+                    return;
+                }
+
+                $this->processInviteeInvitation($record, $channel, $reason);
+            });
     }
 
     protected function processInviteeInvitation(Invitee $record, string $channel, ?string $resendReason = null): void
