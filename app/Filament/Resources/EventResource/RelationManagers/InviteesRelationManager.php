@@ -322,6 +322,9 @@ class InviteesRelationManager extends RelationManager
     /** Render-only data, never persisted in Livewire state or used to authorize sends. */
     protected ?array $inviteeDisplayData = null;
 
+    /** Formatted SMS receipts for the current table render only. */
+    protected array $inviteeSmsDisplayStates = [];
+
     protected function inviteeDisplayData(): array
     {
         if ($this->inviteeDisplayData !== null) {
@@ -378,7 +381,10 @@ class InviteesRelationManager extends RelationManager
         if (! isset($data['ids'][$record->id])) {
             return $service->forInvitee($record);
         }
-        return $service->fromLog($record, $data['sms']->get($record->id));
+        return $this->inviteeSmsDisplayStates[$record->id] ??= $service->fromLog(
+            $record,
+            $data['sms']->get($record->id),
+        );
     }
 
     protected function displayWhatsAppStatus(Invitee $record): ?string
@@ -3013,7 +3019,9 @@ class InviteesRelationManager extends RelationManager
 
         $sizes = [10, 25, 50, 100, 250];
 
-        if (Invitee::query()->where('event_id', $this->getOwnerRecord()->getKey())->count() <= 500) {
+        // Only the existence of a 501st invitee matters; avoid counting the entire event.
+        if (! Invitee::query()->where('event_id', $this->getOwnerRecord()->getKey())
+            ->orderBy('id')->offset(500)->limit(1)->exists()) {
             $sizes[] = 'all';
         }
 
@@ -3037,6 +3045,7 @@ class InviteesRelationManager extends RelationManager
     public function flushCachedTableRecords(): void
     {
         $this->inviteeDisplayData = null;
+        $this->inviteeSmsDisplayStates = [];
         $this->inviteePageSizes = null;
         parent::flushCachedTableRecords();
     }
