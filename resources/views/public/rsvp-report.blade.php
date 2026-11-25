@@ -175,24 +175,17 @@
 
         .card-types-summary {
             grid-column: 1 / -1;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
             padding: 12px 16px;
             background: var(--white);
             border: 1px solid var(--border);
             border-radius: 12px;
         }
-        .card-types-summary-details {
-            min-width: 0;
-        }
-        .card-types-used-names {
-            margin: 4px 0 0;
-            color: var(--muted);
-            font-size: 12px;
-            line-height: 1.4;
-            overflow-wrap: anywhere;
+        .card-types-summary-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 10px;
         }
         .card-types-summary h2 {
             margin: 0;
@@ -200,16 +193,47 @@
             font-size: 13px;
             font-weight: 700;
         }
-        .card-types-summary strong {
+        .card-types-summary-total {
             color: var(--elive-blue);
-            font-size: 22px;
+            font-size: 17px;
             line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+        .card-types-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+            gap: 8px;
+        }
+        .card-type-grid-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 11px;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: #F8FAFC;
+            min-width: 0;
+        }
+        .card-type-grid-name {
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+        }
+        .card-type-grid-count {
+            color: var(--elive-blue);
+            font-size: 16px;
+            font-weight: 800;
             font-variant-numeric: tabular-nums;
         }
         @media (max-width: 760px) {
             .card-types-summary { padding: 10px 12px; }
-            .card-types-summary h2 { font-size: 12px; }
-            .card-types-summary strong { font-size: 20px; }
+            .card-types-summary-header { margin-bottom: 8px; }
+            .card-types-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+            .card-type-grid-item { padding: 8px; }
+            .card-type-grid-name { font-size: 11px; }
+            .card-type-grid-count { font-size: 14px; }
         }
 
         .panel {
@@ -1209,13 +1233,20 @@
             </div>
 
             <div class="card-types-summary" aria-label="Card types used">
-                <div class="card-types-summary-details">
+                <div class="card-types-summary-header">
                     <h2>Card Types Used</h2>
-                    @if (count($usedCardTypeNames) > 0)
-                        <p class="card-types-used-names">{{ implode(', ', $usedCardTypeNames) }}</p>
-                    @endif
+                    <strong class="card-types-summary-total">{{ $cardTypesUsed }}</strong>
                 </div>
-                <strong>{{ $cardTypesUsed }}</strong>
+                <div class="card-types-grid">
+                    @forelse ($cardTypeCounts as $cardType)
+                        <div class="card-type-grid-item">
+                            <span class="card-type-grid-name">{{ $cardType['name'] }}</span>
+                            <strong class="card-type-grid-count">{{ number_format($cardType['count']) }}</strong>
+                        </div>
+                    @empty
+                        <span class="card-type-empty">No card types in use yet.</span>
+                    @endforelse
+                </div>
             </div>
         </section>
 
