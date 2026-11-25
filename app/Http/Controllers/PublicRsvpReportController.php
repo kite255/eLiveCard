@@ -280,8 +280,8 @@ class PublicRsvpReportController extends Controller
             ? (int) round(($responded / $total) * 100)
             : 0;
 
-        // Only types assigned to this event's invitees are identified.
-        // Retrieve each actual card type once, including inactive types if used.
+        // Count invitations by card type across the entire event. Inactive
+        // types are included if used, but unused types are omitted.
         $usedCardTypes = DB::table('invitees')
             ->join('card_types', function ($join) use ($event): void {
                 $join->on('card_types.id', '=', 'invitees.card_type_id')
@@ -289,12 +289,16 @@ class PublicRsvpReportController extends Controller
             })
             ->where('invitees.event_id', $event->id)
             ->select('card_types.id', 'card_types.name')
-            ->distinct()
+            ->selectRaw('COUNT(invitees.id) AS card_count')
+            ->groupBy('card_types.id', 'card_types.name')
             ->orderBy('card_types.name')
             ->orderBy('card_types.id')
             ->get();
         $cardTypesUsed = $usedCardTypes->count();
-        $usedCardTypeNames = $usedCardTypes->pluck('name')->all();
+        $cardTypeCounts = $usedCardTypes->map(fn ($row): array => [
+            'name' => (string) $row->name,
+            'count' => (int) $row->card_count,
+        ])->all();
 
         /*
         |--------------------------------------------------------------------------
@@ -345,7 +349,7 @@ class PublicRsvpReportController extends Controller
             'responseRate' => $responseRate,
             'confirmedGuests' => $confirmedGuests,
             'cardTypesUsed' => $cardTypesUsed,
-            'usedCardTypeNames' => $usedCardTypeNames,
+            'cardTypeCounts' => $cardTypeCounts,
             'search' => $search,
             'status' => $status,
             'smsDelivery' => $smsDelivery,
