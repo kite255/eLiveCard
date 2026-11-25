@@ -326,7 +326,11 @@ class InviteesRelationManager extends RelationManager
             ->searchPlaceholder('Search name, phone, serial number or card type')
             ->searchDebounce('500ms')
             ->striped()
-            ->paginated([10, 25, 50, 100, 200, 500])
+            ->paginated(fn (): array => Invitee::query()
+                ->where('event_id', $this->getOwnerRecord()->getKey())
+                ->count() <= 500
+                    ? [10, 25, 50, 100, 250, 'all']
+                    : [10, 25, 50, 100, 250])
             ->defaultPaginationPageOption(25)
             ->emptyStateHeading('No invitees yet')
             ->emptyStateDescription('Add invitees manually or import them from Excel for this event.')
