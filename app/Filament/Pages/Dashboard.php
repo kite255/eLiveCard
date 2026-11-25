@@ -340,131 +340,23 @@ class Dashboard extends Page
 
     protected function getActiveEvent(): ?Event
     {
-        try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
-                return null;
-            }
+        $query = $this->eventQuery()
+            ->whereDate('event_date', today())
+            ->whereIn('status', ['active', 'ongoing', 'in_progress', 'published']);
 
-            /*
-             * When an event is selected, show it as the active dashboard event.
-             * Otherwise, prefer an event explicitly marked active.
-             */
-            if (filled($this->selectedEventId)) {
-                return $this->eventQuery()->find($this->selectedEventId);
-            }
-
-            if (Schema::hasColumn('events', 'status')) {
-                $activeEvent = $this->eventQuery()
-                    ->whereIn('status', [
-                        'active',
-                        'ongoing',
-                        'in_progress',
-                        'published',
-                    ])
-                    ->when(
-                        Schema::hasColumn('events', 'event_date'),
-                        fn (Builder $query) => $query->orderBy('event_date'),
-                    )
-                    ->first();
-
-                if ($activeEvent) {
-                    return $activeEvent;
-                }
-            }
-
-            /*
-             * Fallback: treat today's event as active when no status-based
-             * active event exists.
-             */
-            $dateColumn = $this->eventDateColumn();
-
-            if ($dateColumn) {
-                return $this->eventQuery()
-                    ->whereDate($dateColumn, today())
-                    ->orderBy($dateColumn)
-                    ->first();
-            }
-
-            return null;
-        } catch (\Throwable $e) {
-            report($e);
-
-            return null;
+        if ($this->selectedEventId !== null) {
+            $query->whereKey($this->selectedEventId);
         }
+
+        return $query->orderBy('start_time')->first();
     }
 
     protected function getNextUpcomingEvent(): ?Event
     {
-        try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
-                return null;
-            }
-
-            $dateColumn = $this->eventDateColumn();
-
-            if (! $dateColumn) {
-                return null;
-            }
-
-            $query = $this->eventQuery();
-
-            /*
-             * When an event is selected, find the next event after the selected
-             * event's date. Otherwise, find the closest future event.
-             */
-            if (filled($this->selectedEventId)) {
-                $selectedEvent = $this->eventQuery()->find($this->selectedEventId);
-
-                if ($selectedEvent && filled($selectedEvent->{$dateColumn})) {
-                    $query->whereDate(
-                        $dateColumn,
-                        '>',
-                        \Illuminate\Support\Carbon::parse(
-                            $selectedEvent->{$dateColumn},
-                        )->toDateString(),
-                    );
-                } else {
-                    $query->whereDate($dateColumn, '>', today());
-                }
-
-                $query->whereKeyNot($this->selectedEventId);
-            } else {
-                $activeEvent = $this->getActiveEvent();
-
-                if ($activeEvent && filled($activeEvent->{$dateColumn})) {
-                    $query->whereDate(
-                        $dateColumn,
-                        '>',
-                        \Illuminate\Support\Carbon::parse(
-                            $activeEvent->{$dateColumn},
-                        )->toDateString(),
-                    );
-                } else {
-                    $query->whereDate($dateColumn, '>', today());
-                }
-            }
-
-            if (Schema::hasColumn('events', 'status')) {
-                $query->whereNotIn('status', [
-                    'cancelled',
-                    'canceled',
-                    'archived',
-                    'completed',
-                ]);
-            }
-
-            return $query
-                ->orderBy($dateColumn)
-                ->when(
-                    Schema::hasColumn('events', 'start_time'),
-                    fn (Builder $query) => $query->orderBy('start_time'),
-                )
-                ->first();
-        } catch (\Throwable $e) {
-            report($e);
-
-            return null;
-        }
+        return $this->eventQuery()
+            ->whereDate('event_date', '>', today())
+            ->whereNotIn('status', ['cancelled', 'canceled', 'archived', 'completed', 'draft'])
+            ->orderBy('event_date')->orderBy('start_time')->first();
     }
 
     protected function eventDateColumn(): ?string
@@ -932,28 +824,7 @@ class Dashboard extends Page
     {
         $result = ['whatsapp' => [], 'sms' => []];
         $whatsapp = app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression();
-        // Latest invitation SMS only; never count a reminder as an invitation.
-        $smsLog = "(SELECT sl.status FROM sms_logs sl
-            WHERE sl.event_id = invitees.event_id AND sl.invitee_id = invitees.id
-            AND sl.sms_type IN ('invitation','invitation_card')
-            AND (invitees.invitation_phone_changed_at IS NULL OR sl.id > COALESCE(invitees.invitation_sms_reset_log_id, 0))
-            ORDER BY sl.id DESC LIMIT 1)";
-        $smsMessage = "(SELECT ml.status FROM message_logs ml
-            WHERE ml.event_id = invitees.event_id AND ml.invitee_id = invitees.id
-            AND ml.channel = 'sms' AND ml.type = 'invitation'
-            AND (invitees.invitation_phone_changed_at IS NULL OR ml.id > COALESCE(invitees.invitation_message_reset_log_id, 0))
-            ORDER BY ml.id DESC LIMIT 1)";
-        $raw = "LOWER(TRIM(COALESCE({$smsLog}, {$smsMessage}, CASE WHEN invitees.sms_status IN ('sent','delivered','failed') THEN 'unknown' ELSE 'not_sent' END)))";
-        $sms = "CASE {$raw}
-            WHEN 'delivered' THEN 'delivered' WHEN 'read' THEN 'delivered'
-            WHEN 'sent' THEN 'submitted' WHEN 'submitted' THEN 'submitted'
-            WHEN 'accepted' THEN 'submitted' WHEN 'success' THEN 'submitted'
-            WHEN 'pending' THEN 'queued' WHEN 'queued' THEN 'queued'
-            WHEN 'sending' THEN 'queued' WHEN 'processing' THEN 'queued'
-            WHEN 'failed' THEN 'failed' WHEN 'undelivered' THEN 'failed'
-            WHEN 'rejected' THEN 'failed' WHEN 'expired' THEN 'failed'
-            WHEN 'not_sent' THEN 'not_sent' WHEN 'logged' THEN 'logged_only'
-            ELSE 'unknown' END";
+        $sms = app(\App\Services\InvitationSmsReportStatusService::class)->expression();
         foreach (['whatsapp' => $whatsapp, 'sms' => $sms] as $channel => $expression) {
             $resolved = $this->inviteeQuery()->selectRaw("({$expression}) AS delivery_status");
             $result[$channel] = DB::query()->fromSub($resolved, 'resolved_invitees')
