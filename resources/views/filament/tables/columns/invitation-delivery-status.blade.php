@@ -1,7 +1,16 @@
 @php
     $channels = $getState() ?? [];
 @endphp
-<div style="display:flex;flex-direction:column;gap:5px;padding:8px 12px;">
+@once
+    <style>
+        @media (max-width: 640px) {
+            .elive-delivery-status { min-width: 0 !important; }
+            .elive-delivery-row { grid-template-columns: 18px minmax(0, 1fr) !important; row-gap: 2px; }
+            .elive-delivery-time { grid-column: 2; white-space: normal !important; }
+        }
+    </style>
+@endonce
+<div class="elive-delivery-status" style="display:flex;flex-direction:column;gap:3px;padding:5px 8px;min-width: max-content;">
     @foreach ($channels as $channel)
         @php
             $status = strtolower(trim($channel['label']));
@@ -15,8 +24,8 @@
                 default => ['unknown', '#64748B'],
             };
         @endphp
-        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;">
-            <span style="display:inline-flex;align-items:center;gap:5px;width:20px;flex-shrink:0;justify-content:center;" role="img" aria-label="{{ $channel['name'] }}" title="{{ $channel['name'] }}">
+        <div class="elive-delivery-row" style="display:grid;grid-template-columns:18px 110px max-content;align-items:center;column-gap:5px;">
+            <span style="display:inline-flex;align-items:center;gap:5px;width:18px;flex-shrink:0;justify-content:center;" role="img" aria-label="{{ $channel['name'] }}" title="{{ $channel['name'] }}">
                 @if ($channel['name'] === 'SMS')
                     <svg data-channel-icon="sms" aria-hidden="true" viewBox="0 0 24 24" style="display:inline-block;width:16px;height:16px;flex-shrink:0;color:#213B73;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="5" width="18" height="14" rx="2"/>
@@ -29,7 +38,7 @@
                     </svg>
                 @endif
             </span>
-            <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:{{ $foreground }};">
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;line-height:1.3;font-weight:600;min-width:0;color:{{ $foreground }};">
                 <svg data-status-icon="{{ $indicator }}" aria-hidden="true" viewBox="0 0 24 24" style="display:inline-block;width:14px;height:14px;flex-shrink:0;{{ $indicator === 'clock' ? 'color:#FD9618;' : '' }}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     @switch($indicator)
                         @case('double-check')
@@ -58,7 +67,7 @@
                 {{ $channel['label'] }}
             </span>
             @if ($channel['time'])
-                <span style="font-size:11px;opacity:.75;">{{ $channel['time'] }}</span>
+                <span class="elive-delivery-time" style="font-size:10px;line-height:1.3;opacity:.75;white-space:nowrap;">{{ $channel['time'] }}</span>
             @endif
         </div>
     @endforeach
