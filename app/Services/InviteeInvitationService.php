@@ -411,6 +411,10 @@ class InviteeInvitationService
                     return $this->result('skipped', 'Invitation card is no longer active.');
                 }
 
+                if (! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)) {
+                    return $this->result('skipped', 'SMS is Tanzania-only. Use WhatsApp for this international contact.');
+                }
+
                 // A force resend must not bypass an in-flight invitation.
                 if ($invitee->last_message_channel === 'sms'
                     && in_array((string) $invitee->last_message_status, ['queued', 'pending', 'sending', 'processing'], true)) {
