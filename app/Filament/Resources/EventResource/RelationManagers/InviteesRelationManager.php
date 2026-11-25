@@ -1145,7 +1145,10 @@ class InviteesRelationManager extends RelationManager
                     ->visible(fn (): bool => $this->canViewReportsForOwner())
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('gray')
-                    ->action(function () {
+                    ->form($this->toolbarTargetFields())
+                    ->action(function (array $data) {
+                        abort_unless($this->canViewReportsForOwner(), 403);
+                        $ids = $this->toolbarTargetIds((string) ($data['target_scope'] ?? ''));
                         $event = $this->getOwnerRecord();
 
                         $eventName = Str::slug((string) ($event->title ?? $event->name ?? 'event-' . $event->id));
@@ -1161,7 +1164,7 @@ class InviteesRelationManager extends RelationManager
                         );
 
                         return Excel::download(
-                            new EventInviteesExport((int) $event->id),
+                            new EventInviteesExport((int) $event->id, $ids),
                             $eventName . '-invitees-report.xlsx'
                         );
                     }),
@@ -1176,6 +1179,7 @@ class InviteesRelationManager extends RelationManager
                     ->modalDescription('Send the active SMS invitation template. WhatsApp fallback is manual; submitted SMS invitations are excluded to prevent duplicate messages.')
                     ->modalSubmitActionLabel('Queue Eligible SMS Invitations')
                     ->form([
+                        ...$this->toolbarTargetFields(),
                         Forms\Components\Select::make('recipient_scope')
                             ->label('Recipients')
                             ->options(\App\Services\SmsInvitationRecipientsService::scopes())
@@ -1186,8 +1190,9 @@ class InviteesRelationManager extends RelationManager
                             ->label('Recipient Review')
                             ->content(function (Forms\Get $get): string {
                                 $scope = (string) ($get('recipient_scope') ?: \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT);
+                                $ids = $this->toolbarTargetIds((string) ($get('target_scope') ?: 'filtered'));
                                 $counts = app(\App\Services\SmsInvitationRecipientsService::class)
-                                    ->counts($this->getOwnerRecord(), $scope);
+                                    ->counts($this->getOwnerRecord(), $scope, $ids);
 
                                 $shared = app(\App\Services\SharedInviteePhoneService::class)
                                     ->summary($this->getOwnerRecord());
@@ -1212,6 +1217,7 @@ class InviteesRelationManager extends RelationManager
                     ->action(fn (array $data) => $this->sendSmsInvitationsFromToolbar(
                         (string) ($data['recipient_scope'] ?? ''),
                         (string) ($data['shared_phone_policy'] ?? 'skip'),
+                        $this->toolbarTargetIds((string) ($data['target_scope'] ?? '')),
                     )),
 
                     Tables\Actions\Action::make('send_whatsapp')
@@ -1223,8 +1229,9 @@ class InviteesRelationManager extends RelationManager
                         ->modalHeading('Send WhatsApp Invitations')
                         ->modalSubmitActionLabel('Queue WhatsApp Invitations')
                         ->modalDescription('Send the event default WhatsApp invitation template only to invitees who have not received it.')
+                        ->form($this->toolbarTargetFields())
                         ->requiresConfirmation()
-                        ->action(function (): void {
+                        ->action(function (array $data): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
                             $selectedTemplate = $templateId > 0 ? $this->messageTemplateById($templateId, 'whatsapp') : null;
 
@@ -1244,6 +1251,7 @@ class InviteesRelationManager extends RelationManager
                                 recipientScope: 'not_sent',
                                 actionTitle: 'WhatsApp invitations processed',
                                 messageTemplateId: $selectedTemplate->id,
+                                targetIds: $this->toolbarTargetIds((string) ($data['target_scope'] ?? '')),
                             );
                         }),
 
@@ -1257,6 +1265,7 @@ class InviteesRelationManager extends RelationManager
                         ->modalDescription('Choose the SMS reminder type and recipients.')
                         ->modalSubmitActionLabel('Send Reminder')
                         ->form([
+                            ...$this->toolbarTargetFields(),
                             Forms\Components\Select::make('template_type')
                                 ->label('Reminder Option')
                                 ->options([
@@ -1284,6 +1293,7 @@ class InviteesRelationManager extends RelationManager
                                 templateType: $data['template_type'],
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Reminder messages processed',
+                                targetIds: $this->toolbarTargetIds((string) ($data['target_scope'] ?? '')),
                             );
                         }),
 
@@ -1297,6 +1307,7 @@ class InviteesRelationManager extends RelationManager
                         ->modalDescription('Send a thank-you SMS now. Configure automatic delivery in Event Settings.')
                         ->modalSubmitActionLabel('Send Thank You')
                         ->form([
+                            ...$this->toolbarTargetFields(),
                             Forms\Components\Select::make('recipient_scope')
                                 ->label('Send To')
                                 ->options([
@@ -1318,6 +1329,7 @@ class InviteesRelationManager extends RelationManager
                                 templateType: 'thank_you',
                                 recipientScope: $data['recipient_scope'],
                                 actionTitle: 'Thank you messages processed',
+                                targetIds: $this->toolbarTargetIds((string) ($data['target_scope'] ?? '')),
                             );
                         }),
 
@@ -2950,13 +2962,63 @@ class InviteesRelationManager extends RelationManager
     }
 
 
+    /** Null means the whole event; an empty array must never fall back to all. */
+    protected function toolbarTargetIds(string $target): ?array
+    {
+        abort_unless(in_array($target, ['all', 'filtered', 'selected'], true), 422);
+        if ($target === 'all') {
+            return null;
+        }
+
+        $query = $this->getFilteredTableQuery()
+            ->where('invitees.event_id', $this->getOwnerRecord()->getKey());
+
+        if ($target === 'selected') {
+            $query->whereKey($this->getSelectedTableRecords()->modelKeys());
+        }
+
+        return $query->reorder()->pluck('invitees.id')->unique()->values()->all();
+    }
+
+    protected function toolbarTargetFields(): array
+    {
+        return [
+            Forms\Components\Select::make('target_scope')
+                ->label('Apply to')
+                ->options([
+                    'filtered' => 'Current filtered/search results (all pages)',
+                    'selected' => 'Selected invitees',
+                    'all' => 'All invitees in this event',
+                ])
+                ->default('filtered')
+                ->required()
+                ->live(),
+            Forms\Components\Placeholder::make('target_count')
+                ->label('Matching invitees')
+                ->content(function (Forms\Get $get): string {
+                    $ids = $this->toolbarTargetIds((string) ($get('target_scope') ?: 'filtered'));
+                    $count = $ids === null
+                        ? Invitee::query()->where('event_id', $this->getOwnerRecord()->getKey())->count()
+                        : count($ids);
+
+                    return "{$count} matching invitees before message eligibility checks. Without filters, all event invitees may match.";
+                }),
+            Forms\Components\Checkbox::make('target_confirmed')
+                ->label('I confirm the chosen scope and understand that all matching pages are included.')
+                ->accepted()
+                ->required(),
+        ];
+    }
+
     protected function sendEventMessagesFromToolbar(
         string $channel,
         string $templateType,
         string $recipientScope,
         string $actionTitle,
         ?int $messageTemplateId = null,
+        ?array $targetIds = null,
     ): void {
+        abort_unless($this->canSendMessagesForOwner(), 403);
         $event = $this->getOwnerRecord();
 
         $query = Invitee::query()
@@ -2965,6 +3027,10 @@ class InviteesRelationManager extends RelationManager
             ->where('phone', '!=', '')
             ->whereNotNull('short_code')
             ->where('short_code', '!=', '');
+
+        if ($targetIds !== null) {
+            $query->whereKey($targetIds);
+        }
 
         // Never send bulk WhatsApp messages to cancelled, blocked, or used cards.
         if ($channel === 'whatsapp') {
@@ -3270,7 +3336,7 @@ class InviteesRelationManager extends RelationManager
         ]);
     }
 
-    protected function sendSmsInvitationsFromToolbar(string $scope, string $sharedPhonePolicy = 'skip'): void
+    protected function sendSmsInvitationsFromToolbar(string $scope, string $sharedPhonePolicy = 'skip', ?array $targetIds = null): void
     {
         abort_unless($this->canSendMessagesForOwner(), 403);
 
@@ -3308,7 +3374,7 @@ class InviteesRelationManager extends RelationManager
 
         // Never call the older generic SMS sender. It uses general message status
         // and can select the wrong recipients after a WhatsApp interaction.
-        $recipients->candidateQuery($event)->chunkById(200, function ($invitees) use ($event, $sender, $recipients, $scope, $sharedPhonePolicy, $sharedPhones, $sharedService, &$counts): void {
+        $recipients->candidateQuery($event)->when($targetIds !== null, fn (Builder $query) => $query->whereKey($targetIds))->chunkById(200, function ($invitees) use ($event, $sender, $recipients, $scope, $sharedPhonePolicy, $sharedPhones, $sharedService, &$counts): void {
             foreach ($invitees as $invitee) {
                 $normalized = $sharedService->normalize($invitee->phone);
                 if ($sharedPhonePolicy === 'skip' && $normalized !== null && isset($sharedPhones[$normalized])) {
