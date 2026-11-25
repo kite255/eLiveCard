@@ -43,14 +43,18 @@ class InvitationWhatsAppDeliveryStatusService
             return 'NULL';
         }
 
-        return "(SELECT CASE LOWER(TRIM(ml.status))
-            WHEN 'read' THEN ml.read_at
-            WHEN 'delivered' THEN ml.delivered_at
-            WHEN 'failed' THEN ml.failed_at
-            WHEN 'sent' THEN ml.sent_at
-            WHEN 'submitted' THEN ml.sent_at
-            WHEN 'accepted' THEN ml.sent_at
-            ELSE NULL END
+        $columns = Schema::getColumnListing('message_logs');
+        $cases = [];
+        foreach (['read' => 'read_at', 'delivered' => 'delivered_at', 'failed' => 'failed_at', 'sent' => 'sent_at', 'submitted' => 'sent_at', 'accepted' => 'sent_at'] as $status => $field) {
+            if (in_array($field, $columns, true)) {
+                $cases[] = "WHEN '{$status}' THEN ml.{$field}";
+            }
+        }
+        if ($cases === []) {
+            return 'NULL';
+        }
+
+        return "(SELECT CASE LOWER(TRIM(ml.status)) ".implode(' ', $cases)." ELSE NULL END
             FROM message_logs ml
             WHERE ml.event_id = invitees.event_id AND ml.invitee_id = invitees.id
             AND ml.channel = 'whatsapp' AND ml.type = 'invitation'
