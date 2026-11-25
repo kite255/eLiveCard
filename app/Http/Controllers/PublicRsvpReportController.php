@@ -79,6 +79,7 @@ class PublicRsvpReportController extends Controller
             ],
             'sms_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,failed,logged_only,unknown'],
             'whatsapp_delivery' => ['nullable', 'string', 'in:not_sent,queued,submitted,delivered,read,failed,logged_only,unknown'],
+            'overall_delivery' => ['nullable', 'string', 'in:delivered,not_sent,unconfirmed'],
             'per_page' => ['nullable', 'integer', 'in:10,25,50,100'],
         ]);
 
@@ -86,11 +87,17 @@ class PublicRsvpReportController extends Controller
         $status = trim((string) ($validated['status'] ?? ''));
         $smsDelivery = trim((string) ($validated['sms_delivery'] ?? ''));
         $whatsappDelivery = trim((string) ($validated['whatsapp_delivery'] ?? ''));
+        $overallDelivery = (string) ($validated['overall_delivery'] ?? '');
         $perPage = (int) ($validated['per_page'] ?? self::PER_PAGE);
         // Always display invitee phone numbers in the shared RSVP report.
         $showPhoneNumbers = true;
 
+        $smsExpression = $this->deliveryExpression('sms');
+        $whatsappExpression = $this->deliveryExpression('whatsapp');
         $invitees = $event->invitees()
+            ->select('invitees.*')
+            ->selectRaw("({$smsExpression}) AS report_sms_status")
+            ->selectRaw("({$whatsappExpression}) AS report_whatsapp_status")
             ->with('cardType')
             ->when(
                 $search !== '',
@@ -147,6 +154,13 @@ class PublicRsvpReportController extends Controller
             )
             ->when($smsDelivery !== '', fn (Builder $query) => $this->filterDelivery($query, 'sms', $smsDelivery))
             ->when($whatsappDelivery !== '', fn (Builder $query) => $this->filterDelivery($query, 'whatsapp', $whatsappDelivery))
+            ->when($overallDelivery !== '', function (Builder $query) use ($overallDelivery, $smsExpression, $whatsappExpression): void {
+                $query->whereRaw(match ($overallDelivery) {
+                    'delivered' => "(({$smsExpression}) = 'delivered' OR ({$whatsappExpression}) IN ('delivered', 'read'))",
+                    'not_sent' => "(({$smsExpression}) = 'not_sent' AND ({$whatsappExpression}) = 'not_sent')",
+                    default => "(({$smsExpression}) <> 'delivered' AND ({$whatsappExpression}) NOT IN ('delivered', 'read'))",
+                });
+            })
             // First added, first shown; ID breaks ties for imported records.
             ->orderBy('created_at')
             ->orderBy('id')
@@ -176,6 +190,14 @@ class PublicRsvpReportController extends Controller
             $latestWhatsApp = \Illuminate\Support\Facades\DB::table('message_logs')
                 ->where('event_id', $event->id)
                 ->whereIn('invitee_id', $inviteeIds)
+                ->whereExists(function ($query): void {
+                    $query->selectRaw('1')->from('invitees')
+                        ->whereColumn('invitees.id', 'message_logs.invitee_id')
+                        ->where(function ($query): void {
+                            $query->whereNull('invitees.invitation_phone_changed_at')
+                                ->orWhereRaw('message_logs.id > COALESCE(invitees.invitation_message_reset_log_id, 0)');
+                        });
+                })
                 ->where('channel', 'whatsapp')
                 ->where('type', 'invitation')
                 ->orderByDesc('id')
@@ -195,6 +217,14 @@ class PublicRsvpReportController extends Controller
             $latestSmsMessages = \Illuminate\Support\Facades\DB::table('message_logs')
                 ->where('event_id', $event->id)
                 ->whereIn('invitee_id', $inviteeIds)
+                ->whereExists(function ($query): void {
+                    $query->selectRaw('1')->from('invitees')
+                        ->whereColumn('invitees.id', 'message_logs.invitee_id')
+                        ->where(function ($query): void {
+                            $query->whereNull('invitees.invitation_phone_changed_at')
+                                ->orWhereRaw('message_logs.id > COALESCE(invitees.invitation_message_reset_log_id, 0)');
+                        });
+                })
                 ->where('channel', 'sms')
                 ->where('type', 'invitation')
                 ->orderByDesc('id')
@@ -216,6 +246,14 @@ class PublicRsvpReportController extends Controller
             $latestSms = \Illuminate\Support\Facades\DB::table('sms_logs')
                 ->where('event_id', $event->id)
                 ->whereIn('invitee_id', $inviteeIds)
+                ->whereExists(function ($query): void {
+                    $query->selectRaw('1')->from('invitees')
+                        ->whereColumn('invitees.id', 'sms_logs.invitee_id')
+                        ->where(function ($query): void {
+                            $query->whereNull('invitees.invitation_phone_changed_at')
+                                ->orWhereRaw('sms_logs.id > COALESCE(invitees.invitation_sms_reset_log_id, 0)');
+                        });
+                })
                 ->whereIn('sms_type', ['invitation', 'invitation_card'])
                 ->orderByDesc('id')
                 ->get(['invitee_id', 'status', 'sent_at', 'delivered_at', 'failed_at', 'provider_status'])
@@ -226,6 +264,33 @@ class PublicRsvpReportController extends Controller
                     $this->deliveryLabel($log->status);
                 $deliveryTimes[$log->invitee_id]['sms'] = $this->deliveryTime($log);
                 $smsDeliveryNotes[$log->invitee_id] = $this->smsDeliveryNote($log);
+            }
+        }
+
+        foreach ($invitees as $invitee) {
+            foreach (['sms', 'whatsapp'] as $channel) {
+                $statusKey = $invitee->{'report_'.$channel.'_status'};
+                $label = match ($statusKey) {
+                    'not_sent' => 'Not Sent',
+                    'unknown' => 'Unverified',
+                    'logged_only' => 'Logged Only',
+                    default => ucfirst($statusKey),
+                };
+                if ($deliveryStatuses[$invitee->id][$channel] !== $label) {
+                    $deliveryTimes[$invitee->id][$channel] = null;
+                    if ($channel === 'sms') unset($smsDeliveryNotes[$invitee->id]);
+                }
+                $deliveryStatuses[$invitee->id][$channel] = $label;
+                if ($channel === 'whatsapp' && !$deliveryTimes[$invitee->id][$channel]) {
+                    $at = match ($label) {
+                        'Read' => $invitee->whatsapp_read_at,
+                        'Delivered' => $invitee->whatsapp_delivered_at,
+                        'Failed' => $invitee->whatsapp_failed_at,
+                        'Submitted' => $invitee->whatsapp_sent_at,
+                        default => null,
+                    };
+                    $deliveryTimes[$invitee->id][$channel] = $at?->timezone('Africa/Dar_es_Salaam')->format('d M Y H:i');
+                }
             }
         }
 
@@ -353,6 +418,7 @@ class PublicRsvpReportController extends Controller
             'search' => $search,
             'status' => $status,
             'smsDelivery' => $smsDelivery,
+            'overallDelivery' => $overallDelivery,
             'whatsappDelivery' => $whatsappDelivery,
             'showPhoneNumbers' => $showPhoneNumbers,
             'visibleFields' => $visibleFields,
@@ -369,40 +435,61 @@ class PublicRsvpReportController extends Controller
      */
     private function filterDelivery(Builder $query, string $channel, string $wanted): Builder
     {
+        return $query->whereRaw('('.$this->deliveryExpression($channel).') = ?', [$wanted]);
+    }
+
+    private function deliveryExpression(string $channel): string
+    {
         $latestMessage = Schema::hasTable('message_logs')
             ? "(SELECT ml.status FROM message_logs ml
-                WHERE ml.event_id = invitees.event_id
-                AND ml.invitee_id = invitees.id
-                AND ml.channel = '".$channel."'
-                AND ml.type = 'invitation'
-                ORDER BY ml.id DESC LIMIT 1)"
-            : 'NULL';
-
+                WHERE ml.event_id = invitees.event_id AND ml.invitee_id = invitees.id
+                AND ml.channel = '".$channel."' AND ml.type = 'invitation'
+                AND (invitees.invitation_phone_changed_at IS NULL OR ml.id > COALESCE(invitees.invitation_message_reset_log_id, 0))
+                ORDER BY ml.id DESC LIMIT 1)" : 'NULL';
         $raw = $latestMessage;
 
         if ($channel === 'sms' && Schema::hasTable('sms_logs')) {
             $latestSms = "(SELECT sl.status FROM sms_logs sl
-                WHERE sl.event_id = invitees.event_id
-                AND sl.invitee_id = invitees.id
+                WHERE sl.event_id = invitees.event_id AND sl.invitee_id = invitees.id
                 AND sl.sms_type IN ('invitation', 'invitation_card')
+                AND (invitees.invitation_phone_changed_at IS NULL OR sl.id > COALESCE(invitees.invitation_sms_reset_log_id, 0))
                 ORDER BY sl.id DESC LIMIT 1)";
             $raw = "COALESCE({$latestSms}, {$latestMessage})";
         }
 
-        // Canonical labels mirror deliveryLabel(), not invitees.sms_status.
-        $normalized = "LOWER(TRIM(COALESCE({$raw}, 'not_sent')))";
-        $sql = "CASE
+        if ($channel === 'whatsapp') {
+            $tracked = Schema::hasTable('whatsapp_template_sends')
+                ? "(SELECT wt.status FROM whatsapp_template_sends wt
+                    WHERE wt.event_id = invitees.event_id AND wt.invitee_id = invitees.id
+                    AND wt.phone_generation = invitees.invitation_phone_generation
+                    AND wt.message_template_id = (SELECT e.default_whatsapp_template_id FROM events e WHERE e.id = invitees.event_id)
+                    ORDER BY wt.id DESC LIMIT 1)" : 'NULL';
+            $raw = "CASE
+                WHEN invitees.whatsapp_status IN ('delivered','read') THEN invitees.whatsapp_status
+                WHEN {$tracked} IS NOT NULL THEN {$tracked}
+                WHEN {$latestMessage} IS NOT NULL THEN {$latestMessage}
+                WHEN invitees.whatsapp_status IN ('queued','sending','pending','submitted','sent','failed') THEN 'unknown'
+                ELSE 'not_sent' END";
+        } else {
+            $raw = "CASE
+                WHEN invitees.last_message_channel = 'sms'
+                    AND invitees.last_message_status IN ('queued','pending','sending','processing')
+                    AND invitees.sms_status = 'pending' THEN 'queued'
+                WHEN {$raw} IS NOT NULL THEN {$raw}
+                WHEN invitees.sms_status IN ('sent','delivered','failed') THEN 'unknown'
+                ELSE 'not_sent' END";
+        }
+
+        $normalized = "LOWER(TRIM(COALESCE(({$raw}), 'not_sent')))";
+        return "CASE
             WHEN {$normalized} = 'delivered' THEN 'delivered'
             WHEN {$normalized} = 'read' THEN 'read'
             WHEN {$normalized} IN ('failed', 'undelivered', 'expired', 'rejected') THEN 'failed'
-            WHEN {$normalized} IN ('queued', 'pending', 'sending') THEN 'queued'
+            WHEN {$normalized} IN ('queued', 'pending', 'sending', 'processing') THEN 'queued'
             WHEN {$normalized} IN ('submitted', 'accepted', 'sent', 'success') THEN 'submitted'
             WHEN {$normalized} = 'logged' THEN 'logged_only'
             WHEN {$normalized} = 'not_sent' THEN 'not_sent'
-            ELSE 'unknown'
-        END";
-
-        return $query->whereRaw("({$sql}) = ?", [$wanted]);
+            ELSE 'unknown' END";
     }
 
     /**
