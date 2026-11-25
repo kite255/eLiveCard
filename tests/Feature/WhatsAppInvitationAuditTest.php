@@ -75,13 +75,15 @@ class WhatsAppInvitationAuditTest extends TestCase
             ->assertExitCode(2);
     }
 
-    public function test_whatsapp_send_form_shows_claim_review(): void
+    public function test_whatsapp_send_requires_confirmation_and_counts_unsent_invitees(): void
     {
         $source = file_get_contents(app_path(
             'Filament/Resources/EventResource/RelationManagers/InviteesRelationManager.php'
         ));
-        $this->assertStringContainsString("Placeholder::make('whatsapp_send_review')", $source);
-        $this->assertStringContainsString('protected function whatsappSendReview(', $source);
-        $this->assertStringContainsString('Only eligible, unclaimed invitations will be queued.', $source);
+        $this->assertStringContainsString("->modalSubmitActionLabel('Confirm & Send')", $source);
+        $this->assertStringContainsString(".' unsent invitees?'", $source);
+        $this->assertStringContainsString('protected function whatsappUnsentCount(', $source);
+        $this->assertStringContainsString('protected function whatsappUnsentQuery(', $source);
+        $this->assertStringNotContainsString("Placeholder::make('whatsapp_send_review')", $source);
     }
 }
