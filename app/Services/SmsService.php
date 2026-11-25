@@ -1666,20 +1666,20 @@ class SmsService
      * Normalize Tanzanian local numbers and international E.164-style numbers
      * for the SMS provider. This checks syntax, not provider country coverage.
      *
-     * @throws \\InvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     public function formatPhone(?string $phone): string
     {
         $input = trim((string) $phone);
 
         if ($input === '') {
-            throw new \\InvalidArgumentException('Invitee phone number is missing.');
+            throw new \InvalidArgumentException('Invitee phone number is missing.');
         }
 
         // Phone separators are allowed, but letters, extensions and symbols
         // must never be silently stripped into a different destination.
         if (! preg_match('/^\\+?[0-9\\s().-]+$/', $input)) {
-            throw new \\InvalidArgumentException('Invalid phone number.');
+            throw new \InvalidArgumentException('Invalid phone number.');
         }
 
         $digits = preg_replace('/\\D+/', '', $input);
@@ -1700,7 +1700,7 @@ class SmsService
         // E.164 permits 8-15 digits in total and may not start with zero.
         // The provider still decides whether a destination country is supported.
         if (! preg_match('/^[1-9]\\d{7,14}$/', $digits)) {
-            throw new \\InvalidArgumentException('Invalid phone number.');
+            throw new \InvalidArgumentException('Invalid phone number.');
         }
 
         return $digits;
