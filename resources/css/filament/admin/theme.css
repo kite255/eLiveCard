@@ -1400,3 +1400,113 @@
         min-width: 44px;
     }
 }
+
+
+/* Refined topbar controls. Target the native Filament 3.3 end group,
+   without replacing search, notification or account menu behavior. */
+.fi-topbar nav > div[x-persist^="topbar.end"] {
+    min-width: 0;
+    gap: 0.625rem;
+}
+.fi-topbar .fi-global-search {
+    width: clamp(12rem, 24vw, 20rem);
+    min-width: 0;
+}
+.fi-topbar .fi-global-search-field .fi-input-wrp,
+.fi-topbar .fi-global-search-field.fi-input-wrp {
+    min-height: 2.5rem;
+    background: #f8fafc;
+    border: 1px solid var(--elive-border);
+    border-radius: 0.625rem;
+    box-shadow: none;
+}
+.fi-topbar .fi-global-search-field .fi-input-wrp:focus-within,
+.fi-topbar .fi-global-search-field.fi-input-wrp:focus-within {
+    background: #fff;
+    border-color: var(--elive-blue);
+    box-shadow: 0 0 0 2px rgb(33 59 115 / 10%);
+}
+.fi-topbar .fi-global-search-field input {
+    font-size: 0.875rem;
+}
+.fi-topbar .fi-global-search-field input::placeholder {
+    color: #64748b;
+}
+.fi-topbar .fi-notifications-trigger,
+.fi-topbar .fi-user-menu {
+    flex-shrink: 0;
+}
+.fi-topbar .fi-notifications-trigger .fi-icon-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+    color: var(--elive-blue);
+    background: #f8fafc;
+    border: 1px solid var(--elive-border);
+    border-radius: 0.625rem;
+}
+.fi-topbar .fi-notifications-trigger .fi-icon-btn:hover {
+    background: var(--elive-blue-light);
+}
+.fi-topbar .fi-user-menu button:has(> .fi-avatar) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.5rem;
+    padding-inline: 0.375rem;
+    border-radius: 0.625rem;
+}
+.fi-topbar .fi-user-menu button:has(> .fi-avatar)::after {
+    content: '';
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 1.5px solid #64748b;
+    border-bottom: 1.5px solid #64748b;
+    transform: rotate(45deg);
+    margin-block-start: -0.2rem;
+}
+.fi-topbar .fi-user-menu button:has(> .fi-avatar):hover {
+    background: #f1f5f9;
+}
+.fi-topbar .fi-user-menu .fi-avatar {
+    box-shadow: none;
+    background: var(--elive-blue);
+    color: #fff;
+}
+.fi-topbar button:focus-visible {
+    outline: 2px solid var(--elive-blue);
+    outline-offset: 2px;
+}
+.dark .fi-topbar .fi-global-search-field .fi-input-wrp,
+.dark .fi-topbar .fi-global-search-field.fi-input-wrp,
+.dark .fi-topbar .fi-notifications-trigger .fi-icon-btn {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+.dark .fi-topbar .fi-user-menu button:has(> .fi-avatar):hover {
+    background: #1e293b;
+}
+.dark .fi-topbar .fi-global-search-field input::placeholder {
+    color: #94a3b8;
+}
+@media (max-width: 640px) {
+    .fi-topbar nav > div[x-persist^="topbar.end"] {
+        flex: 1 1 auto;
+        justify-content: flex-end;
+        gap: 0.375rem;
+    }
+    .fi-topbar .fi-global-search {
+        flex: 1 1 0;
+        width: auto;
+        max-width: 20rem;
+    }
+    .fi-topbar .fi-notifications-trigger .fi-icon-btn,
+    .fi-topbar .fi-user-menu button:has(> .fi-avatar) {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
+    .fi-topbar .fi-user-menu button:has(> .fi-avatar)::after {
+        display: none;
+    }
+}
