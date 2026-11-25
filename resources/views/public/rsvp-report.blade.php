@@ -1218,8 +1218,8 @@
                 <span>Response Rate</span>
             </div>
 
-            <div class="card-types-summary" aria-label="Card types used by invitees">
-                <h2>Card Types Used</h2>
+            <div class="card-types-summary" aria-label="All configured card types and invitee counts">
+                <h2>Card Types Summary</h2>
                 <div class="card-types-list">
                     @forelse ($cardTypeSummary as $cardType)
                         <div class="card-type-item">
@@ -1228,7 +1228,7 @@
                             <span class="card-type-unit">{{ $cardType['count'] === 1 ? 'invitee' : 'invitees' }}</span>
                         </div>
                     @empty
-                        <span class="card-type-empty">No card types assigned yet.</span>
+                        <span class="card-type-empty">No card types configured for this event.</span>
                     @endforelse
                 </div>
             </div>
