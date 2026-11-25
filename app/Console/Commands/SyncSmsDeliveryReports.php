@@ -50,31 +50,39 @@ class SyncSmsDeliveryReports extends Command
                 $now = now();
                 $recent = $now->copy()->subMinutes(15);
                 $hourOld = $now->copy()->subHour();
+                $dayOld = $now->copy()->subDay();
+                $threeDaysOld = $now->copy()->subDays(3);
+                $weekOld = $now->copy()->subDays(7);
+                $monthOld = $now->copy()->subDays(30);
 
-                $query->where(function (Builder $query) use ($now, $recent, $hourOld): void {
-                    $query
-                        ->whereNull('delivery_report_checked_at')
-                        ->orWhere(function (Builder $q) use ($recent, $now): void {
-                            $q->whereRaw('COALESCE(sent_at, created_at) >= ?', [$recent])
-                                ->where('delivery_report_checked_at', '<=', $now->copy()->subMinute());
-                        })
-                        ->orWhere(function (Builder $q) use ($recent, $hourOld, $now): void {
-                            $q->whereRaw('COALESCE(sent_at, created_at) < ?', [$recent])
-                                ->whereRaw('COALESCE(sent_at, created_at) >= ?', [$hourOld])
-                                ->where('delivery_report_checked_at', '<=', $now->copy()->subMinutes(5));
-                        })
-                        ->orWhere(function (Builder $q) use ($hourOld, $now): void {
-                            $q->whereRaw('COALESCE(sent_at, created_at) < ?', [$hourOld])
-                                ->where('delivery_report_checked_at', '<=', $now->copy()->subMinutes(30));
-                        });
-                })
-                    // Give fresh messages priority while selecting the least
-                    // recently checked records within each age bracket.
-                    ->orderByRaw(
-                        'CASE WHEN COALESCE(sent_at, created_at) >= ? THEN 0 '
-                        .'WHEN COALESCE(sent_at, created_at) >= ? THEN 1 ELSE 2 END',
-                        [$recent, $hourOld],
-                    )
+                // Retain automatic reconciliation for 30 days. Older messages
+                // can still be explicitly refreshed by provider shoot ID.
+                $query->whereRaw('COALESCE(sent_at, created_at) >= ?', [$monthOld])
+                    ->where(function (Builder $query) use ($now, $recent, $hourOld, $dayOld, $threeDaysOld, $weekOld): void {
+                        $query->whereNull('delivery_report_checked_at');
+                        $windows = [
+                            [null, $recent, 1],
+                            [$recent, $hourOld, 5],
+                            [$hourOld, $dayOld, 30],
+                            [$dayOld, $threeDaysOld, 120],
+                            [$threeDaysOld, $weekOld, 360],
+                            [$weekOld, null, 1440],
+                        ];
+
+                        foreach ($windows as [$upper, $lower, $minutes]) {
+                            $query->orWhere(function (Builder $q) use ($upper, $lower, $minutes, $now): void {
+                                if ($upper !== null) {
+                                    $q->whereRaw('COALESCE(sent_at, created_at) < ?', [$upper]);
+                                }
+                                if ($lower !== null) {
+                                    $q->whereRaw('COALESCE(sent_at, created_at) >= ?', [$lower]);
+                                }
+                                $q->where('delivery_report_checked_at', '<=', $now->copy()->subMinutes($minutes));
+                            });
+                        }
+                    })
+                    ->orderByRaw('CASE WHEN COALESCE(sent_at, created_at) >= ? THEN 0 '
+                        .'WHEN COALESCE(sent_at, created_at) >= ? THEN 1 ELSE 2 END', [$recent, $hourOld])
                     ->orderByRaw('CASE WHEN delivery_report_checked_at IS NULL THEN 0 ELSE 1 END')
                     ->orderBy('delivery_report_checked_at');
             }
@@ -95,7 +103,9 @@ class SyncSmsDeliveryReports extends Command
         $successful = 0;
         $failed = 0;
 
-        foreach ($logs as $smsLog) {
+        // A provider shoot ID can represent several recipients. One response
+        // is reconciled against all matching recipients by SmsService.
+        foreach ($logs->unique('provider_message_id') as $smsLog) {
             $processed++;
 
             try {
