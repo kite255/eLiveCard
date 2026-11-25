@@ -12,6 +12,7 @@
 @endonce
 <div class="elive-delivery-status" style="display:flex;flex-direction:column;gap:3px;padding:2px 0;min-width:0;">
     @foreach ($channels as $channel)
+        @continue(blank($channel['label'] ?? null))
         @php
             $status = strtolower(trim($channel['label']));
             [$indicator, $foreground] = match (true) {
