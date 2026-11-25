@@ -2986,6 +2986,13 @@ class InviteesRelationManager extends RelationManager
         return 25;
     }
 
+    public function updatedTableRecordsPerPage(): void
+    {
+        $this->tableRecordsPerPage = $this->getTableRecordsPerPage();
+        $this->flushCachedTableRecords();
+        parent::updatedTableRecordsPerPage();
+    }
+
     /** Null means the whole event; an empty array must never fall back to all. */
     protected function toolbarTargetIds(string $target): ?array
     {
