@@ -1231,14 +1231,39 @@ class InviteesRelationManager extends RelationManager
                     ->icon('heroicon-o-envelope')
                     ->color('primary')
                     ->modalHeading('Send SMS Invitations')
-                    ->modalSubmitActionLabel('Confirm & Send')
-                    ->modalDescription(fn (): string => 'Send invitations to '.$this->smsUnsentCount($this->toolbarTargetIds('filtered')).' eligible unsent invitees? Shared phone numbers are excluded for manual review.')
+                    ->modalDescription('Send SMS invitations to eligible invitees in the current filtered results. Shared phone numbers are skipped.')
+                    ->modalSubmitActionLabel('Send SMS')
+                    ->form([
+                        Forms\Components\Select::make('recipient_scope')
+                            ->label('Send To')
+                            ->options([
+                                \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT => 'Not Yet Sent SMS',
+                                \App\Services\SmsInvitationRecipientsService::SCOPE_FAILED_WHATSAPP => 'Failed WhatsApp',
+                                \App\Services\SmsInvitationRecipientsService::SCOPE_WHATSAPP_UNCONFIRMED => 'WhatsApp Sent — Not Delivered (24h+)',
+                                \App\Services\SmsInvitationRecipientsService::SCOPE_ALL_ACTIVE => 'All Active Invitees',
+                            ])
+                            ->default(\App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT)
+                            ->required()
+                            ->live(),
+                        Forms\Components\Placeholder::make('eligible_sms_recipients')
+                            ->label('Eligible Recipients')
+                            ->content(fn (Forms\Get $get): string => (string) $this->smsEligibleCount(
+                                (string) ($get('recipient_scope') ?: \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT),
+                                $this->toolbarTargetIds('filtered'),
+                            )),
+                    ])
                     ->requiresConfirmation()
-                    ->action(fn () => $this->sendSmsInvitationsFromToolbar(
-                        \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT,
-                        'skip',
-                        $this->toolbarTargetIds('filtered'),
-                    )),
+                    ->action(function (array $data): void {
+                        $scope = (string) ($data['recipient_scope'] ?? '');
+                        abort_unless(in_array($scope, [
+                            \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT,
+                            \App\Services\SmsInvitationRecipientsService::SCOPE_FAILED_WHATSAPP,
+                            \App\Services\SmsInvitationRecipientsService::SCOPE_WHATSAPP_UNCONFIRMED,
+                            \App\Services\SmsInvitationRecipientsService::SCOPE_ALL_ACTIVE,
+                        ], true), 422);
+
+                        $this->sendSmsInvitationsFromToolbar($scope, 'skip', $this->toolbarTargetIds('filtered'));
+                    }),
 
                 Tables\Actions\Action::make('send_whatsapp')
                         ->visible(fn (): bool => $this->canSendMessagesForOwner())
@@ -3069,9 +3094,17 @@ class InviteesRelationManager extends RelationManager
     }
 
     /** Preview the same default SMS recipients the simple send action queues. */
-    protected function smsUnsentCount(?array $ids): int
+    protected function smsEligibleCount(string $scope, ?array $ids): int
     {
         $event = $this->getOwnerRecord();
+        if (! in_array($scope, [
+            \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT,
+            \App\Services\SmsInvitationRecipientsService::SCOPE_FAILED_WHATSAPP,
+            \App\Services\SmsInvitationRecipientsService::SCOPE_WHATSAPP_UNCONFIRMED,
+            \App\Services\SmsInvitationRecipientsService::SCOPE_ALL_ACTIVE,
+        ], true)) {
+            return 0;
+        }
         $sender = app(\App\Services\InviteeInvitationService::class);
         if (! $sender->template($event, MessageTemplate::CHANNEL_SMS)) {
             return 0;
@@ -3084,13 +3117,13 @@ class InviteesRelationManager extends RelationManager
 
         $recipients->candidateQuery($event)
             ->when($ids !== null, fn (Builder $query) => $query->whereKey($ids))
-            ->chunkById(200, function ($invitees) use ($recipients, $sharedService, $sharedPhones, &$count): void {
+            ->chunkById(200, function ($invitees) use ($recipients, $sharedService, $sharedPhones, $scope, &$count): void {
                 foreach ($invitees as $invitee) {
                     $normalized = $sharedService->normalize($invitee->phone);
                     if ($normalized !== null && isset($sharedPhones[$normalized])) {
                         continue;
                     }
-                    if ($recipients->eligible($invitee, \App\Services\SmsInvitationRecipientsService::SCOPE_NOT_SENT)) {
+                    if ($recipients->eligible($invitee, $scope)) {
                         $count++;
                     }
                 }
