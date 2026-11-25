@@ -565,6 +565,51 @@
     border-bottom: 1px solid var(--elive-border);
 }
 
+/*
+| Keep bulk messaging actions accessible at laptop/desktop widths.
+| Filament's header can contain more actions than fit beside its title:
+| wrap the header *and* the action collection rather than letting
+| the last buttons overflow the table's rounded, clipped container.
+| Preserve each action's original color and its own authorization.
+*/
+.fi-ta-header {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.fi-ta-header-actions {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    gap: 0.5rem;
+}
+
+.fi-ta-header-actions .fi-btn {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+}
+
+/* The search/filter toolbar is separate from the action row. */
+.fi-ta-header-toolbar {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.625rem;
+}
+
+@media (max-width: 1100px) {
+    .fi-ta-header-actions {
+        flex-basis: 100%;
+        justify-content: flex-start;
+    }
+}
+
+
 .fi-ta-header-cell {
     color: #64748b;
     font-size: 0.72rem;
