@@ -279,6 +279,22 @@ class PublicRsvpReportController extends Controller
             ? (int) round(($responded / $total) * 100)
             : 0;
 
+        // Count invitations by their assigned card type across the whole event,
+        // not merely the displayed page or active RSVP filters.
+        // Include unassigned invitees so the breakdown reconciles to Total Invitees.
+        $cardTypeSummary = $event->invitees()
+            ->leftJoin('card_types', 'invitees.card_type_id', '=', 'card_types.id')
+            ->selectRaw("COALESCE(NULLIF(TRIM(card_types.name), ''), 'Unassigned') AS card_type_name")
+            ->selectRaw('COUNT(*) AS invitee_count')
+            ->groupByRaw("COALESCE(NULLIF(TRIM(card_types.name), ''), 'Unassigned')")
+            ->orderBy('card_type_name')
+            ->get()
+            ->map(fn ($row): array => [
+                'name' => (string) $row->card_type_name,
+                'count' => (int) $row->invitee_count,
+            ])
+            ->all();
+
         /*
         |--------------------------------------------------------------------------
         | Only show report columns that are actually used by this event
@@ -327,6 +343,7 @@ class PublicRsvpReportController extends Controller
             'responded' => $responded,
             'responseRate' => $responseRate,
             'confirmedGuests' => $confirmedGuests,
+            'cardTypeSummary' => $cardTypeSummary,
             'search' => $search,
             'status' => $status,
             'smsDelivery' => $smsDelivery,
