@@ -1360,7 +1360,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
             ->assertViewHas('cardTypesUsed', 0)
             ->assertViewHas('cardTypeCounts', [])
             ->assertSee('Card Types Used')
-            ->assertSee('class="card-types-summary-total">0</strong>', false)
+            ->assertSee('class="card-types-summary-total" aria-label="0 card types">0</span>', false)
             ->assertSee('No card types in use yet.');
     }
 
