@@ -6,6 +6,7 @@ use App\Models\Event;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -279,21 +280,35 @@ class PublicRsvpReportController extends Controller
             ? (int) round(($responded / $total) * 100)
             : 0;
 
-        // Count invitations by their assigned card type across the whole event,
-        // not merely the displayed page or active RSVP filters.
-        // Include unassigned invitees so the breakdown reconciles to Total Invitees.
-        $cardTypeSummary = $event->invitees()
-            ->leftJoin('card_types', 'invitees.card_type_id', '=', 'card_types.id')
-            ->selectRaw("COALESCE(NULLIF(TRIM(card_types.name), ''), 'Unassigned') AS card_type_name")
-            ->selectRaw('COUNT(*) AS invitee_count')
-            ->groupByRaw("COALESCE(NULLIF(TRIM(card_types.name), ''), 'Unassigned')")
-            ->orderBy('card_type_name')
+        // List every card type configured for this event, even if no invitee
+        // has been assigned to it. Count actual invitee records (not capacity).
+        // Join on event ID as well as card type to keep the report event-scoped.
+        $cardTypeSummary = DB::table('card_types')
+            ->leftJoin('invitees', function ($join) use ($event): void {
+                $join->on('invitees.card_type_id', '=', 'card_types.id')
+                    ->where('invitees.event_id', '=', $event->id);
+            })
+            ->where('card_types.event_id', $event->id)
+            ->select('card_types.id', 'card_types.name')
+            ->selectRaw('COUNT(invitees.id) AS invitee_count')
+            ->groupBy('card_types.id', 'card_types.name')
+            ->orderBy('card_types.name')
+            ->orderBy('card_types.id')
             ->get()
             ->map(fn ($row): array => [
-                'name' => (string) $row->card_type_name,
+                'name' => (string) $row->name,
                 'count' => (int) $row->invitee_count,
             ])
             ->all();
+
+        // Include invitations missing a card type, when present.
+        $unassignedCount = $event->invitees()->whereNull('card_type_id')->count();
+        if ($unassignedCount > 0) {
+            $cardTypeSummary[] = [
+                'name' => 'Unassigned',
+                'count' => $unassignedCount,
+            ];
+        }
 
         /*
         |--------------------------------------------------------------------------
