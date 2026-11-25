@@ -113,15 +113,17 @@ class InviteeToolbarTargetingTest extends TestCase
         $this->assertSame('queued', $a->fresh()->last_message_status);
     }
 
-    public function test_empty_selected_sms_toolbar_does_not_send_to_all(): void
+    public function test_simple_sms_toolbar_uses_filtered_scope_even_if_old_selected_fields_are_posted(): void
     {
         Queue::fake();
         $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN, 'is_active' => true]);
         $this->actingAs($user);
         $event = $this->event($user);
-        $this->invitee($event, 'Asha', '255700000031');
+        $recipient = $this->invitee($event, 'Asha', '255700000031');
         $this->template($event);
 
+        // The simplified toolbar no longer accepts a target-scope selector.
+        // Ignore stale client form data; only current filtered rows are targeted.
         $this->inviteeTableComponent($event)
             ->callTableAction('send_message', data: [
                 'target_scope' => 'selected',
@@ -131,7 +133,8 @@ class InviteeToolbarTargetingTest extends TestCase
             ])
             ->assertHasNoTableActionErrors();
 
-        Queue::assertNothingPushed();
+        Queue::assertPushed(SendInvitationSmsJob::class, 1);
+        $this->assertSame('queued', $recipient->fresh()->last_message_status);
     }
 
     public function test_page_size_changes_reset_page_and_update_record_count(): void
