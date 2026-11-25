@@ -35,4 +35,26 @@ class InvitationWhatsAppDeliveryStatusService
             WHEN 'logged' THEN 'logged_only' WHEN 'not_sent' THEN 'not_sent'
             ELSE 'unknown' END";
     }
+
+    /** Timestamp from the same current invitation log, never a reminder. */
+    public function timestampExpression(): string
+    {
+        if (! Schema::hasTable('message_logs')) {
+            return 'NULL';
+        }
+
+        return "(SELECT CASE LOWER(TRIM(ml.status))
+            WHEN 'read' THEN ml.read_at
+            WHEN 'delivered' THEN ml.delivered_at
+            WHEN 'failed' THEN ml.failed_at
+            WHEN 'sent' THEN ml.sent_at
+            WHEN 'submitted' THEN ml.sent_at
+            WHEN 'accepted' THEN ml.sent_at
+            ELSE NULL END
+            FROM message_logs ml
+            WHERE ml.event_id = invitees.event_id AND ml.invitee_id = invitees.id
+            AND ml.channel = 'whatsapp' AND ml.type = 'invitation'
+            AND (invitees.invitation_phone_changed_at IS NULL OR ml.id > COALESCE(invitees.invitation_message_reset_log_id, 0))
+            ORDER BY ml.id DESC LIMIT 1)";
+    }
 }
