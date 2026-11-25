@@ -1267,7 +1267,14 @@ class InviteesRelationManager extends RelationManager
                         ->modalHeading('Send WhatsApp Invitations')
                         ->modalSubmitActionLabel('Queue WhatsApp Invitations')
                         ->modalDescription('Send the event default WhatsApp invitation template only to invitees who have not received it.')
-                        ->form($this->toolbarTargetFields())
+                        ->form([
+                            ...$this->toolbarTargetFields(),
+                            Forms\Components\Placeholder::make('whatsapp_send_review')
+                                ->label('WhatsApp invitation review')
+                                ->content(fn (Forms\Get $get): string => $this->whatsappSendReview(
+                                    (string) ($get('target_scope') ?: 'filtered')
+                                )),
+                        ])
                         ->requiresConfirmation()
                         ->action(function (array $data): void {
                             $templateId = (int) ($this->getOwnerRecord()->fresh()->default_whatsapp_template_id ?? 0);
@@ -3057,6 +3064,45 @@ class InviteesRelationManager extends RelationManager
         }
 
         return $query->reorder()->pluck('invitees.id')->unique()->values()->all();
+    }
+
+    /**
+     * Preview historical claims before the admin queues WhatsApp invitations.
+     * These numbers are not delivery confirmations or a promise that all
+     * untracked recipients are eligible for sending.
+     */
+    protected function whatsappSendReview(string $target): string
+    {
+        $event = $this->getOwnerRecord();
+        $templateId = (int) ($event->fresh()->default_whatsapp_template_id ?? 0);
+        if ($templateId < 1 || ! Schema::hasTable('whatsapp_template_sends')) {
+            return 'Select an active default WhatsApp invitation template before sending.';
+        }
+
+        $ids = $this->toolbarTargetIds($target);
+        $invitees = Invitee::query()
+            ->where('event_id', $event->getKey())
+            ->when($ids !== null, fn (Builder $q) => $q->whereKey($ids));
+        $total = (clone $invitees)->count();
+
+        $tracking = DB::table('whatsapp_template_sends as wt')
+            ->join('invitees as i', function ($join): void {
+                $join->on('i.id', '=', 'wt.invitee_id')
+                    ->on('i.event_id', '=', 'wt.event_id');
+            })
+            ->where('wt.event_id', $event->getKey())
+            ->where('wt.message_template_id', $templateId)
+            ->whereColumn('wt.phone_generation', 'i.invitation_phone_generation')
+            ->when($ids !== null, fn ($q) => $q->whereIn('i.id', $ids))
+            ->selectRaw('wt.status, COUNT(*) AS total')
+            ->groupBy('wt.status')
+            ->pluck('total', 'status');
+
+        $pending = (int) ($tracking['pending'] ?? 0);
+        $submitted = (int) ($tracking['submitted'] ?? 0);
+        $failed = (int) ($tracking['failed'] ?? 0);
+
+        return "Selected scope: {$total}. Already tracked for this template — Pending: {$pending}, Submitted: {$submitted}, Failed: {$failed}. Only eligible, unclaimed invitations will be queued. Queued does not mean delivered; never resend pending claims without reviewing delivery evidence.";
     }
 
     protected function toolbarTargetFields(): array
