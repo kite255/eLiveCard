@@ -171,6 +171,8 @@ class Dashboard extends Page
             'sending',
         ]);
 
+        $invitationDelivery = $this->invitationDeliveryCounts();
+
         // Feature 4: guest attendance and live check-in.
         $totalAllowedGuests = $this->sumAllowedGuests();
         $checkedInGuests = $this->sumCheckedInGuests();
@@ -224,6 +226,7 @@ class Dashboard extends Page
             'guestCheckInPercent' => $guestCheckInPercent,
             'recentCheckIns' => $this->getRecentCheckIns(),
 
+            'invitationDelivery' => $invitationDelivery,
             'whatsAppTotal' => $whatsAppTotal,
             'whatsAppSent' => $whatsAppSent,
             'whatsAppDelivered' => $whatsAppDelivered,
@@ -236,7 +239,7 @@ class Dashboard extends Page
             'pendingPhotos' => $this->countPendingPhotos(),
             'pendingWishes' => $this->countPendingWishes(),
 
-            'smsBalance' => $this->getSmsBalance(),
+            'smsBalance' => $isSuperAdmin ? $this->getSmsBalance() : 'Restricted',
 
             'smsTotal' => $this->countSms(),
             // These groups are mutually exclusive to avoid double counting.
@@ -337,131 +340,23 @@ class Dashboard extends Page
 
     protected function getActiveEvent(): ?Event
     {
-        try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
-                return null;
-            }
+        $query = $this->eventQuery()
+            ->whereDate('event_date', today())
+            ->whereIn('status', ['active', 'ongoing', 'in_progress', 'published']);
 
-            /*
-             * When an event is selected, show it as the active dashboard event.
-             * Otherwise, prefer an event explicitly marked active.
-             */
-            if (filled($this->selectedEventId)) {
-                return $this->eventQuery()->find($this->selectedEventId);
-            }
-
-            if (Schema::hasColumn('events', 'status')) {
-                $activeEvent = $this->eventQuery()
-                    ->whereIn('status', [
-                        'active',
-                        'ongoing',
-                        'in_progress',
-                        'published',
-                    ])
-                    ->when(
-                        Schema::hasColumn('events', 'event_date'),
-                        fn (Builder $query) => $query->orderBy('event_date'),
-                    )
-                    ->first();
-
-                if ($activeEvent) {
-                    return $activeEvent;
-                }
-            }
-
-            /*
-             * Fallback: treat today's event as active when no status-based
-             * active event exists.
-             */
-            $dateColumn = $this->eventDateColumn();
-
-            if ($dateColumn) {
-                return $this->eventQuery()
-                    ->whereDate($dateColumn, today())
-                    ->orderBy($dateColumn)
-                    ->first();
-            }
-
-            return null;
-        } catch (\Throwable $e) {
-            report($e);
-
-            return null;
+        if ($this->selectedEventId !== null) {
+            $query->whereKey($this->selectedEventId);
         }
+
+        return $query->orderBy('start_time')->first();
     }
 
     protected function getNextUpcomingEvent(): ?Event
     {
-        try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
-                return null;
-            }
-
-            $dateColumn = $this->eventDateColumn();
-
-            if (! $dateColumn) {
-                return null;
-            }
-
-            $query = $this->eventQuery();
-
-            /*
-             * When an event is selected, find the next event after the selected
-             * event's date. Otherwise, find the closest future event.
-             */
-            if (filled($this->selectedEventId)) {
-                $selectedEvent = $this->eventQuery()->find($this->selectedEventId);
-
-                if ($selectedEvent && filled($selectedEvent->{$dateColumn})) {
-                    $query->whereDate(
-                        $dateColumn,
-                        '>',
-                        \Illuminate\Support\Carbon::parse(
-                            $selectedEvent->{$dateColumn},
-                        )->toDateString(),
-                    );
-                } else {
-                    $query->whereDate($dateColumn, '>', today());
-                }
-
-                $query->whereKeyNot($this->selectedEventId);
-            } else {
-                $activeEvent = $this->getActiveEvent();
-
-                if ($activeEvent && filled($activeEvent->{$dateColumn})) {
-                    $query->whereDate(
-                        $dateColumn,
-                        '>',
-                        \Illuminate\Support\Carbon::parse(
-                            $activeEvent->{$dateColumn},
-                        )->toDateString(),
-                    );
-                } else {
-                    $query->whereDate($dateColumn, '>', today());
-                }
-            }
-
-            if (Schema::hasColumn('events', 'status')) {
-                $query->whereNotIn('status', [
-                    'cancelled',
-                    'canceled',
-                    'archived',
-                    'completed',
-                ]);
-            }
-
-            return $query
-                ->orderBy($dateColumn)
-                ->when(
-                    Schema::hasColumn('events', 'start_time'),
-                    fn (Builder $query) => $query->orderBy('start_time'),
-                )
-                ->first();
-        } catch (\Throwable $e) {
-            report($e);
-
-            return null;
-        }
+        return $this->eventQuery()
+            ->whereDate('event_date', '>', today())
+            ->whereNotIn('status', ['cancelled', 'canceled', 'archived', 'completed', 'draft'])
+            ->orderBy('event_date')->orderBy('start_time')->first();
     }
 
     protected function eventDateColumn(): ?string
@@ -486,16 +381,22 @@ class Dashboard extends Page
         return null;
     }
 
+    /** Selected event is always intersected with the authenticated user's scope. */
+    protected function dashboardEventIds(): array
+    {
+        $ids = $this->accessibleEventIds();
+
+        return $this->selectedEventId === null
+            ? $ids
+            : array_values(array_intersect($ids, [$this->selectedEventId]));
+    }
+
     protected function inviteeQuery(): Builder
     {
         $query = Invitee::query();
 
         if (Schema::hasColumn('invitees', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
@@ -506,11 +407,7 @@ class Dashboard extends Page
         $query = SmsLog::query();
 
         if (Schema::hasColumn('sms_logs', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
@@ -521,11 +418,7 @@ class Dashboard extends Page
         $query = CheckIn::query();
 
         if (Schema::hasColumn('check_ins', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
@@ -655,7 +548,7 @@ class Dashboard extends Page
                     $query
                         ->whereNull('rsvp_status')
                         ->orWhere('rsvp_status', '')
-                        ->orWhere('rsvp_status', 'pending');
+                        ->orWhereIn('rsvp_status', ['pending', 'maybe']);
                 })
                 ->count();
         } catch (\Throwable $e) {
@@ -921,14 +814,25 @@ class Dashboard extends Page
         }
 
         if (Schema::hasColumn('message_logs', 'event_id')) {
-            if (filled($this->selectedEventId)) {
-                $query->where('event_id', $this->selectedEventId);
-            } else {
-                $query->whereIn('event_id', $this->accessibleEventIds());
-            }
+            $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
         return $query;
+    }
+
+    protected function invitationDeliveryCounts(): array
+    {
+        $result = ['whatsapp' => [], 'sms' => []];
+        $whatsapp = app(\App\Services\InvitationWhatsAppDeliveryStatusService::class)->expression();
+        $sms = app(\App\Services\InvitationSmsReportStatusService::class)->expression();
+        foreach (['whatsapp' => $whatsapp, 'sms' => $sms] as $channel => $expression) {
+            $resolved = $this->inviteeQuery()->selectRaw("({$expression}) AS delivery_status");
+            $result[$channel] = DB::query()->fromSub($resolved, 'resolved_invitees')
+                ->select('delivery_status')->selectRaw('COUNT(*) AS total')
+                ->groupBy('delivery_status')->pluck('total', 'delivery_status')->map(fn ($count) => (int) $count)->all();
+        }
+
+        return $result;
     }
 
     protected function countWhatsAppMessages(): int
@@ -1138,12 +1042,10 @@ class Dashboard extends Page
 
             $query = DB::table('invitee_uploads');
 
-            if (
-                filled($this->selectedEventId)
-                && Schema::hasColumn('invitee_uploads', 'event_id')
-            ) {
-                $query->where('event_id', $this->selectedEventId);
+            if (! Schema::hasColumn('invitee_uploads', 'event_id')) {
+                return 0;
             }
+            $query->whereIn('event_id', $this->dashboardEventIds());
 
             if (Schema::hasColumn('invitee_uploads', 'status')) {
                 $query->where('status', 'pending');
@@ -1167,12 +1069,10 @@ class Dashboard extends Page
             if (Schema::hasTable('invitee_wishes')) {
                 $query = DB::table('invitee_wishes');
 
-                if (
-                    filled($this->selectedEventId)
-                    && Schema::hasColumn('invitee_wishes', 'event_id')
-                ) {
-                    $query->where('event_id', $this->selectedEventId);
+                if (! Schema::hasColumn('invitee_wishes', 'event_id')) {
+                    return 0;
                 }
+                $query->whereIn('event_id', $this->dashboardEventIds());
 
                 if (Schema::hasColumn('invitee_wishes', 'status')) {
                     $query->where('status', 'pending');
@@ -1188,12 +1088,10 @@ class Dashboard extends Page
                 $query = DB::table('invitee_uploads')
                     ->whereIn('type', ['wish', 'message']);
 
-                if (
-                    filled($this->selectedEventId)
-                    && Schema::hasColumn('invitee_uploads', 'event_id')
-                ) {
-                    $query->where('event_id', $this->selectedEventId);
+                if (! Schema::hasColumn('invitee_uploads', 'event_id')) {
+                    return 0;
                 }
+                $query->whereIn('event_id', $this->dashboardEventIds());
 
                 if (Schema::hasColumn('invitee_uploads', 'status')) {
                     $query->where('status', 'pending');
