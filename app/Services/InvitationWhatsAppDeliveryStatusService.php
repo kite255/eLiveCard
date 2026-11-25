@@ -42,7 +42,7 @@ class InvitationWhatsAppDeliveryStatusService
             WHEN 'expired' THEN 'failed' WHEN 'rejected' THEN 'failed'
             WHEN 'queued' THEN 'queued' WHEN 'pending' THEN 'queued'
             WHEN 'sending' THEN 'queued' WHEN 'processing' THEN 'queued'
-            WHEN 'logged' THEN 'logged_only' WHEN 'unverified' THEN 'unverified' WHEN 'not_sent' THEN 'not_sent'
+            WHEN 'logged' THEN 'logged_only' WHEN 'unverified' THEN 'unknown' WHEN 'not_sent' THEN 'not_sent'
             ELSE 'unknown' END";
     }
 
