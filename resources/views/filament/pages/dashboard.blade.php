@@ -1740,10 +1740,9 @@
                     </div>
 
                     <div>
-                        <h1>Welcome, {{ $userName }} — Event Command Center</h1>
+                        <h1>Dashboard</h1>
                         <p>
-                            Manage accessible events, invitations, RSVPs, messages, approvals and guest check-ins
-                            from one professional dashboard.
+                            Monitor events, invitations, RSVPs and guest attendance.
                         </p>
 
                         <div class="elive-hero-actions">
@@ -1796,9 +1795,9 @@
             <section class="elive-card elive-filter-card">
                 <div class="elive-filter-row">
                     <div class="elive-filter-copy">
-                        <div class="elive-filter-title">Event Dashboard Filter</div>
+                        <div class="elive-filter-title">Event Filter</div>
                         <div class="elive-filter-subtitle">
-                            Select an event to filter dashboard data and activate the correct event scanner.
+                            View statistics for all accessible events or a single event.
                         </div>
                     </div>
 
@@ -1808,7 +1807,7 @@
                             class="elive-select"
                             aria-label="Select event"
                         >
-                            <option value="">All Events — scanner disabled</option>
+                            <option value="">All Events</option>
 
                             @foreach ($eventOptions as $eventId => $eventName)
                                 <option value="{{ $eventId }}">
@@ -2000,7 +1999,9 @@
                                 {{ $smsBalance }}
                             </div>
                             <div class="elive-kpi-note">
-                                @if ($smsBalance === 'Not configured')
+                                @if ($smsBalance === 'Restricted')
+                                    Administrator access only
+                                @elseif ($smsBalance === 'Not configured')
                                     Configure balance API
                                 @elseif (in_array($smsBalance, ['Unavailable', 'Check provider'], true))
                                     Provider connection issue
@@ -2135,70 +2136,31 @@
                 <div class="elive-card elive-section">
                     <div class="elive-section-header">
                         <div>
-                            <div class="elive-section-title">WhatsApp & SMS Overview</div>
-                            <div class="elive-section-subtitle">{{ $selectedEventId ? 'Selected event communication summary' : 'Combined message delivery and response summary' }}</div>
+                            <div class="elive-section-title">Invitation Delivery</div>
+                            <div class="elive-section-subtitle">Latest invitation status per invitee, excluding reminders and retries</div>
                         </div>
-                        <a href="{{ url('/admin/sms-logs') }}" class="elive-link">View Message Reports</a>
+                        <a href="{{ url('/admin/events') }}" class="elive-link">Manage Invitees</a>
                     </div>
-
                     <div class="elive-channel-grid">
-                        <div class="elive-channel">
-                            <div class="elive-channel-header">
-                                <div class="elive-channel-name">
-                                    <x-heroicon-o-chat-bubble-left-right style="width:20px;height:20px;color:#2563EB;" />
-                                    SMS
+                        @foreach (['whatsapp' => 'WhatsApp', 'sms' => 'SMS'] as $channel => $label)
+                            <div class="elive-channel">
+                                <div class="elive-channel-header">
+                                    <div class="elive-channel-name">{{ $label }}</div>
+                                    <div class="elive-channel-total">{{ number_format($totalInvitees) }}</div>
                                 </div>
-                                <div class="elive-channel-total">{{ number_format($smsTotal) }}</div>
+                                <div class="elive-channel-stats">
+                                    @foreach (['read' => 'Read', 'delivered' => 'Delivered', 'sent' => 'Sent', 'submitted' => 'Submitted', 'queued' => 'Pending', 'failed' => 'Failed', 'not_sent' => 'Not Sent', 'logged_only' => 'Logged Only', 'unknown' => 'Unverified'] as $key => $statusLabel)
+                                        @if ($channel === 'whatsapp' || ! in_array($key, ['read', 'sent']) || ($invitationDelivery[$channel][$key] ?? 0) > 0)
+                                            <div class="elive-channel-stat">
+                                                <div class="elive-channel-stat-label">{{ $statusLabel }}</div>
+                                                <div class="elive-channel-stat-value" style="color:{{ match ($key) { 'read' => '#2563EB', 'delivered' => '#16A34A', 'failed' => '#DC2626', 'submitted', 'queued' => '#B45309', default => '#64748B' } }};">{{ number_format($invitationDelivery[$channel][$key] ?? 0) }}</div>
+                                            </div>
+                                        @endif
+                                    @endforeach
+                                </div>
+                                <div class="elive-kpi-note" style="margin-top:12px;">{{ number_format($channel === 'whatsapp' ? $whatsAppTotal : $smsTotal) }} message records (all types)</div>
                             </div>
-
-                            <div class="elive-channel-stats">
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Accepted / Sent</div>
-                                    <div class="elive-channel-stat-value" style="color:#16A34A;">{{ number_format($smsSent) }}</div>
-                                </div>
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Delivered</div>
-                                    <div class="elive-channel-stat-value">{{ number_format($smsDelivered) }}</div>
-                                </div>
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Pending</div>
-                                    <div class="elive-channel-stat-value" style="color:#FD9618;">{{ number_format($smsPending) }}</div>
-                                </div>
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Failed</div>
-                                    <div class="elive-channel-stat-value" style="color:#DC2626;">{{ number_format($smsFailed) }}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="elive-channel">
-                            <div class="elive-channel-header">
-                                <div class="elive-channel-name">
-                                    <x-heroicon-o-chat-bubble-oval-left-ellipsis style="width:20px;height:20px;color:#16A34A;" />
-                                    WhatsApp
-                                </div>
-                                <div class="elive-channel-total">{{ number_format($whatsAppTotal) }}</div>
-                            </div>
-
-                            <div class="elive-channel-stats">
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Accepted / Sent</div>
-                                    <div class="elive-channel-stat-value" style="color:#16A34A;">{{ number_format($whatsAppSent) }}</div>
-                                </div>
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Delivered</div>
-                                    <div class="elive-channel-stat-value">{{ number_format($whatsAppDelivered) }}</div>
-                                </div>
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Read / Replied</div>
-                                    <div class="elive-channel-stat-value">{{ number_format($whatsAppRead + $whatsAppReplied) }}</div>
-                                </div>
-                                <div class="elive-channel-stat">
-                                    <div class="elive-channel-stat-label">Failed</div>
-                                    <div class="elive-channel-stat-value" style="color:#DC2626;">{{ number_format($whatsAppFailed) }}</div>
-                                </div>
-                            </div>
-                        </div>
+                        @endforeach
                     </div>
                 </div>
 
