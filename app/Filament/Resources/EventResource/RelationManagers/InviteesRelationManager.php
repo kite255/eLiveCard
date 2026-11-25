@@ -529,9 +529,10 @@ class InviteesRelationManager extends RelationManager
                     ->color(fn ($state): string => (int) $state > 0 ? 'success' : 'gray')
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('message_status_summary')
+                Tables\Columns\ViewColumn::make('message_status_summary')
                     ->label('Delivery Status')
-                    ->state(function (Invitee $record): \Illuminate\Support\HtmlString {
+                    ->view('filament.tables.columns.invitation-delivery-status')
+                    ->state(function (Invitee $record): array {
                         $sms = app(\App\Services\InvitationSmsDeliveryStatusService::class)
                             ->forInvitee($record);
 
@@ -575,14 +576,6 @@ class InviteesRelationManager extends RelationManager
                             ? 'Not Sent — Phone Updated'
                             : $whatsapp;
 
-                        $colors = [
-                            'success' => ['#166534', '#dcfce7'],
-                            'info' => ['#1d4ed8', '#dbeafe'],
-                            'warning' => ['#92400e', '#fef3c7'],
-                            'danger' => ['#b91c1c', '#fee2e2'],
-                            'gray' => ['#475569', '#f1f5f9'],
-                        ];
-
                         $whatsappColor = match ($whatsapp) {
                             'Read' => 'info',
                             'Delivered' => 'success',
@@ -591,26 +584,21 @@ class InviteesRelationManager extends RelationManager
                             default => 'gray',
                         };
 
-                        $smsIcon = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#213B73" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>';
-                        $whatsappIcon = '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16A34A" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11.8a8.5 8.5 0 0 1-12.8 7.3L3 20.5l1.3-4.6a8.5 8.5 0 1 1 16.2-4.1Z"/><path d="M8 7.5c-1.4 1-.8 3.5 1.4 5.7s4.7 2.8 5.7 1.4l.8-1.1-2.5-1.3-1 1c-1.2-.5-2.3-1.6-2.8-2.8l1-1L9.3 7Z"/></svg>';
-
-                        $row = static function (string $icon, string $channel, string $label, ?string $time, string $color) use ($colors): string {
-                            [$foreground, $background] = $colors[$color] ?? $colors['gray'];
-
-                            return '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;">'
-                                .'<span style="display:inline-flex;align-items:center;gap:5px;min-width:83px;font-weight:500;">'.$icon.e($channel).'</span>'
-                                .'<span style="display:inline-block;padding:2px 6px;border-radius:5px;font-size:11px;font-weight:600;color:'.$foreground.';background:'.$background.';">'.e($label).'</span>'
-                                .($time ? '<span style="font-size:11px;opacity:.75;">'.e($time).'</span>' : '')
-                                .'</div>';
-                        };
-
-                        return new \Illuminate\Support\HtmlString('<div style="display:flex;flex-direction:column;gap:5px;">'
-                            .$row($smsIcon, 'SMS', (string) $sms['label'], $sms['status_time'] ? (string) $sms['status_time'] : null, (string) $sms['color'])
-                            .$row($whatsappIcon, 'WhatsApp', $whatsappLabel, $at ? $at->format('d M Y, H:i') : null, $whatsappColor)
-                            .'</div>');
-                    })
-                    ->html()
-                    ->wrap(),
+                        return [
+                            [
+                                'name' => 'SMS',
+                                'label' => (string) $sms['label'],
+                                'color' => (string) $sms['color'],
+                                'time' => $sms['status_time'] ? (string) $sms['status_time'] : null,
+                            ],
+                            [
+                                'name' => 'WhatsApp',
+                                'label' => $whatsappLabel,
+                                'color' => $whatsappColor,
+                                'time' => $at ? $at->format('d M Y, H:i') : null,
+                            ],
+                        ];
+                    }),
 
                 Tables\Columns\TextColumn::make('sms_delivery_status')
                     ->label('SMS Delivery')
