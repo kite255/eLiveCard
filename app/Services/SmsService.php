@@ -1662,36 +1662,48 @@ class SmsService
         return $this->privateInvitationLink($invitee);
     }
 
+    /**
+     * Normalize Tanzanian local numbers and international E.164-style numbers
+     * for the SMS provider. This checks syntax, not provider country coverage.
+     *
+     * @throws \InvalidArgumentException
+     */
     public function formatPhone(?string $phone): string
     {
-        $hasCountryCode = str_starts_with(ltrim((string) $phone), '+');
-        $phone = preg_replace('/\D+/', '', (string) $phone);
+        $input = trim((string) $phone);
 
-        if (blank($phone)) {
-            throw new \Exception('Invitee phone number is missing.');
+        if ($input === '') {
+            throw new \InvalidArgumentException('Invitee phone number is missing.');
         }
 
-        if (str_starts_with($phone, '00255')) {
-            $phone = '255' . substr($phone, 5);
+        // Phone separators are allowed, but letters, extensions and symbols
+        // must never be silently stripped into a different destination.
+        if (! preg_match('/^\\+?[0-9\\s().-]+$/', $input)) {
+            throw new \InvalidArgumentException('Invalid phone number.');
         }
 
-        if (str_starts_with($phone, '2550')) {
-            $phone = '255' . substr($phone, 4);
+        $digits = preg_replace('/\\D+/', '', $input);
+
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
         }
 
-        if (str_starts_with($phone, '0') && strlen($phone) === 10) {
-            $phone = '255' . substr($phone, 1);
+        // Tanzania-only local notation: 07..., 06..., or 7... / 6....
+        if (preg_match('/^0[67]\\d{8}$/', $digits)) {
+            $digits = '255' . substr($digits, 1);
+        } elseif (preg_match('/^[67]\\d{8}$/', $digits) && ! str_starts_with($input, '+')) {
+            $digits = '255' . $digits;
+        } elseif (preg_match('/^2550[67]\\d{8}$/', $digits)) {
+            $digits = '255' . substr($digits, 4);
         }
 
-        if (! $hasCountryCode && strlen($phone) === 9 && preg_match('/^[67]/', $phone)) {
-            $phone = '255' . $phone;
+        // E.164 permits 8-15 digits in total and may not start with zero.
+        // The provider still decides whether a destination country is supported.
+        if (! preg_match('/^[1-9]\\d{7,14}$/', $digits)) {
+            throw new \InvalidArgumentException('Invalid phone number.');
         }
 
-        if (! preg_match('/^255[67]\d{8}$/', $phone)) {
-            throw new \Exception('Invalid Tanzania phone number: ' . $phone);
-        }
-
-        return $phone;
+        return $digits;
     }
 
     protected function classifySmsFailure(string $message): string
