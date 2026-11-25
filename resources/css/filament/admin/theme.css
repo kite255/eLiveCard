@@ -1096,3 +1096,88 @@
         justify-content: center;
     }
 }
+
+
+/* Responsive admin shell: keep controls inside the viewport without hiding data. */
+.fi-main-ctn, .fi-main, .fi-page, .fi-section-content,
+.fi-ta-ctn, .fi-ta-header-toolbar, .fi-ta-search-field,
+.fi-ta-filters, .fi-fo-field-wrp {
+    min-width: 0;
+    max-width: 100%;
+}
+.fi-ta-header-toolbar > *, .fi-header-actions > * {
+    min-width: 0;
+    max-width: 100%;
+}
+.fi-ta-filters .fi-fo-component-ctn {
+    min-width: 0;
+}
+.fi-ta-content {
+    overscroll-behavior-x: contain;
+}
+.fi-pagination {
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+}
+@media (max-width: 1023px) {
+    .fi-ta-filters .fi-fo-component-ctn {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .fi-ta-header-toolbar .fi-ta-search-field {
+        flex: 1 1 14rem;
+    }
+    .fi-ta-header-actions {
+        justify-content: flex-start;
+    }
+}
+@media (max-width: 640px) {
+    .fi-main { padding-inline: 0.75rem; }
+    .fi-global-search { min-width: 0; }
+    .fi-header-heading { overflow-wrap: anywhere; }
+    .fi-ta-header { padding: 0.75rem; }
+    .fi-ta-header-actions,
+    .fi-ta:has(.elive-delivery-status) .fi-ta-header-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+        gap: 0.5rem;
+        align-items: stretch;
+    }
+    .fi-ta-header-actions > * { min-width: 0; }
+    .fi-ta-header-actions .fi-btn,
+    .fi-ta:has(.elive-delivery-status) .fi-ta-header-actions .fi-btn {
+        width: 100%;
+        min-height: 44px;
+        padding: 0.5rem;
+        font-size: 0.8125rem;
+        white-space: normal;
+    }
+    .fi-ta-header-toolbar {
+        padding-inline: 0.75rem;
+        gap: 0.5rem;
+    }
+    .fi-ta-header-toolbar .fi-ta-search-field {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+    .fi-ta-filters .fi-fo-component-ctn {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .fi-ta-filters .fi-fo-component-ctn > * {
+        grid-column: 1 / -1;
+        min-width: 0;
+    }
+    .fi-ta-filters .fi-btn, .fi-modal-footer-actions .fi-btn {
+        min-height: 44px;
+    }
+    .fi-pagination { justify-content: center; padding-inline: 0.75rem; }
+    .fi-pagination-item-btn { min-height: 40px; }
+    .fi-modal-footer-actions > * { flex: 1 1 auto; min-width: 0; }
+    .fi-dropdown-panel { max-width: calc(100vw - 1.5rem); }
+}
+@media (max-width: 360px) {
+    .fi-ta-header-actions,
+    .fi-ta:has(.elive-delivery-status) .fi-ta-header-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
