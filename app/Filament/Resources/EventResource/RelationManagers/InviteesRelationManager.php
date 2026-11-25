@@ -3245,22 +3245,22 @@ class InviteesRelationManager extends RelationManager
                 continue;
             }
 
-            if ($channel === 'whatsapp') {
-                $claimed = $recipientScope === 'retry_failed'
-                    ? DB::table('whatsapp_template_sends')
-                        ->where('event_id', $event->id)
-                        ->where('invitee_id', $invitee->id)
-                        ->where('message_template_id', $template->id)
-                        ->where('phone_generation', (int) $invitee->invitation_phone_generation)
-                        ->where('status', 'failed')
-                        ->update(['status' => 'pending', 'attempts' => DB::raw('attempts + 1'),
-                            'last_attempt_at' => now(), 'updated_at' => now()]) === 1
-                    : DB::table('whatsapp_template_sends')->insertOrIgnore([
-                        'event_id' => $event->id, 'invitee_id' => $invitee->id,
-                        'message_template_id' => $template->id,
-                        'phone_generation' => (int) $invitee->invitation_phone_generation, 'status' => 'pending',
-                        'attempts' => 1, 'last_attempt_at' => now(),
-                        'created_at' => now(), 'updated_at' => now(),
+            // A new send is claimed by sendInviteeMessageUsingTemplate().
+            // Only an explicit failed-only retry reclaims the existing row here.
+            // Claiming a new invitee in both places previously left orphaned
+            // pending rows and skipped dispatching the WhatsApp job.
+            if ($channel === 'whatsapp' && $recipientScope === 'retry_failed') {
+                $claimed = DB::table('whatsapp_template_sends')
+                    ->where('event_id', $event->id)
+                    ->where('invitee_id', $invitee->id)
+                    ->where('message_template_id', $template->id)
+                    ->where('phone_generation', (int) $invitee->invitation_phone_generation)
+                    ->where('status', 'failed')
+                    ->update([
+                        'status' => 'pending',
+                        'attempts' => DB::raw('attempts + 1'),
+                        'last_attempt_at' => now(),
+                        'updated_at' => now(),
                     ]) === 1;
 
                 if (! $claimed) {
@@ -3276,6 +3276,7 @@ class InviteesRelationManager extends RelationManager
                 templateType: $template->type ?: $templateType,
                 notifySkipped: false,
                 messageTemplateId: $template->id,
+                claimAlreadyAcquired: $channel === 'whatsapp' && $recipientScope === 'retry_failed',
                 );
             } catch (Throwable $error) {
                 $result = ['status' => 'failed', 'body' => $error->getMessage()];
@@ -3771,6 +3772,7 @@ class InviteesRelationManager extends RelationManager
         string $templateType,
         bool $notifySkipped = true,
         ?int $messageTemplateId = null,
+        bool $claimAlreadyAcquired = false,
     ): array {
         $invitee->loadMissing(['event', 'cardType', 'latestGeneratedCard']);
 
@@ -3829,19 +3831,27 @@ class InviteesRelationManager extends RelationManager
                 ];
             }
 
-            $claimed = DB::table('whatsapp_template_sends')->insertOrIgnore([
-                'event_id' => $invitee->event_id,
-                'invitee_id' => $invitee->id,
-                'message_template_id' => $template->id,
-                'phone_generation' => (int) $invitee->invitation_phone_generation,
-                'status' => 'pending',
-                'attempts' => 1,
-                'last_attempt_at' => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            $claimed = $claimAlreadyAcquired
+                ? DB::table('whatsapp_template_sends')
+                    ->where('event_id', $invitee->event_id)
+                    ->where('invitee_id', $invitee->id)
+                    ->where('message_template_id', $template->id)
+                    ->where('phone_generation', (int) $invitee->invitation_phone_generation)
+                    ->where('status', 'pending')
+                    ->exists()
+                : DB::table('whatsapp_template_sends')->insertOrIgnore([
+                    'event_id' => $invitee->event_id,
+                    'invitee_id' => $invitee->id,
+                    'message_template_id' => $template->id,
+                    'phone_generation' => (int) $invitee->invitation_phone_generation,
+                    'status' => 'pending',
+                    'attempts' => 1,
+                    'last_attempt_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]) === 1;
 
-            if ($claimed !== 1) {
+            if (! $claimed) {
                 return [
                     'status' => 'skipped',
                     'type' => 'warning',
@@ -3850,14 +3860,37 @@ class InviteesRelationManager extends RelationManager
                 ];
             }
 
-            SendInvitationWhatsAppJob::dispatch(
-                inviteeId: $invitee->id,
-                languageCode: filled($template->whatsapp_language_code)
-                    ? (string) $template->whatsapp_language_code
-                    : MessageTemplate::LANGUAGE_ENGLISH,
-                messageTemplateId: $template->id,
-                phoneGeneration: (int) $invitee->invitation_phone_generation,
-            )->afterCommit();
+            try {
+                SendInvitationWhatsAppJob::dispatch(
+                    inviteeId: $invitee->id,
+                    languageCode: filled($template->whatsapp_language_code)
+                        ? (string) $template->whatsapp_language_code
+                        : MessageTemplate::LANGUAGE_ENGLISH,
+                    messageTemplateId: $template->id,
+                    phoneGeneration: (int) $invitee->invitation_phone_generation,
+                )->afterCommit();
+            } catch (Throwable $error) {
+                // Never leave a claimed invitee silently pending if dispatch fails.
+                // The bulk caller reports the failure; no automatic retry is issued.
+                DB::table('whatsapp_template_sends')
+                    ->where('event_id', $invitee->event_id)
+                    ->where('invitee_id', $invitee->id)
+                    ->where('message_template_id', $template->id)
+                    ->where('phone_generation', (int) $invitee->invitation_phone_generation)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'failed',
+                        'last_error' => mb_substr('Queue dispatch failed: '.$error->getMessage(), 0, 1000),
+                        'updated_at' => now(),
+                    ]);
+
+                return [
+                    'status' => 'failed',
+                    'type' => 'danger',
+                    'title' => 'WhatsApp queue dispatch failed',
+                    'body' => 'Unable to queue this invitation. Check communications worker and queue logs.',
+                ];
+            }
 
             $this->safeUpdateInvitee($invitee, [
                 'last_message_channel' => 'whatsapp',
