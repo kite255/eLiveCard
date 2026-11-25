@@ -62,7 +62,7 @@ class WhatsAppInvitationQueueService
                     )->onConnection('database')->onQueue($queue)->beforeCommit();
 
                     if (DB::table('jobs')->where('queue', $queue)->count() !== $before + 1) {
-                        throw new \\RuntimeException('WhatsApp invitation job was not inserted into the database queue.');
+                        throw new \RuntimeException('WhatsApp invitation job was not inserted into the database queue.');
                     }
 
                     return true;
