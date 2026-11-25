@@ -816,17 +816,21 @@ class SmsService
      * may be unavailable or wrongly documented. This method must not crash the UI/job.
      * It returns a structured response instead.
      */
-    public function getDeliveryReport(string $shootId): array
+    public function getDeliveryReport(string $shootId, bool $auditRoutineLookup = true): array
     {
         $shootId = trim($shootId);
 
-        AuditLogService::system(
-            action: 'sms.delivery_report_requested',
-            description: 'SMS delivery report lookup was requested.',
-            metadata: [
-                'shoot_id' => $shootId,
-            ],
-        );
+        if ($auditRoutineLookup) {
+            AuditLogService::system(
+                action: 'sms.delivery_report_requested',
+                description: 'SMS delivery report lookup was requested.',
+                metadata: [
+                    'shoot_id' => $shootId,
+                ],
+            );
+        } else {
+            Log::debug('Scheduled SMS delivery report lookup');
+        }
 
         if (blank($shootId)) {
             return [
@@ -943,15 +947,16 @@ class SmsService
      * If the provider delivery endpoint fails, the SMS must remain "sent" because
      * the original send API already accepted/submitted the message.
      */
-    public function refreshDeliveryReport(string $shootId): array
+    public function refreshDeliveryReport(string $shootId, bool $auditRoutineLookup = true): array
     {
-        $reportResponse = $this->getDeliveryReport($shootId);
+        $reportResponse = $this->getDeliveryReport($shootId, $auditRoutineLookup);
 
         if (! ($reportResponse['success'] ?? false)) {
             $this->markDeliveryReportUnavailable(
                 shootId: $shootId,
                 message: $reportResponse['message'] ?? 'Delivery report unavailable.',
                 response: $reportResponse,
+                auditRoutineLookup: $auditRoutineLookup,
             );
 
             return $reportResponse;
@@ -984,7 +989,7 @@ class SmsService
         if ($reports === []) {
             $reportResponse['success'] = false;
             $reportResponse['message'] = 'The provider returned no SMS delivery receipt.';
-            $this->markDeliveryReportUnavailable($shootId, $reportResponse['message'], $reportResponse);
+            $this->markDeliveryReportUnavailable($shootId, $reportResponse['message'], $reportResponse, $auditRoutineLookup);
 
             return $reportResponse;
         }
@@ -1046,20 +1051,38 @@ class SmsService
      * - Do NOT overwrite provider_response because it contains the original send response/shootId.
      * - Store the delivery-report error only in error/provider_status fields.
      */
-    protected function markDeliveryReportUnavailable(string $shootId, string $message, array $response = []): void
+    protected function markDeliveryReportUnavailable(string $shootId, string $message, array $response = [], bool $auditRoutineLookup = true): void
     {
         $now = now();
         $encodedResponse = json_encode($response);
 
-        AuditLogService::system(
-            action: 'sms.delivery_report_unavailable',
-            description: 'SMS delivery report was unavailable; the original sent status was preserved.',
-            metadata: [
-                'shoot_id' => $shootId,
-                'message' => $message,
-                'response' => $response,
-            ],
-        );
+        // Keep manual requests and the first unavailable state for a scheduled SMS.
+        // Repeated background failures remain visible in the SMS log and scheduler output.
+        $firstUnavailable = ! $auditRoutineLookup && filled($shootId)
+            && Schema::hasTable('sms_logs')
+            && Schema::hasColumn('sms_logs', 'provider_status')
+            && DB::table('sms_logs')->where('provider_message_id', $shootId)
+                ->where(function ($query): void {
+                    $query->whereNull('provider_status')
+                        ->orWhere('provider_status', '!=', 'delivery_report_unavailable');
+                })
+                ->where(function ($query): void {
+                    $query->whereNull('status')->orWhereNotIn('status', [
+                        'delivered', 'read', 'failed', 'undelivered', 'expired', 'rejected',
+                    ]);
+                })->exists();
+
+        if ($auditRoutineLookup || $firstUnavailable) {
+            AuditLogService::system(
+                action: 'sms.delivery_report_unavailable',
+                description: 'SMS delivery report was unavailable; the original sent status was preserved.',
+                metadata: [
+                    'shoot_id' => $shootId,
+                    'message' => $message,
+                    'response' => $response,
+                ],
+            );
+        }
 
         foreach (['message_logs', 'sms_logs'] as $table) {
             if (! Schema::hasTable($table)) {
