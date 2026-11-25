@@ -1313,6 +1313,7 @@
                     <option value="not_sent" @selected($whatsappDelivery === 'not_sent')>Not Sent</option>
                     <option value="queued" @selected($whatsappDelivery === 'queued')>Queued</option>
                     <option value="submitted" @selected($whatsappDelivery === 'submitted')>Submitted</option>
+                    <option value="sent" @selected($whatsappDelivery === 'sent')>Sent</option>
                     <option value="delivered" @selected($whatsappDelivery === 'delivered')>Delivered</option>
                     <option value="read" @selected($whatsappDelivery === 'read')>Read</option>
                     <option value="failed" @selected($whatsappDelivery === 'failed')>Failed</option>
