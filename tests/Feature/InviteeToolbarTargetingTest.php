@@ -133,4 +133,33 @@ class InviteeToolbarTargetingTest extends TestCase
 
         Queue::assertNothingPushed();
     }
+
+    public function test_page_size_changes_reset_page_and_update_record_count(): void
+    {
+        $user = User::factory()->create(['role' => User::ROLE_SUPER_ADMIN, 'is_active' => true]);
+        $this->actingAs($user);
+        $event = $this->event($user);
+        for ($i = 1; $i <= 51; $i++) {
+            $this->invitee($event, 'Guest '.$i, '25570001'.str_pad((string) $i, 4, '0', STR_PAD_LEFT));
+        }
+
+        $component = $this->inviteeTableComponent($event);
+        $component->set('tableRecordsPerPage', 25);
+        $this->assertSame(25, $component->instance()->getTableRecords()->perPage());
+        $component->call('gotoPage', 2, $component->instance()->getTablePaginationPageName());
+        $this->assertSame(2, $component->instance()->getTableRecords()->currentPage());
+
+        $component->set('tableRecordsPerPage', '50');
+        $records = $component->instance()->getTableRecords();
+        $this->assertSame(50, $records->perPage());
+        $this->assertSame(1, $records->currentPage());
+        $this->assertSame(2, $records->lastPage());
+        $this->assertCount(50, $records->items());
+
+        $component->set('tableRecordsPerPage', 'all');
+        $this->assertCount(51, $component->instance()->getTableRecords()->items());
+
+        $component->set('tableRecordsPerPage', '999');
+        $this->assertSame(25, $component->instance()->getTableRecords()->perPage());
+    }
 }
