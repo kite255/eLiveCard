@@ -29,6 +29,37 @@ php artisan queue:work database --queue=communications,default --sleep=3 --tries
 Both services must deploy the same application commit, share the same database, and use shared public storage (or the same object-storage disk). The communications worker also listens to `default` so existing legacy jobs continue to run.
 
 
+## WhatsApp readiness in Coolify
+
+WhatsApp sending is deliberately **off** by default. Never change the application
+default to true: each deployed service needs explicit opt-in and valid Meta credentials.
+
+Set the following variables in the **application** and **communications queue worker**
+Coolify services (or use verified shared environment configuration):
+
+- `WHATSAPP_ENABLED=true`
+- `WHATSAPP_DRIVER=meta_cloud_api`
+- `WHATSAPP_ACCESS_TOKEN` (secret: do not print or commit)
+- `WHATSAPP_PHONE_NUMBER_ID` (your Meta sender ID)
+
+After saving, **redeploy or restart both services**. Configuration caches can
+capture old values, and existing queue worker processes continue using their
+configuration until restarted. Ensure the current container's cached config was
+generated from the correct environment variables. Verify each running container:
+
+```bash
+php artisan whatsapp:check-config
+```
+
+The command reports effective Laravel configuration without displaying secrets,
+does not contact Meta, and never sends messages. A successful check does not
+prove template approval or message delivery.
+
+If `whatsapp_template_sends` contains previous failures such as
+"WhatsApp sending is disabled", **do not bulk retry those failures automatically**.
+Reconcile `message_logs` and provider receipts, test with one authorized recipient,
+then selectively retry confirmed failures through the existing admin workflow.
+
 ## Production message delivery and scheduling
 
 Invitation SMS and WhatsApp jobs, and Message Center bulk reminder/thank-you SMS
