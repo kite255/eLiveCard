@@ -71,15 +71,22 @@ class AuditFailedWhatsAppInvitations extends Command
             ->get(['id', 'invitee_id', 'status'])
             ->groupBy('invitee_id');
 
-        $otherSuccessfulPhoneIds = DB::table('message_logs')
+        $successfulLogs = DB::table('message_logs')
             ->where('event_id', $eventId)
             ->where('channel', 'whatsapp')
             ->where('type', MessageTemplate::TYPE_INVITATION)
             ->whereIn('status', ['submitted', 'accepted', 'sent', 'delivered', 'read'])
-            ->pluck('invitee_id')->filter()->unique()->values()->all();
+            ->get(['invitee_id', 'phone']);
 
-        $successfulPhones = DB::table('invitees')->where('event_id', $eventId)
-            ->whereIn('id', $otherSuccessfulPhoneIds)->pluck('phone')
+        $successfulPhoneIds = $successfulLogs->pluck('invitee_id')
+            ->filter(fn ($id) => is_int($id) || (is_string($id) && $id !== ''))
+            ->unique()->values()->all();
+
+        // Provider logs can contain a phone number without an invitee ID.
+        // Include those numbers so the audit does not recommend a possible duplicate.
+        $successfulPhones = $successfulLogs->pluck('phone')
+            ->merge(DB::table('invitees')->where('event_id', $eventId)
+                ->whereIn('id', $successfulPhoneIds)->pluck('phone'))
             ->map(fn ($phone) => WhatsAppPhone::normalize($phone))
             ->filter(fn ($phone) => is_string($phone) && $phone !== '')
             ->mapWithKeys(fn ($phone) => [$phone => true]);
