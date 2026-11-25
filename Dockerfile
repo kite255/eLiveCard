@@ -28,8 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gd \
         exif \
         bcmath \
-    && pecl install imagick \
-    && docker-php-ext-enable imagick \
+        pcntl \
+    && pecl install imagick redis-6.1.0 \
+    && docker-php-ext-enable imagick redis \
+    && php -r 'foreach (["pcntl", "redis"] as $ext) { if (!extension_loaded($ext)) { fwrite(STDERR, "Missing PHP extension: $ext\n"); exit(1); } }' \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && apt-get clean \
