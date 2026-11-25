@@ -152,7 +152,7 @@ class SmsInvitationRecipientsService
             && \Illuminate\Support\Carbon::parse($latest->updated_at)->lte(now()->subDay());
     }
 
-    public function counts(Event $event, string $scope): array
+    public function counts(Event $event, string $scope, ?array $targetIds = null): array
     {
         if (! array_key_exists($scope, self::scopes())) {
             return ['eligible' => 0, 'excluded' => 0];
@@ -161,7 +161,7 @@ class SmsInvitationRecipientsService
         $eligible = 0;
         $excluded = 0;
 
-        $this->candidateQuery($event)->chunkById(200, function ($invitees) use ($scope, &$eligible, &$excluded): void {
+        $this->candidateQuery($event)->when($targetIds !== null, fn ($query) => $query->whereKey($targetIds))->chunkById(200, function ($invitees) use ($scope, &$eligible, &$excluded): void {
             foreach ($invitees as $invitee) {
                 if ($this->eligible($invitee, $scope)) {
                     $eligible++;
