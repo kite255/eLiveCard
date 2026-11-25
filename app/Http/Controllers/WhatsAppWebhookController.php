@@ -1818,49 +1818,19 @@ class WhatsAppWebhookController extends Controller
                 now(),
         ];
 
-        if (
-            in_array(
-                $normalizedStatus,
-                [
-                    'sent',
-                    'delivered',
-                    'read',
-                ],
-                true
-            )
-        ) {
-            $update['sent_at'] =
-                $timestamp;
-        }
-
-        if (
-            in_array(
-                $normalizedStatus,
-                [
-                    'delivered',
-                    'read',
-                ],
-                true
-            )
-        ) {
-            $update['delivered_at'] =
-                $timestamp;
-        }
-
-        if (
-            $normalizedStatus ===
-            'read'
-        ) {
-            $update['read_at'] =
-                $timestamp;
-        }
-
-        if (
-            $normalizedStatus ===
-            'failed'
-        ) {
-            $update['failed_at'] =
-                $timestamp;
+        // A late sent/delivered callback must not rewrite the timestamp of a read receipt.
+        $incoming = $this->normalizeWhatsappStatus($providerStatus);
+        if ($incoming === $normalizedStatus) {
+            $field = match ($incoming) {
+                'sent' => 'sent_at',
+                'delivered' => 'delivered_at',
+                'read' => 'read_at',
+                'failed' => 'failed_at',
+                default => null,
+            };
+            if ($field !== null && in_array($field, $columns, true)) {
+                $update[$field] = DB::raw('COALESCE('.$field.', '.DB::connection()->getPdo()->quote($timestamp->toDateTimeString()).')');
+            }
         }
 
         $safeUpdate =
@@ -2059,7 +2029,7 @@ class WhatsAppWebhookController extends Controller
             $incomingStatus ===
             'failed'
         ) {
-            return 'failed';
+            return in_array($currentStatus, ['delivered', 'read'], true) ? $currentStatus : 'failed';
         }
 
         if (
