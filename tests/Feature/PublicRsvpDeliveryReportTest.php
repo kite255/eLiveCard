@@ -1331,7 +1331,11 @@ class PublicRsvpDeliveryReportTest extends TestCase
             $this->get($requestUrl)
                 ->assertOk()
                 ->assertViewHas('cardTypesUsed', 2)
+                ->assertViewHas('usedCardTypeNames', ['Double', 'Single'])
                 ->assertSee('Card Types Used')
+                ->assertSee('Double, Single')
+                ->assertDontSee('Customized,')
+                ->assertDontSee('Family,')
                 ->assertSee('<strong>2</strong>', false)
                 ->assertDontSee('class="card-type-name"', false)
                 ->assertDontSee('Outside Event');
@@ -1346,6 +1350,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
             ->assertViewHas('cardTypesUsed', 0)
+            ->assertViewHas('usedCardTypeNames', [])
             ->assertSee('Card Types Used')
             ->assertSee('<strong>0</strong>', false);
     }
@@ -1357,6 +1362,7 @@ class PublicRsvpDeliveryReportTest extends TestCase
         $this->get($event->generateRsvpShareLink())
             ->assertOk()
             ->assertViewHas('cardTypesUsed', 0)
+            ->assertViewHas('usedCardTypeNames', [])
             ->assertSee('Card Types Used');
     }
 
