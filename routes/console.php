@@ -95,3 +95,9 @@ Schedule::command('whatsapp:monitor-invitations --minutes=30 --alert')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)
     ->onOneServer();
+
+// Refresh provider balance in the scheduler, never in the dashboard HTTP request.
+Schedule::command('dashboard:refresh-sms-balance')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->onOneServer();
