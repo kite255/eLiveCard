@@ -10,7 +10,7 @@
         }
     </style>
 @endonce
-<div class="elive-delivery-status" style="display:flex;flex-direction:column;gap:3px;padding:5px 8px;min-width: max-content;">
+<div class="elive-delivery-status" style="display:flex;flex-direction:column;gap:3px;padding:2px 0;min-width:0;">
     @foreach ($channels as $channel)
         @php
             $status = strtolower(trim($channel['label']));
@@ -24,8 +24,8 @@
                 default => ['unknown', '#64748B'],
             };
         @endphp
-        <div class="elive-delivery-row" style="display:grid;grid-template-columns:18px 110px max-content;align-items:center;column-gap:5px;">
-            <span style="display:inline-flex;align-items:center;gap:5px;width:18px;flex-shrink:0;justify-content:center;" role="img" aria-label="{{ $channel['name'] }}" title="{{ $channel['name'] }}">
+        <div class="elive-delivery-row" style="display:grid;grid-template-columns:16px minmax(65px, 1fr) max-content;align-items:center;column-gap:3px;">
+            <span style="display:inline-flex;align-items:center;gap:5px;width:16px;flex-shrink:0;justify-content:center;" role="img" aria-label="{{ $channel['name'] }}" title="{{ $channel['name'] }}">
                 @if ($channel['name'] === 'SMS')
                     <svg data-channel-icon="sms" aria-hidden="true" viewBox="0 0 24 24" style="display:inline-block;width:16px;height:16px;flex-shrink:0;color:#213B73;" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="5" width="18" height="14" rx="2"/>
@@ -67,7 +67,7 @@
                 {{ $channel['label'] }}
             </span>
             @if ($channel['time'])
-                <span class="elive-delivery-time" style="font-size:10px;line-height:1.3;opacity:.75;white-space:nowrap;">{{ $channel['time'] }}</span>
+                <span class="elive-delivery-time" style="font-size:10px;line-height:1.3;opacity:.75;white-space:nowrap;" title="{{ $channel['time'] }}">{{ preg_replace('/\\b\\d{4},/', ',', str_replace(' ,', ',', $channel['time'])) }}</span>
             @endif
         </div>
     @endforeach
