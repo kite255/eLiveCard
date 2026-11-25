@@ -93,6 +93,7 @@ class InviteeDedicatedInvitationActionsTest extends TestCase
         $this->template($event, 'sms');
 
         $gateway = \Mockery::mock(SmsService::class);
+        $gateway->shouldReceive('isTanzanianMobileNumber')->andReturnTrue();
         $gateway->shouldReceive('sendInvitation')->once()
             ->andReturnUsing(function (Invitee $recipient, string $message) use ($invitee): array {
                 $this->assertSame($invitee->id, $recipient->id);
@@ -121,6 +122,7 @@ class InviteeDedicatedInvitationActionsTest extends TestCase
         $this->template($event, 'sms');
 
         $gateway = \Mockery::mock(SmsService::class);
+        $gateway->shouldReceive('isTanzanianMobileNumber')->andReturnTrue();
         $gateway->shouldReceive('sendInvitation')->once()
             ->andReturn(['success' => true, 'driver' => 'log', 'status' => 'logged']);
         app()->instance(SmsService::class, $gateway);

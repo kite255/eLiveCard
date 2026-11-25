@@ -89,6 +89,10 @@ class InviteeInvitationService
         $invitee->loadMissing(['event', 'cardType']);
 
         if ($channel === MessageTemplate::CHANNEL_SMS) {
+            if (! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)) {
+                return $this->result('skipped', 'SMS is Tanzania-only. Use WhatsApp for this international contact.');
+            }
+
             $exclusion = app(SmsInvitationRecipientsService::class)->exclusionReason($invitee);
             if ($exclusion !== null) {
                 return $this->result('skipped', $exclusion);
@@ -220,6 +224,9 @@ class InviteeInvitationService
 
                     if ($channel === MessageTemplate::CHANNEL_SMS) {
                         $sms = app(SmsService::class);
+                        if (! $sms->isTanzanianMobileNumber($invitee->phone)) {
+                            return $this->result('skipped', 'SMS is Tanzania-only. Use WhatsApp for this international contact.');
+                        }
                         if ($resendReason === null) {
                             $exclusion = app(SmsInvitationRecipientsService::class)->exclusionReason($invitee);
                             if ($exclusion !== null) {
@@ -402,6 +409,10 @@ class InviteeInvitationService
 
                 if ($invitee->card_status !== Invitee::CARD_STATUS_ACTIVE) {
                     return $this->result('skipped', 'Invitation card is no longer active.');
+                }
+
+                if (! app(SmsService::class)->isTanzanianMobileNumber($invitee->phone)) {
+                    return $this->result('skipped', 'SMS is Tanzania-only. Use WhatsApp for this international contact.');
                 }
 
                 // A force resend must not bypass an in-flight invitation.

@@ -137,6 +137,11 @@ class SmsService
     ): array {
         $invitee->loadMissing(['event', 'cardType']);
 
+        // SMS is Tanzania-only in eLive Card. Keep international contacts for WhatsApp.
+        if (! $this->isTanzanianMobileNumber($invitee->phone)) {
+            throw new \InvalidArgumentException('SMS is available only for Tanzanian mobile numbers. Use WhatsApp for international contacts.');
+        }
+
         $phone = $this->formatPhone($invitee->phone);
         $message = trim($message);
         $reference = 'elive_' . $type . '_' . $invitee->id . '_' . Str::upper(Str::random(8));
@@ -1668,6 +1673,21 @@ class SmsService
      *
      * @throws \InvalidArgumentException
      */
+    /**
+     * Sending policy: SMS is only allowed for Tanzanian mobile destinations.
+     * Formatting alone may accept E.164 international numbers for other purposes.
+     */
+    public function isTanzanianMobileNumber(?string $phone): bool
+    {
+        try {
+            $digits = $this->formatPhone($phone);
+
+            return (bool) preg_match('/^255[67]\\d{8}$/', $digits);
+        } catch (\InvalidArgumentException) {
+            return false;
+        }
+    }
+
     public function formatPhone(?string $phone): string
     {
         $input = trim((string) $phone);
