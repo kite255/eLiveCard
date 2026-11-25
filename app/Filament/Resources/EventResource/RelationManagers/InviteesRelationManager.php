@@ -665,16 +665,24 @@ class InviteesRelationManager extends RelationManager
 
                 Tables\Columns\TextColumn::make('sms_delivery_status')
                     ->label('SMS Delivery')
-                    ->state(fn (Invitee $record): string => $this->displaySmsStatus($record)['label'])
-                    ->description(function (Invitee $record): string {
+                    ->state(function (Invitee $record): ?string {
+                        $label = (string) $this->displaySmsStatus($record)['label'];
+                        return $label === 'Unverified'
+                            ? ($record->last_message_channel === 'sms' ? 'Needs Review' : null)
+                            : $label;
+                    })
+                    ->description(function (Invitee $record): ?string {
                         $state = $this->displaySmsStatus($record);
+                        if ($state['label'] === 'Unverified' && $record->last_message_channel !== 'sms') {
+                            return null;
+                        }
                         return ($state['status_time'] ? ($state['status_time_label'].' at '.$state['status_time'].' | ') : '')
                             .$state['description'];
                     })
                     ->color(fn (Invitee $record): string => $this->displaySmsStatus($record)['color'])
                     ->badge()
                     ->wrap()
-                    ->tooltip(fn (Invitee $record): string => $this->displaySmsStatus($record)['description'])
+                    ->tooltip(fn (Invitee $record): ?string => $this->displaySmsStatus($record)['label'] === 'Unverified' ? null : $this->displaySmsStatus($record)['description'])
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('sms_status')
