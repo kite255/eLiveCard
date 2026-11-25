@@ -45,6 +45,21 @@ class InviteesProfessionalLayoutTest extends TestCase
         );
     }
 
+    public function test_table_toolbar_wraps_on_desktop_and_preserves_elive_brand_colors(): void
+    {
+        $theme = (string) file_get_contents(
+            resource_path('css/filament/admin/theme.css')
+        );
+
+        $this->assertStringContainsString('--elive-blue: #213b73', $theme);
+        $this->assertStringContainsString('--elive-orange: #fd9618', $theme);
+        $this->assertStringContainsString('.fi-ta-header-actions {', $theme);
+        $this->assertStringContainsString('flex-wrap: wrap;', $theme);
+        $this->assertStringContainsString('max-width: 100%;', $theme);
+        $this->assertStringContainsString('@media (max-width: 1100px)', $theme);
+        $this->assertStringContainsString('flex-basis: 100%;', $theme);
+    }
+
     public function test_all_messaging_toolbar_actions_remain_visible_and_card_generation_moves_to_more_actions(): void
     {
         $source = $this->source();
