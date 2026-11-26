@@ -33,6 +33,48 @@ class Dashboard extends Page
 
     protected ?array $accessibleEventIdsCache = null;
 
+    // Protected instance properties are not persisted across Livewire requests.
+    // Cache only schema metadata, never event data or authorization decisions.
+    protected array $dashboardTableChecks = [];
+
+    protected array $dashboardColumnChecks = [];
+
+    protected array $dashboardMessageCounts = [];
+
+    /**
+     * Reuse grouped counts within the current render and event scope.
+     * No message counts are persisted in the application cache.
+     */
+    protected function countGroupedMessages($query, string $column, string $source, array $values): int
+    {
+        $key = $source.':'.$column.':'.(Auth::id() ?? 'guest').':'.($this->selectedEventId ?? 'all');
+
+        if (! array_key_exists($key, $this->dashboardMessageCounts)) {
+            $this->dashboardMessageCounts[$key] = $query
+                ->whereNotNull($column)
+                ->select($column)
+                ->selectRaw('COUNT(*) AS total')
+                ->groupBy($column)
+                ->pluck('total', $column)
+                ->all();
+        }
+
+        return (int) array_sum(array_intersect_key(
+            $this->dashboardMessageCounts[$key],
+            array_fill_keys($values, true),
+        ));
+    }
+
+    protected function dashboardHasTable(string $table): bool
+    {
+        return $this->dashboardTableChecks[$table] ??= Schema::hasTable($table);
+    }
+
+    protected function dashboardHasColumn(string $table, string $column): bool
+    {
+        return $this->dashboardColumnChecks[$table][$column] ??= Schema::hasColumn($table, $column);
+    }
+
     public function mount(): void
     {
         $storedEventId = session('elive_dashboard_event_id');
@@ -47,7 +89,7 @@ class Dashboard extends Page
         if ($this->isCheckInOfficer() && blank($this->selectedEventId)) {
             $this->selectedEventId = $this->eventQuery()
                 ->when(
-                    Schema::hasColumn('events', 'event_date'),
+                    $this->dashboardHasColumn('events', 'event_date'),
                     fn (Builder $query) => $query->orderBy('event_date'),
                 )
                 ->value('id');
@@ -96,6 +138,8 @@ class Dashboard extends Page
 
     protected function getViewData(): array
     {
+        $this->dashboardMessageCounts = [];
+
         $user = Auth::user();
         $isSuperAdmin = $this->isSuperAdmin();
         $isEventManager = $this->isEventManager();
@@ -295,7 +339,7 @@ class Dashboard extends Page
     protected function getEventOptions(): array
     {
         try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
+            if (! class_exists(Event::class) || ! $this->dashboardHasTable('events')) {
                 return [];
             }
 
@@ -325,7 +369,7 @@ class Dashboard extends Page
             if (
                 blank($this->selectedEventId)
                 || ! class_exists(Event::class)
-                || ! Schema::hasTable('events')
+                || ! $this->dashboardHasTable('events')
             ) {
                 return null;
             }
@@ -362,7 +406,7 @@ class Dashboard extends Page
     protected function eventDateColumn(): ?string
     {
         foreach (['event_date', 'date', 'starts_at'] as $column) {
-            if (Schema::hasColumn('events', $column)) {
+            if ($this->dashboardHasColumn('events', $column)) {
                 return $column;
             }
         }
@@ -373,7 +417,7 @@ class Dashboard extends Page
     protected function eventLabelColumn(): ?string
     {
         foreach (['title', 'name', 'event_name'] as $column) {
-            if (Schema::hasColumn('events', $column)) {
+            if ($this->dashboardHasColumn('events', $column)) {
                 return $column;
             }
         }
@@ -395,7 +439,7 @@ class Dashboard extends Page
     {
         $query = Invitee::query();
 
-        if (Schema::hasColumn('invitees', 'event_id')) {
+        if ($this->dashboardHasColumn('invitees', 'event_id')) {
             $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
@@ -406,7 +450,7 @@ class Dashboard extends Page
     {
         $query = SmsLog::query();
 
-        if (Schema::hasColumn('sms_logs', 'event_id')) {
+        if ($this->dashboardHasColumn('sms_logs', 'event_id')) {
             $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
@@ -417,7 +461,7 @@ class Dashboard extends Page
     {
         $query = CheckIn::query();
 
-        if (Schema::hasColumn('check_ins', 'event_id')) {
+        if ($this->dashboardHasColumn('check_ins', 'event_id')) {
             $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
@@ -442,7 +486,7 @@ class Dashboard extends Page
     protected function countInvitees(): int
     {
         try {
-            if (! class_exists(Invitee::class) || ! Schema::hasTable('invitees')) {
+            if (! class_exists(Invitee::class) || ! $this->dashboardHasTable('invitees')) {
                 return 0;
             }
 
@@ -457,7 +501,7 @@ class Dashboard extends Page
     protected function countSms(): int
     {
         try {
-            if (! class_exists(SmsLog::class) || ! Schema::hasTable('sms_logs')) {
+            if (! class_exists(SmsLog::class) || ! $this->dashboardHasTable('sms_logs')) {
                 return 0;
             }
 
@@ -472,11 +516,11 @@ class Dashboard extends Page
     protected function countEventsThisMonth(): int
     {
         try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
+            if (! class_exists(Event::class) || ! $this->dashboardHasTable('events')) {
                 return 0;
             }
 
-            if (Schema::hasColumn('events', 'event_date')) {
+            if ($this->dashboardHasColumn('events', 'event_date')) {
                 return $this->eventQuery()
                     ->whereBetween('event_date', [
                         now()->startOfMonth()->toDateString(),
@@ -485,7 +529,7 @@ class Dashboard extends Page
                     ->count();
             }
 
-            if (Schema::hasColumn('events', 'date')) {
+            if ($this->dashboardHasColumn('events', 'date')) {
                 return $this->eventQuery()
                     ->whereBetween('date', [
                         now()->startOfMonth()->toDateString(),
@@ -494,7 +538,7 @@ class Dashboard extends Page
                     ->count();
             }
 
-            if (Schema::hasColumn('events', 'created_at')) {
+            if ($this->dashboardHasColumn('events', 'created_at')) {
                 return $this->eventQuery()
                     ->whereBetween('created_at', [
                         now()->startOfMonth(),
@@ -516,8 +560,8 @@ class Dashboard extends Page
         try {
             if (
                 ! class_exists(Invitee::class)
-                || ! Schema::hasTable('invitees')
-                || ! Schema::hasColumn('invitees', 'rsvp_status')
+                || ! $this->dashboardHasTable('invitees')
+                || ! $this->dashboardHasColumn('invitees', 'rsvp_status')
             ) {
                 return 0;
             }
@@ -537,8 +581,8 @@ class Dashboard extends Page
         try {
             if (
                 ! class_exists(Invitee::class)
-                || ! Schema::hasTable('invitees')
-                || ! Schema::hasColumn('invitees', 'rsvp_status')
+                || ! $this->dashboardHasTable('invitees')
+                || ! $this->dashboardHasColumn('invitees', 'rsvp_status')
             ) {
                 return 0;
             }
@@ -561,14 +605,14 @@ class Dashboard extends Page
     protected function countCheckedInInvitees(): int
     {
         try {
-            if (class_exists(Invitee::class) && Schema::hasTable('invitees')) {
-                if (Schema::hasColumn('invitees', 'checked_in_count')) {
+            if (class_exists(Invitee::class) && $this->dashboardHasTable('invitees')) {
+                if ($this->dashboardHasColumn('invitees', 'checked_in_count')) {
                     return $this->inviteeQuery()
                         ->where('checked_in_count', '>', 0)
                         ->count();
                 }
 
-                if (Schema::hasColumn('invitees', 'check_in_status')) {
+                if ($this->dashboardHasColumn('invitees', 'check_in_status')) {
                     return $this->inviteeQuery()
                         ->whereIn('check_in_status', [
                             'checked_in',
@@ -577,7 +621,7 @@ class Dashboard extends Page
                         ->count();
                 }
 
-                if (Schema::hasColumn('invitees', 'checked_in_at')) {
+                if ($this->dashboardHasColumn('invitees', 'checked_in_at')) {
                     return $this->inviteeQuery()
                         ->whereNotNull('checked_in_at')
                         ->count();
@@ -586,8 +630,8 @@ class Dashboard extends Page
 
             if (
                 class_exists(CheckIn::class)
-                && Schema::hasTable('check_ins')
-                && Schema::hasColumn('check_ins', 'invitee_id')
+                && $this->dashboardHasTable('check_ins')
+                && $this->dashboardHasColumn('check_ins', 'invitee_id')
             ) {
                 return $this->checkInQuery()
                     ->whereNotNull('invitee_id')
@@ -608,15 +652,13 @@ class Dashboard extends Page
         try {
             if (
                 ! class_exists(SmsLog::class)
-                || ! Schema::hasTable('sms_logs')
-                || ! Schema::hasColumn('sms_logs', 'status')
+                || ! $this->dashboardHasTable('sms_logs')
+                || ! $this->dashboardHasColumn('sms_logs', 'status')
             ) {
                 return 0;
             }
 
-            return $this->smsQuery()
-                ->whereIn('status', $statuses)
-                ->count();
+            return $this->countGroupedMessages($this->smsQuery(), 'status', 'sms', $statuses);
         } catch (\Throwable $e) {
             report($e);
 
@@ -627,15 +669,13 @@ class Dashboard extends Page
     protected function countSmsByType(array $types): int
     {
         try {
-            if (! class_exists(SmsLog::class) || ! Schema::hasTable('sms_logs')) {
+            if (! class_exists(SmsLog::class) || ! $this->dashboardHasTable('sms_logs')) {
                 return 0;
             }
 
             foreach (['sms_type', 'message_type', 'type', 'category'] as $column) {
-                if (Schema::hasColumn('sms_logs', $column)) {
-                    return $this->smsQuery()
-                        ->whereIn($column, $types)
-                        ->count();
+                if ($this->dashboardHasColumn('sms_logs', $column)) {
+                    return $this->countGroupedMessages($this->smsQuery(), $column, 'sms', $types);
                 }
             }
 
@@ -650,7 +690,7 @@ class Dashboard extends Page
     protected function getUpcomingEvents()
     {
         try {
-            if (! class_exists(Event::class) || ! Schema::hasTable('events')) {
+            if (! class_exists(Event::class) || ! $this->dashboardHasTable('events')) {
                 return collect();
             }
 
@@ -660,7 +700,7 @@ class Dashboard extends Page
                     ->get();
             }
 
-            if (Schema::hasColumn('events', 'event_date')) {
+            if ($this->dashboardHasColumn('events', 'event_date')) {
                 return $this->eventQuery()
                     ->whereDate('event_date', '>=', now()->toDateString())
                     ->orderBy('event_date')
@@ -668,7 +708,7 @@ class Dashboard extends Page
                     ->get();
             }
 
-            if (Schema::hasColumn('events', 'date')) {
+            if ($this->dashboardHasColumn('events', 'date')) {
                 return $this->eventQuery()
                     ->whereDate('date', '>=', now()->toDateString())
                     ->orderBy('date')
@@ -690,7 +730,7 @@ class Dashboard extends Page
     protected function getRecentSmsLogs()
     {
         try {
-            if (! class_exists(SmsLog::class) || ! Schema::hasTable('sms_logs')) {
+            if (! class_exists(SmsLog::class) || ! $this->dashboardHasTable('sms_logs')) {
                 return collect();
             }
 
@@ -708,12 +748,12 @@ class Dashboard extends Page
     protected function sumAllowedGuests(): int
     {
         try {
-            if (! Schema::hasTable('invitees')) {
+            if (! $this->dashboardHasTable('invitees')) {
                 return 0;
             }
 
             foreach (['allowed_guests', 'guest_limit', 'allowed_people'] as $column) {
-                if (Schema::hasColumn('invitees', $column)) {
+                if ($this->dashboardHasColumn('invitees', $column)) {
                     return (int) $this->inviteeQuery()->sum($column);
                 }
             }
@@ -730,13 +770,13 @@ class Dashboard extends Page
     protected function sumConfirmedGuests(): int
     {
         try {
-            if (! Schema::hasTable('invitees')) {
+            if (! $this->dashboardHasTable('invitees')) {
                 return 0;
             }
 
             $query = $this->inviteeQuery();
 
-            if (Schema::hasColumn('invitees', 'rsvp_status')) {
+            if ($this->dashboardHasColumn('invitees', 'rsvp_status')) {
                 $query->whereIn('rsvp_status', [
                     'attending',
                     'yes',
@@ -745,7 +785,7 @@ class Dashboard extends Page
             }
 
             foreach (['confirmed_guests', 'rsvp_guest_count', 'guest_count'] as $column) {
-                if (Schema::hasColumn('invitees', $column)) {
+                if ($this->dashboardHasColumn('invitees', $column)) {
                     return (int) $query->sum($column);
                 }
             }
@@ -767,15 +807,15 @@ class Dashboard extends Page
     protected function sumCheckedInGuests(): int
     {
         try {
-            if (Schema::hasTable('invitees')) {
+            if ($this->dashboardHasTable('invitees')) {
                 foreach (['checked_in_count', 'checked_in_guests'] as $column) {
-                    if (Schema::hasColumn('invitees', $column)) {
+                    if ($this->dashboardHasColumn('invitees', $column)) {
                         return (int) $this->inviteeQuery()->sum($column);
                     }
                 }
             }
 
-            if (Schema::hasTable('check_ins')) {
+            if ($this->dashboardHasTable('check_ins')) {
                 $query = $this->checkInQuery();
 
                 foreach ([
@@ -785,7 +825,7 @@ class Dashboard extends Page
                     'checked_in_count',
                     'quantity',
                 ] as $column) {
-                    if (Schema::hasColumn('check_ins', $column)) {
+                    if ($this->dashboardHasColumn('check_ins', $column)) {
                         return (int) $query->sum($column);
                     }
                 }
@@ -803,17 +843,17 @@ class Dashboard extends Page
 
     protected function whatsAppQuery()
     {
-        if (! Schema::hasTable('message_logs')) {
+        if (! $this->dashboardHasTable('message_logs')) {
             return null;
         }
 
         $query = DB::table('message_logs');
 
-        if (Schema::hasColumn('message_logs', 'channel')) {
+        if ($this->dashboardHasColumn('message_logs', 'channel')) {
             $query->where('channel', 'whatsapp');
         }
 
-        if (Schema::hasColumn('message_logs', 'event_id')) {
+        if ($this->dashboardHasColumn('message_logs', 'event_id')) {
             $query->whereIn('event_id', $this->dashboardEventIds());
         }
 
@@ -852,8 +892,8 @@ class Dashboard extends Page
     {
         try {
             if (
-                ! Schema::hasTable('message_logs')
-                || ! Schema::hasColumn('message_logs', 'status')
+                ! $this->dashboardHasTable('message_logs')
+                || ! $this->dashboardHasColumn('message_logs', 'status')
             ) {
                 return 0;
             }
@@ -861,7 +901,7 @@ class Dashboard extends Page
             $query = $this->whatsAppQuery();
 
             return $query
-                ? $query->whereIn('status', $statuses)->count()
+                ? $this->countGroupedMessages($query, 'status', 'whatsapp', $statuses)
                 : 0;
         } catch (\Throwable $e) {
             report($e);
@@ -873,13 +913,13 @@ class Dashboard extends Page
     protected function getRecentCheckIns()
     {
         try {
-            if (! Schema::hasTable('check_ins')) {
+            if (! $this->dashboardHasTable('check_ins')) {
                 return collect();
             }
 
             $query = $this->checkInQuery();
 
-            $dateColumn = Schema::hasColumn('check_ins', 'checked_in_at')
+            $dateColumn = $this->dashboardHasColumn('check_ins', 'checked_in_at')
                 ? 'checked_in_at'
                 : 'created_at';
 
@@ -898,11 +938,11 @@ class Dashboard extends Page
 
             if (
                 $inviteeIds->isNotEmpty()
-                && Schema::hasTable('invitees')
+                && $this->dashboardHasTable('invitees')
             ) {
-                $nameColumn = Schema::hasColumn('invitees', 'name')
+                $nameColumn = $this->dashboardHasColumn('invitees', 'name')
                     ? 'name'
-                    : (Schema::hasColumn('invitees', 'full_name') ? 'full_name' : null);
+                    : ($this->dashboardHasColumn('invitees', 'full_name') ? 'full_name' : null);
 
                 if ($nameColumn) {
                     $invitees = DB::table('invitees')
@@ -944,13 +984,13 @@ class Dashboard extends Page
     protected function countInviteesWithoutPhone(): int
     {
         try {
-            if (! Schema::hasTable('invitees')) {
+            if (! $this->dashboardHasTable('invitees')) {
                 return 0;
             }
 
-            $phoneColumn = Schema::hasColumn('invitees', 'phone')
+            $phoneColumn = $this->dashboardHasColumn('invitees', 'phone')
                 ? 'phone'
-                : (Schema::hasColumn('invitees', 'phone_number') ? 'phone_number' : null);
+                : ($this->dashboardHasColumn('invitees', 'phone_number') ? 'phone_number' : null);
 
             if (! $phoneColumn) {
                 return 0;
@@ -974,8 +1014,8 @@ class Dashboard extends Page
     {
         try {
             if (
-                ! Schema::hasTable('invitees')
-                || ! Schema::hasColumn('invitees', 'table_number')
+                ! $this->dashboardHasTable('invitees')
+                || ! $this->dashboardHasColumn('invitees', 'table_number')
             ) {
                 return 0;
             }
@@ -998,15 +1038,15 @@ class Dashboard extends Page
     {
         try {
             if (
-                ! Schema::hasTable('invitees')
-                || ! Schema::hasTable('generated_cards')
-                || ! Schema::hasColumn('generated_cards', 'invitee_id')
+                ! $this->dashboardHasTable('invitees')
+                || ! $this->dashboardHasTable('generated_cards')
+                || ! $this->dashboardHasColumn('generated_cards', 'invitee_id')
             ) {
                 return 0;
             }
 
-            $hasCardStatus = Schema::hasColumn('generated_cards', 'status');
-            $hasCardEvent = Schema::hasColumn('generated_cards', 'event_id');
+            $hasCardStatus = $this->dashboardHasColumn('generated_cards', 'status');
+            $hasCardEvent = $this->dashboardHasColumn('generated_cards', 'event_id');
 
             // Keep the entire computation in PostgreSQL; do not materialize all
             // invitee and card IDs in PHP for dashboard alerts.
@@ -1035,22 +1075,22 @@ class Dashboard extends Page
     protected function countPendingPhotos(): int
     {
         try {
-            if (! Schema::hasTable('invitee_uploads')) {
+            if (! $this->dashboardHasTable('invitee_uploads')) {
                 return 0;
             }
 
             $query = DB::table('invitee_uploads');
 
-            if (! Schema::hasColumn('invitee_uploads', 'event_id')) {
+            if (! $this->dashboardHasColumn('invitee_uploads', 'event_id')) {
                 return 0;
             }
             $query->whereIn('event_id', $this->dashboardEventIds());
 
-            if (Schema::hasColumn('invitee_uploads', 'status')) {
+            if ($this->dashboardHasColumn('invitee_uploads', 'status')) {
                 $query->where('status', 'pending');
             }
 
-            if (Schema::hasColumn('invitee_uploads', 'type')) {
+            if ($this->dashboardHasColumn('invitee_uploads', 'type')) {
                 $query->whereIn('type', ['photo', 'image']);
             }
 
@@ -1065,15 +1105,15 @@ class Dashboard extends Page
     protected function countPendingWishes(): int
     {
         try {
-            if (Schema::hasTable('invitee_wishes')) {
+            if ($this->dashboardHasTable('invitee_wishes')) {
                 $query = DB::table('invitee_wishes');
 
-                if (! Schema::hasColumn('invitee_wishes', 'event_id')) {
+                if (! $this->dashboardHasColumn('invitee_wishes', 'event_id')) {
                     return 0;
                 }
                 $query->whereIn('event_id', $this->dashboardEventIds());
 
-                if (Schema::hasColumn('invitee_wishes', 'status')) {
+                if ($this->dashboardHasColumn('invitee_wishes', 'status')) {
                     $query->where('status', 'pending');
                 }
 
@@ -1081,18 +1121,18 @@ class Dashboard extends Page
             }
 
             if (
-                Schema::hasTable('invitee_uploads')
-                && Schema::hasColumn('invitee_uploads', 'type')
+                $this->dashboardHasTable('invitee_uploads')
+                && $this->dashboardHasColumn('invitee_uploads', 'type')
             ) {
                 $query = DB::table('invitee_uploads')
                     ->whereIn('type', ['wish', 'message']);
 
-                if (! Schema::hasColumn('invitee_uploads', 'event_id')) {
+                if (! $this->dashboardHasColumn('invitee_uploads', 'event_id')) {
                     return 0;
                 }
                 $query->whereIn('event_id', $this->dashboardEventIds());
 
-                if (Schema::hasColumn('invitee_uploads', 'status')) {
+                if ($this->dashboardHasColumn('invitee_uploads', 'status')) {
                     $query->where('status', 'pending');
                 }
 
@@ -1207,7 +1247,7 @@ class Dashboard extends Page
 
         if ($this->isEventManager()) {
             return $query->where(function (Builder $eventQuery) use ($user): void {
-                if (Schema::hasColumn('events', 'user_id')) {
+                if ($this->dashboardHasColumn('events', 'user_id')) {
                     $eventQuery->where('events.user_id', $user->getKey());
                 } else {
                     $eventQuery->whereRaw('1 = 0');
@@ -1245,7 +1285,7 @@ class Dashboard extends Page
         return $this->eventQuery()
             ->withCount('invitees')
             ->when(
-                Schema::hasColumn('events', 'event_date'),
+                $this->dashboardHasColumn('events', 'event_date'),
                 fn (Builder $query) => $query->orderBy('event_date'),
             )
             ->limit($this->isCheckInOfficer() ? 12 : 8)
@@ -1302,7 +1342,7 @@ class Dashboard extends Page
     protected function countCheckInTransactions(): int
     {
         try {
-            return Schema::hasTable('check_ins')
+            return $this->dashboardHasTable('check_ins')
                 ? $this->checkInQuery()->count()
                 : 0;
         } catch (\Throwable $e) {
@@ -1315,7 +1355,7 @@ class Dashboard extends Page
     protected function countFullyCheckedInInvitees(): int
     {
         try {
-            if (! Schema::hasTable('invitees')) {
+            if (! $this->dashboardHasTable('invitees')) {
                 return 0;
             }
 
@@ -1333,7 +1373,7 @@ class Dashboard extends Page
     protected function countPartiallyCheckedInInvitees(): int
     {
         try {
-            if (! Schema::hasTable('invitees')) {
+            if (! $this->dashboardHasTable('invitees')) {
                 return 0;
             }
 
@@ -1351,7 +1391,7 @@ class Dashboard extends Page
     protected function getOfficerRecentCheckIns()
     {
         try {
-            if (! Schema::hasTable('check_ins')) {
+            if (! $this->dashboardHasTable('check_ins')) {
                 return collect();
             }
 
@@ -1359,7 +1399,7 @@ class Dashboard extends Page
 
             if (
                 $this->isCheckInOfficer()
-                && Schema::hasColumn('check_ins', 'checked_in_by')
+                && $this->dashboardHasColumn('check_ins', 'checked_in_by')
             ) {
                 $query->where('checked_in_by', Auth::id());
             }
@@ -1367,7 +1407,7 @@ class Dashboard extends Page
             return $query
                 ->with(['invitee', 'event'])
                 ->orderByDesc(
-                    Schema::hasColumn('check_ins', 'checked_in_at')
+                    $this->dashboardHasColumn('check_ins', 'checked_in_at')
                         ? 'checked_in_at'
                         : 'created_at'
                 )

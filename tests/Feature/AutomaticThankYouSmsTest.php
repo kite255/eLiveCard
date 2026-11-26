@@ -78,6 +78,35 @@ class AutomaticThankYouSmsTest extends TestCase
         $this->assertDatabaseCount('automatic_thank_you_sends', 0);
     }
 
+    public function test_automatic_thank_you_skips_international_numbers_before_claiming(): void
+    {
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-11-07 12:00:00', 'Africa/Dar_es_Salaam'));
+        $event = $this->makeEvent('automatic');
+        $this->makeTemplate($event);
+        $invitee = $this->makeInvitee($event);
+        $invitee->update(['phone' => '+254700000001']);
+
+        $this->mock(ReminderSmsService::class)->shouldNotReceive('sendCustomSms');
+        $this->artisan('sms:send-automatic-thank-you')->assertExitCode(0);
+        $this->artisan('sms:send-automatic-thank-you')->assertExitCode(0);
+        $this->assertDatabaseCount('automatic_thank_you_sends', 0);
+        $this->assertDatabaseMissing('sms_logs', ['invitee_id' => $invitee->id]);
+    }
+
+    public function test_reminder_service_skips_international_numbers_without_sms_logs(): void
+    {
+        $event = $this->makeEvent('manual');
+        $invitee = $this->makeInvitee($event);
+        $invitee->update(['phone' => '+260970000001']);
+        $sms = app(ReminderSmsService::class);
+        $this->assertFalse($sms->sendCustomSms($invitee, 'Test message'));
+        $result = $sms->sendBulkCustomSms(collect([$invitee]), 'Test message');
+        $this->assertSame(0, $result['sent']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(1, $result['skipped']);
+        $this->assertDatabaseMissing('sms_logs', ['invitee_id' => $invitee->id]);
+    }
+
     private function makeEvent(string $mode): Event
     {
         return Event::query()->create([

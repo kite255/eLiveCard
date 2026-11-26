@@ -187,6 +187,19 @@ class SendWelcomeSmsJob implements ShouldQueue
             return;
         }
 
+        // Revalidate current recipient eligibility for older queued jobs or phone changes.
+        if (! $smsService->isTanzanianMobileNumber($phone)) {
+            AuditLogService::record(
+                action: 'welcome_sms.country_unsupported',
+                subject: $invitee,
+                eventId: $event->id,
+                description: 'Welcome SMS skipped: only Tanzania mobile numbers are supported.',
+                metadata: ['reason' => 'unsupported_sms_destination'],
+            );
+
+            return;
+        }
+
         if ($this->alreadySent($invitee->id)) {
             Log::info('Duplicate welcome SMS prevented.', [
                 'invitee_id' => $invitee->id,

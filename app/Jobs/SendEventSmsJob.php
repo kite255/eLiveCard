@@ -66,6 +66,16 @@ class SendEventSmsJob implements ShouldQueue, ShouldBeUnique
             return;
         }
 
+        if (! $sms->isTanzanianMobileNumber($invitee->phone)) {
+            Log::info('Queued event SMS skipped: only Tanzania mobile numbers are supported.', [
+                'event_id' => $this->eventId,
+                'invitee_id' => $this->inviteeId,
+                'sms_type' => $this->smsType,
+            ]);
+
+            return;
+        }
+
         // Re-check eligibility at execution time, not only at queue time.
         if ($this->smsType === 'rsvp_pending_reminder'
             && ! in_array($invitee->rsvp_status, [null, '', 'pending'], true)) {
